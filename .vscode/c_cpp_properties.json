@@ -1,0 +1,11 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "compileCommands": "${workspaceFolder}/compile_commands.json",
+            "defines": ["_GNU_SOURCE"],
+            "cStandard": "c11"
+        }
+    ],
+    "version": 4
+}
