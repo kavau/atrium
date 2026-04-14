@@ -393,3 +393,168 @@ until the next kernel-level read event, which could be arbitrarily delayed.
 In the current phase none of these are registered yet, so `sd_bus_process()`
 handles all traffic internally. Signal handlers and async reply handlers are
 introduced in later phases.
+
+---
+
+## Phase 4 — VT Allocation
+
+### Virtual Terminals
+
+A *virtual terminal* (VT) is a kernel abstraction that lets multiple independent
+text or graphical sessions share one physical display and keyboard. The kernel
+maintains up to 63 VT slots (on a typical configuration). At any moment exactly
+one VT is *active* — its output appears on the screen and keyboard input goes to
+it. The user switches between VTs with `Ctrl-Alt-F1`, `Ctrl-Alt-F2`, etc., or
+programmatically via ioctls.
+
+VTs exist only on `seat0`. Other seats own their display and input devices
+directly and are always active; there is nothing to switch between.
+
+Each VT corresponds to a device node `/dev/ttyN` (where N is 1-based). VT1 is
+`/dev/tty1`, VT7 is `/dev/tty7`, and so on.
+
+`fgconsole` prints the number of the currently active VT.
+`fgconsole --next-available` prints the lowest VT number the kernel considers
+unallocated, which is what `VT_OPENQRY` returns.
+
+---
+
+### `ioctl()`
+
+`ioctl()` (*input/output control*) is the general-purpose escape hatch in the
+Linux system-call interface. When a device or kernel subsystem needs an
+operation that doesn't fit the standard `read`/`write`/`seek` model, it is
+exposed as an `ioctl` request:
+
+```c
+int ioctl(int fd, unsigned long request, ...);
+```
+
+`fd` is an open file descriptor for the relevant device. `request` is a numeric
+constant (conventionally defined in a kernel header such as `<linux/vt.h>`) that
+identifies the operation. The optional third argument is either an integer value
+or a pointer to a struct, depending on the request.
+
+Return value: 0 (or a non-negative result) on success, -1 with `errno` set on
+error — same convention as other syscalls.
+
+VT management is entirely ioctl-based. The relevant header is `<linux/vt.h>`.
+
+---
+
+### `VT_OPENQRY` and VT allocation
+
+The kernel tracks each VT slot with a *virtual console struct* (`vc_cons[n].d`).
+A slot is *allocated* when that struct is non-NULL — i.e. the kernel has
+initialised a virtual console object for it. A slot is *free* when it is NULL.
+
+`VT_OPENQRY` scans the slot array and returns the number of the first free
+(NULL) slot:
+
+```c
+int vtnr = -1;
+ioctl(tty0_fd, VT_OPENQRY, &vtnr);  /* vtnr receives the free slot number */
+```
+
+This does *not* allocate the slot by itself — `VT_OPENQRY` only queries. The
+slot is allocated lazily by the kernel the first time `/dev/ttyN` is opened.
+Therefore, the correct sequence to claim a VT is:
+
+1. Call `VT_OPENQRY` to find a free number `N`.
+2. Immediately open `/dev/ttyN` to trigger allocation and hold it open.
+
+Keeping the fd open is what prevents another process from racing in and claiming
+the same VT between our query and our use of the number.
+
+`VT_DISALLOCATE` reverses the process: it frees the virtual console struct,
+releasing the slot back to the pool. However, it requires `tty->count == 0` —
+no process may have the tty device open. Closing the fd first satisfies this
+condition, after which the kernel implicitly releases the slot anyway. In
+practice, `close(fd)` is sufficient; `VT_DISALLOCATE` is a belt-and-suspenders
+call.
+
+---
+
+### `/dev/tty0` as a control channel
+
+VT management ioctls (`VT_OPENQRY`, `VT_DISALLOCATE`, `VT_ACTIVATE`, etc.) are
+issued against a *VT device fd*, but not necessarily the one you want to
+manipulate. The convention is to use **`/dev/tty0`** as the control fd:
+
+- `/dev/tty0` is a special alias for whichever VT is currently active. It does
+  not correspond to a specific VT number.
+- Opening `/dev/tty0` gives a fd that is valid for issuing VT control ioctls
+  regardless of which VT is currently foreground.
+- VT management ioctls issued via `/dev/tty0` affect the VT number specified in
+  the ioctl argument, not VT0 (which doesn't exist).
+
+Contrast with `/dev/ttyN` (N ≥ 1): opening this gives a fd tied to VT N. This
+fd is what you hold open to *claim* the VT (see above), but for management
+ioctls that need to refer to a VT by number, `/dev/tty0` is simpler because it
+doesn't require you to already have a specific VT open.
+
+atrium opens `/dev/tty0` for `VT_OPENQRY` and `VT_DISALLOCATE`, then closes it
+immediately after. The claimed VT fd (`/dev/ttyN`) is kept open for the lifetime
+of the session and stored in `struct seat`.
+
+---
+
+### Controlling terminal and `O_NOCTTY`
+
+Every process belongs to a *process group*, and every process group may have an
+associated *controlling terminal* — a tty that delivers job-control signals
+(`SIGHUP`, `SIGINT`, `SIGQUIT`) to the group. This is the mechanism that makes
+Ctrl-C send `SIGINT` to the foreground process in your shell.
+
+A process acquires a controlling terminal automatically when:
+- It is a *session leader* (has called `setsid()` and has no controlling
+  terminal yet), and
+- It opens a tty device that is not already someone else's controlling terminal.
+
+Daemons call `setsid()` during startup to detach from the parent's session,
+which makes them session leaders. If such a daemon then opens `/dev/tty0` or
+`/dev/ttyN` without `O_NOCTTY`, the kernel silently assigns that tty as the
+daemon's controlling terminal. Any subsequent `SIGHUP` from that tty would kill
+the daemon.
+
+`O_NOCTTY` suppresses this behaviour:
+
+```c
+open("/dev/tty0", O_RDWR | O_CLOEXEC | O_NOCTTY);
+```
+
+With `O_NOCTTY` set, opening the tty never assigns a controlling terminal,
+regardless of whether the caller is a session leader. atrium uses `O_NOCTTY` on
+every tty `open()` call.
+
+---
+
+### Two-layer kernel TTY state
+
+The `EBUSY` error from `VT_DISALLOCATE` (observed during Phase 4 testing) exposes
+an important distinction: the kernel tracks VT state at two independent layers.
+
+**Layer 1 — virtual console struct (`vc_cons[n].d`)**
+This is what `VT_OPENQRY` and `VT_DISALLOCATE` operate on. It represents whether
+the kernel has a live virtual console object for slot N. `close(fd)` — when fd
+is the last open reference to that vc — frees this struct. Once freed, the slot
+appears free to `VT_OPENQRY`.
+
+**Layer 2 — tty device open count (`tty->count`)**
+This counts how many processes currently have `/dev/ttyN` open (for any reason).
+`VT_DISALLOCATE` checks this count and refuses with `EBUSY` if it is non-zero,
+to avoid freeing a vc struct that another process is still using.
+
+The two layers can be in seemingly contradictory states:
+
+- `VT_OPENQRY` reports the slot free (vc struct freed by `close(fd)`).
+- `VT_DISALLOCATE` returns `EBUSY` (a getty still has the tty device open).
+
+Both are correct. The getty opened `/dev/tty1` at boot and never closed it; it
+holds a tty reference but is not the vc allocator. `close(fd)` dropped the last
+vc reference, which freed the vc struct, restoring the slot to the free pool.
+`VT_DISALLOCATE` then has nothing to do and correctly refuses because the tty
+device is still in use.
+
+atrium silently ignores `EBUSY` from `VT_DISALLOCATE` because `close(fd)` is
+always sufficient to release the VT slot.
