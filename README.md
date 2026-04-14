@@ -23,6 +23,12 @@ On Debian/Ubuntu:
 apt install libsystemd-dev libudev-dev libpam0g-dev libgtk-4-dev cage meson ninja-build
 ```
 
+On CachyOS/Arch (`libsystemd` and `libudev` are both provided by the `systemd` package):
+
+```sh
+pacman -S systemd pam gtk4 cage meson ninja
+```
+
 ---
 
 ## Building
