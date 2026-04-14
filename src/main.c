@@ -1,4 +1,6 @@
+#include "bus.h"
 #include "event.h"
+#include "seat.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -61,10 +63,21 @@ int main(void)
     if (event_add(sfd, on_signal, NULL) < 0)
         return EXIT_FAILURE;
 
+    /* Open the system bus and register it with the event loop. */
+    if (bus_open() < 0)
+        return EXIT_FAILURE;
+
+    /* Enumerate seats via logind. */
+    if (bus_enumerate_seats() < 0)
+        return EXIT_FAILURE;
+    for (int i = 0; i < seat_count(); i++)
+        fprintf(stderr, "atrium: found seat: %s\n", seat_get(i)->name);
+
     /* Run until event_loop_quit() is called. */
     event_loop_run();
 
-    /* Clean up the signalfd. */
+    /* Clean up. */
+    bus_close();
     event_remove(sfd);
     close(sfd);
 

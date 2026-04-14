@@ -1,6 +1,6 @@
 ---
 Created: April 13, 2026
-Last Updated: April 13, 2026
+Last Updated: April 14, 2026
 ---
 
 # atrium — Concepts
@@ -192,3 +192,204 @@ The cost is that a slow callback blocks the entire loop. In practice, atrium's
 callbacks do very little work: they read a small amount of data and update some
 state. The only potentially slow operation is PAM authentication (Phase 7),
 which is noted as a known shortcut.
+
+---
+
+## Phase 2 — Seat Discovery
+
+### D-Bus
+
+D-Bus is a message-passing IPC system that is ubiquitous on Linux desktops and
+servers. It provides a structured way for processes to call methods on each
+other and subscribe to event notifications (signals), without either side
+needing to know the other's process ID or manage raw sockets.
+
+There are two standard buses:
+
+- **System bus** — a single, shared bus for the whole machine. System services
+  like logind, udev, and NetworkManager live here. Accessible at
+  `/run/dbus/system_bus_socket`. Requires appropriate D-Bus policy to use.
+- **Session bus** — one per user login session. Desktop applications use it.
+  atrium only ever uses the system bus.
+
+Every entity on D-Bus is addressed by three coordinates:
+
+| Coordinate | Example | Meaning |
+|---|---|---|
+| Bus name | `org.freedesktop.login1` | The well-known name of the service |
+| Object path | `/org/freedesktop/login1` | A specific object within the service |
+| Interface | `org.freedesktop.login1.Manager` | A named group of methods and signals on that object |
+
+To call a method, you address it by all three, plus the method name:
+`org.freedesktop.login1` / `/org/freedesktop/login1` /
+`org.freedesktop.login1.Manager` / `ListSeats`.
+
+---
+
+### logind and the seat model
+
+`systemd-logind` is the session and seat manager in systemd-based Linux
+systems. It tracks:
+
+- **Seats** — collections of hardware devices (display, keyboard, mouse) that
+  form one workstation. `seat0` is the default seat; additional seats require
+  explicit device assignment.
+- **Sessions** — an active login by a user on a seat, with associated VT,
+  PAM session, and cgroup.
+- **Users** — aggregates of all sessions belonging to one UID.
+
+logind is the authoritative source for seat information. It monitors udev
+internally and decides which devices belong to which seat. The correct way to
+enumerate seats is to ask logind — not to scan udev directly — because logind
+may know about seats that have no currently attached devices.
+
+`ListSeats()` on `org.freedesktop.login1.Manager` returns the current list of
+seats. atrium calls this once at startup to populate its seat list.
+
+---
+
+### D-Bus type signatures
+
+D-Bus messages are strongly typed. Every method argument and return value has a
+type declared in a *signature string* using single-character type codes:
+
+| Code | Type |
+|---|---|
+| `s` | UTF-8 string |
+| `o` | Object path (a string constrained to D-Bus path syntax) |
+| `u` | Unsigned 32-bit integer |
+| `b` | Boolean |
+| `a` | Array (followed by the element type) |
+| `(...)` | Struct (fields listed inside the parentheses) |
+
+The `ListSeats()` reply has type `a(so)`: an array of structs, each containing
+a string (seat ID, e.g. `"seat0"`) and an object path (the logind object for
+that seat, e.g. `/org/freedesktop/login1/seat/seat0`).
+
+Parsing this with sd-bus requires entering and exiting containers explicitly:
+
+```c
+/* Enter the outer array. */
+sd_bus_message_enter_container(reply, 'a', "(so)");
+
+/* Iterate: enter each struct, read its fields, exit. */
+while (sd_bus_message_enter_container(reply, 'r', "so") > 0) {
+    const char *seat_id, *object_path;
+    sd_bus_message_read(reply, "so", &seat_id, &object_path);
+    sd_bus_message_exit_container(reply);
+}
+sd_bus_message_exit_container(reply); /* exit the array */
+```
+
+The `'r'` container type stands for *record* (struct). The distinction between
+`'a'` (array) and `'r'` (struct) matches the D-Bus wire protocol — arrays are
+homogeneous and length-prefixed; structs are heterogeneous and fixed-layout.
+
+---
+
+## Phase 3 — D-Bus / logind Interface
+
+### sd-bus API patterns
+
+`sd-bus` is the D-Bus client library built into `libsystemd`. It is lower-level
+than GDBus or QtDBus but has no dependencies beyond glibc and is the natural
+choice for a daemon that already links `libsystemd`.
+
+**Opening the system bus:**
+
+```c
+sd_bus *bus;
+sd_bus_open_system(&bus);
+```
+
+This opens a connection to the system bus socket, performs the D-Bus
+authentication handshake, and sends the mandatory `Hello` message that assigns
+the connection its unique bus name (e.g. `:1.42`).
+
+**Making a synchronous method call:**
+
+```c
+sd_bus_error error = SD_BUS_ERROR_NULL;
+sd_bus_message *reply = NULL;
+sd_bus_call_method(bus,
+    "org.freedesktop.login1",       /* destination */
+    "/org/freedesktop/login1",       /* object path */
+    "org.freedesktop.login1.Manager", /* interface */
+    "ListSeats",                     /* method */
+    &error, &reply, "");             /* error out, reply out, arg signature */
+```
+
+`sd_bus_call_method` sends the request and blocks internally (without blocking
+the caller's fd) until the reply arrives. `error` and `reply` are mutually
+exclusive outputs: on failure, `error` is populated and `reply` is `NULL`; on
+success, `reply` holds the message and `error` is unset.
+
+Atrium uses synchronous calls during startup (before the event loop starts)
+because there is nothing else to do while waiting. Later phases use async calls
+via `sd_bus_call_async()` so that the event loop remains responsive.
+
+---
+
+### Reference counting in sd-bus
+
+sd-bus objects (`sd_bus`, `sd_bus_message`, etc.) are reference-counted. The
+allocation functions return an object with a reference count of 1. The `_unref`
+functions decrement the count; when it reaches zero the object is freed and its
+resources released.
+
+```c
+sd_bus_message_unref(reply);  /* decrement; frees if count reaches 0 */
+sd_bus_unref(bus);            /* flushes pending output, closes socket, frees */
+```
+
+All `_unref` functions accept `NULL` and treat it as a no-op, matching the
+convention of `free(NULL)`. This allows unconditional cleanup calls regardless
+of whether the object was successfully created:
+
+```c
+sd_bus_error_free(&error);    /* no-op if error was never set */
+sd_bus_message_unref(reply);  /* no-op if reply is NULL */
+```
+
+`sd_bus_error` is not reference-counted — it is a plain struct initialised to
+`SD_BUS_ERROR_NULL`. `sd_bus_error_free()` releases any strings it holds.
+
+---
+
+### `sd_bus_process()` and message dispatch
+
+Registering the sd-bus fd with the event loop means `poll()` wakes us when the
+bus has data to read. But `read()`ing the fd directly is not how sd-bus works —
+you call `sd_bus_process()` instead, which drives the internal state machine:
+
+1. Reads pending data from the bus fd into an internal buffer.
+2. Parses one complete message from that buffer.
+3. Dispatches it — either handling it internally (protocol bookkeeping, pending
+   reply matching) or invoking a registered handler.
+4. Returns `> 0` if a message was processed, `0` if the buffer is now empty,
+   or `< 0` on error.
+
+Because a single `read()` from the kernel may deliver multiple messages into
+the buffer, the correct pattern is to drain completely before returning to
+`poll()`:
+
+```c
+int r;
+do {
+    r = sd_bus_process(bus, NULL);
+} while (r > 0);
+```
+
+Returning to `poll()` with messages still buffered would leave them unprocessed
+until the next kernel-level read event, which could be arbitrarily delayed.
+
+**Registered handlers** are callbacks attached to specific message patterns:
+- `sd_bus_call_async()` registers a reply handler keyed by the outgoing
+  message's serial number.
+- `sd_bus_add_match()` registers a signal handler for a D-Bus match rule (e.g.
+  `"type='signal',member='SeatNew'"`), and tells the bus daemon to route
+  matching signals to this connection.
+
+In the current phase none of these are registered yet, so `sd_bus_process()`
+handles all traffic internally. Signal handlers and async reply handlers are
+introduced in later phases.
