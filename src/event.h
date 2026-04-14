@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * Minimal poll-based event loop
+ * event.h — poll-based event loop
  *
  * File descriptors are registered with a callback that is invoked whenever
  * the fd becomes readable. The loop runs until event_loop_quit() is called.

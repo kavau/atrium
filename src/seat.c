@@ -1,7 +1,6 @@
 #include "seat.h"
 
 #include <stdio.h>
-#include <string.h>
 
 static struct seat g_seats[MAX_SEATS];
 static int         g_num_seats = 0;

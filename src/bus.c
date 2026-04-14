@@ -2,6 +2,7 @@
 #include "event.h"
 #include "seat.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,6 +30,8 @@ static void on_bus(int fd, void *userdata)
 
 int bus_enumerate_seats(void)
 {
+    assert(g_bus);
+
     sd_bus_error error = SD_BUS_ERROR_NULL;
     sd_bus_message *reply = NULL;
     int r = sd_bus_call_method(g_bus,

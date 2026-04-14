@@ -76,7 +76,8 @@ int main(void)
     /* Run until event_loop_quit() is called. */
     event_loop_run();
 
-    /* Clean up. */
+    /* Clean up. On early-exit error paths above, the process terminates and
+     * the kernel releases all resources, so explicit cleanup is skipped. */
     bus_close();
     event_remove(sfd);
     close(sfd);
