@@ -11,6 +11,8 @@
 
 struct seat {
     char name[64];
+    int  vtnr;   /* allocated VT number; 0 for non-seat0 seats */
+    int  vt_fd;  /* open fd for /dev/ttyN; -1 for non-seat0 seats */
 };
 
 /* Add a seat by name. Returns 0 on success, -1 if the seat limit is reached

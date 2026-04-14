@@ -1,6 +1,7 @@
 #include "bus.h"
 #include "event.h"
 #include "seat.h"
+#include "vt.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -73,11 +74,30 @@ int main(void)
     for (int i = 0; i < seat_count(); i++)
         fprintf(stderr, "atrium: found seat: %s\n", seat_get(i)->name);
 
+    /* Allocate a VT for seat0. */
+    for (int i = 0; i < seat_count(); i++) {
+        struct seat *s = seat_get(i);
+        if (strcmp(s->name, "seat0") != 0)
+            continue;
+        s->vt_fd = vt_alloc(&s->vtnr);
+        if (s->vt_fd < 0)
+            return EXIT_FAILURE;
+        fprintf(stderr, "atrium: seat0: allocated vt%d\n", s->vtnr);
+        break;
+    }
+
     /* Run until event_loop_quit() is called. */
     event_loop_run();
 
     /* Clean up. On early-exit error paths above, the process terminates and
      * the kernel releases all resources, so explicit cleanup is skipped. */
+    /* Release VT allocations. */
+    for (int i = 0; i < seat_count(); i++) {
+        struct seat *s = seat_get(i);
+        if (s->vt_fd >= 0)
+            vt_release(s->vt_fd, s->vtnr);
+    }
+
     bus_close();
     event_remove(sfd);
     close(sfd);

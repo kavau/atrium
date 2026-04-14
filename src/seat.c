@@ -14,6 +14,8 @@ int seat_add(const char *name)
     }
     snprintf(g_seats[g_num_seats].name, sizeof(g_seats[g_num_seats].name),
              "%s", name);
+    g_seats[g_num_seats].vtnr  = 0;
+    g_seats[g_num_seats].vt_fd = -1;
     g_num_seats++;
     return 0;
 }

@@ -4,6 +4,7 @@ executable('atrium',
     'event.c',
     'seat.c',
     'bus.c',
+    'vt.c',
   ],
   dependencies: [
     dep_libsystemd,
