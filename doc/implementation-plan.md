@@ -1,6 +1,6 @@
 ---
 Created: April 12, 2026
-Last Updated: April 12, 2026
+Last Updated: April 15, 2026
 ---
 
 # atrium — Implementation Plan
@@ -115,7 +115,36 @@ production-quality implementations.
 
 ## Post-Milestone Phases
 
-### Phase 6 — Hotplug Monitoring
+### Phase 6 — Session Environment
+
+**Goal:** The compositor session is launched with a complete, correct
+environment — matching what a normal login session would provide.
+
+- **Login shell wrapping** — exec the compositor via the user's login shell
+  (`execlp(pw->pw_shell, "-sh", "-l", "-c", "exec compositor", NULL)`).
+  This sources `.profile` / `.bash_profile`, giving the compositor and its
+  children the user's `PATH`, locale settings, and any other shell-level
+  customization. Without this, everything inherits the daemon's root
+  environment.
+- **Desktop identity variables** — set `XDG_CURRENT_DESKTOP` and
+  `XDG_SESSION_DESKTOP` so XDG desktop portals select the correct backend
+  and desktop components can identify their session.
+- **D-Bus session bus** — set `DBUS_SESSION_BUS_ADDRESS` to
+  `unix:path=/run/user/<uid>/bus`. Most libraries auto-detect this on
+  systemd, but some applications check the environment variable explicitly.
+- **`CanGraphical` gate** — query logind's `CanGraphical` property on each
+  seat before starting a session. Skip seats where the property is false
+  (no monitor attached). This replaces the current behavior of crash-looping
+  on monitorless seats.
+
+**Verification:** Run `atrium`; open a terminal inside the compositor and
+verify `$PATH` matches a normal login session. Confirm `$XDG_CURRENT_DESKTOP`
+and `$DBUS_SESSION_BUS_ADDRESS` are set. Confirm monitorless seats are
+skipped cleanly.
+
+---
+
+### Phase 7 — Hotplug Monitoring
 
 **Goal:** The daemon reacts to seats being added or removed at runtime.
 
@@ -129,7 +158,7 @@ is detected and the seat is started/stopped accordingly.
 
 ---
 
-### Phase 7 — Greeter Process Lifecycle
+### Phase 8 — Greeter Process Lifecycle
 
 **Goal:** The daemon spawns cage (hosting a placeholder child) on each seat and
 restarts it on exit.
@@ -147,7 +176,7 @@ it restarts. Kill it repeatedly; confirm crash-loop detection triggers.
 
 ---
 
-### Phase 8 — Greeter UI (atrium-greeter)
+### Phase 9 — Greeter UI (atrium-greeter)
 
 **Goal:** A GTK4 login window runs inside cage on each seat.
 
@@ -155,13 +184,13 @@ it restarts. Kill it repeatedly; confirm crash-loop detection triggers.
 - `greeter/ui-gtk4.c` — login window: username field, password field, submit
   button.
 - `greeter/meson.build` — build `atrium-greeter` linking against gtk4.
-- Replace the placeholder in Phase 7 with `atrium-greeter`.
+- Replace the placeholder in Phase 8 with `atrium-greeter`.
 
 **Verification:** Run `atrium`; confirm the login window appears on each seat.
 
 ---
 
-### Phase 9 — Greeter IPC and PAM Authentication
+### Phase 10 — Greeter IPC and PAM Authentication
 
 **Goal:** Credentials from the greeter are authenticated via PAM before a
 session is created.
@@ -173,14 +202,14 @@ session is created.
 - Daemon side: read credentials from the pipe, call auth, write result back;
   only call `CreateSession` on success.
 
-*Removes the hardcoded-username shortcut from Phase 5.*
+*Removes the hardcoded-username shortcut from Phase 5/6.*
 
 **Verification:** Enter valid credentials; confirm the compositor launches.
 Enter invalid credentials; confirm the greeter shows an error.
 
 ---
 
-### Phase 10 — System Integration
+### Phase 11 — System Integration
 
 **Goal:** atrium runs correctly as a production systemd service.
 
@@ -194,7 +223,7 @@ the unit and reboot; confirm it takes over at boot.
 
 ---
 
-### Phase 11 — Multiseat End-to-End
+### Phase 12 — Multiseat End-to-End
 
 **Goal:** Two independent seats run simultaneously with no interference.
 

@@ -1,5 +1,6 @@
 #include "session.h"
 #include "bus.h"
+#include "config.h"
 #include "log.h"
 
 #include <systemd/sd-login.h>
@@ -16,10 +17,17 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-/* SHORTCUT: username and compositor are hardcoded.  These are replaced by
- * greeter IPC + PAM authentication in Phases 8-9. */
-#define SESSION_USERNAME "testuser"
-#define COMPOSITOR       "sway"
+/* Look up the username configured for this seat in CONFIG_SEAT_USERS.
+ * Returns the username string, or NULL if the seat has no mapping. */
+static const char *seat_username(const char *seat_name)
+{
+    static const struct seat_user_config seat_users[] = CONFIG_SEAT_USERS;
+    for (int i = 0; seat_users[i].seat != NULL; i++) {
+        if (strcmp(seat_users[i].seat, seat_name) == 0)
+            return seat_users[i].username;
+    }
+    return NULL;
+}
 
 /* Poll sd_session_is_active() until logind marks the session active.
  * This reads /run/systemd/sessions/<id> directly — no D-Bus round-trip.
@@ -140,8 +148,13 @@ static _Noreturn void child_exec_compositor(const struct seat *s,
         _exit(1);
     }
 
-    execlp(COMPOSITOR, COMPOSITOR, (char *)NULL);
-    log_error("exec %s: %s", COMPOSITOR, strerror(errno));
+    /* Set the working directory to the user's home. Without this the
+     * compositor inherits the daemon's cwd, which is / under systemd. */
+    if (chdir(pw->pw_dir) < 0)
+        log_warn("chdir(%s): %s", pw->pw_dir, strerror(errno));
+
+    execlp(CONFIG_COMPOSITOR, CONFIG_COMPOSITOR, (char *)NULL);
+    log_error("exec %s: %s", CONFIG_COMPOSITOR, strerror(errno));
     _exit(1);
 }
 
@@ -168,14 +181,21 @@ int session_start(struct seat *s)
 {
     log_debug("starting session for seat %s", s->name);
 
+    /* Look up the username for this seat. */
+    const char *username = seat_username(s->name);
+    if (username == NULL) {
+        log_debug("%s: no user configured, skipping", s->name);
+        return -1;
+    }
+
     /* Look up the session user's credentials. */
     struct passwd pwbuf;
     struct passwd *pw = NULL;
     char buf[1024];
-    int r = getpwnam_r(SESSION_USERNAME, &pwbuf, buf, sizeof(buf), &pw);
+    int r = getpwnam_r(username, &pwbuf, buf, sizeof(buf), &pw);
     if (r != 0 || pw == NULL) {
         log_error("session_start: getpwnam_r(%s): %s",
-                SESSION_USERNAME, r != 0 ? strerror(r) : "user not found");
+                username, r != 0 ? strerror(r) : "user not found");
         return -1;
     }
 

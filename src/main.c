@@ -1,4 +1,5 @@
 #include "bus.h"
+#include "config.h"
 #include "event.h"
 #include "log.h"
 #include "seat.h"
@@ -55,7 +56,7 @@ static void on_signal(int fd, void *userdata)
                     log_info("%s: compositor exited, restarting in 5 s",
                             s->name);
                     session_stop(s);  /* close old logind session fifo */
-                    sleep(5); /* SHORTCUT */
+                    sleep(CONFIG_RESTART_DELAY); /* SHORTCUT */
                     session_start(s);
                     break;
                 }
@@ -105,7 +106,7 @@ int main(void)
      * SHORTCUT: sleep briefly to let logind finish processing udev seat
      * events on early boot.  Replaced by SeatNew/SeatRemoved signal
      * monitoring in Phase 6 (hotplug). */
-    sleep(2);
+    sleep(CONFIG_SEAT_ENUM_DELAY);
     log_debug("discovering seats...");
     if (bus_enumerate_seats() < 0)
         return EXIT_FAILURE;
