@@ -32,26 +32,12 @@ int vt_alloc(int *vtnr_out)
         return -1;
     }
 
-    /* Open the claimed VT to hold it for the lifetime of the session. */
-    char path[16];
-    snprintf(path, sizeof(path), "/dev/tty%d", vtnr);
-    int fd = open(path, O_RDWR | O_CLOEXEC | O_NOCTTY);
-    if (fd < 0) {
-        fprintf(stderr, "atrium: vt_alloc: open %s: %s\n",
-                path, strerror(errno));
-        return -1;
-    }
-
     *vtnr_out = vtnr;
-    return fd;
+    return 0;
 }
 
-void vt_release(int fd, int vtnr)
+void vt_release(int vtnr)
 {
-    /* Close the VT fd first; VT_DISALLOCATE will fail with EBUSY if any
-     * process still has the VT open. */
-    close(fd);
-
     /* Disallocate via /dev/tty0 so the kernel can reclaim the VT slot. */
     int tty0 = open("/dev/tty0", O_RDWR | O_CLOEXEC | O_NOCTTY);
     if (tty0 < 0) {

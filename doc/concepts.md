@@ -1,6 +1,6 @@
 ---
 Created: April 13, 2026
-Last Updated: April 14, 2026
+Last Updated: April 15, 2026
 ---
 
 # atrium — Concepts
@@ -458,20 +458,25 @@ ioctl(tty0_fd, VT_OPENQRY, &vtnr);  /* vtnr receives the free slot number */
 
 This does *not* allocate the slot by itself — `VT_OPENQRY` only queries. The
 slot is allocated lazily by the kernel the first time `/dev/ttyN` is opened.
-Therefore, the correct sequence to claim a VT is:
 
-1. Call `VT_OPENQRY` to find a free number `N`.
-2. Immediately open `/dev/ttyN` to trigger allocation and hold it open.
+atrium uses `VT_OPENQRY` solely to discover a free VT number. The VT number is
+then passed to logind's `CreateSession()` method (Phase 5), which is the
+authoritative binding of a VT to a session. logind tracks this assignment
+through the session lifecycle, so there is no need for atrium to hold
+`/dev/ttyN` open.
 
-Keeping the fd open is what prevents another process from racing in and claiming
-the same VT between our query and our use of the number.
+**Historical note:** Early versions of atrium held the VT fd open to "claim"
+the slot and prevent races. This approach was abandoned because:
+1. logind's `CreateSession()` is the true claim mechanism, not fd ownership.
+2. Holding the fd open kept the VT's line discipline active, causing dual
+   keyboard input issues (input routed to both the Wayland session and the
+   underlying text console).
 
-`VT_DISALLOCATE` reverses the process: it frees the virtual console struct,
+`VT_DISALLOCATE` reverses the allocation: it frees the virtual console struct,
 releasing the slot back to the pool. However, it requires `tty->count == 0` —
-no process may have the tty device open. Closing the fd first satisfies this
-condition, after which the kernel implicitly releases the slot anyway. In
-practice, `close(fd)` is sufficient; `VT_DISALLOCATE` is a belt-and-suspenders
-call.
+no process may have the tty device open. atrium calls `VT_DISALLOCATE` on
+shutdown to release the VT number, though in practice the kernel reclaims the
+slot automatically when all references are closed.
 
 ---
 
@@ -488,14 +493,13 @@ manipulate. The convention is to use **`/dev/tty0`** as the control fd:
 - VT management ioctls issued via `/dev/tty0` affect the VT number specified in
   the ioctl argument, not VT0 (which doesn't exist).
 
-Contrast with `/dev/ttyN` (N ≥ 1): opening this gives a fd tied to VT N. This
-fd is what you hold open to *claim* the VT (see above), but for management
-ioctls that need to refer to a VT by number, `/dev/tty0` is simpler because it
-doesn't require you to already have a specific VT open.
+Contrast with `/dev/ttyN` (N ≥ 1): opening this gives a fd tied to VT N.
+For management ioctls that need to refer to a VT by number, `/dev/tty0` is
+simpler because it doesn't require you to already have a specific VT open.
 
 atrium opens `/dev/tty0` for `VT_OPENQRY` and `VT_DISALLOCATE`, then closes it
-immediately after. The claimed VT fd (`/dev/ttyN`) is kept open for the lifetime
-of the session and stored in `struct seat`.
+immediately after. No VT-specific fd is held open — logind tracks the VT
+assignment internally once `CreateSession()` has bound the VT to a session.
 
 ---
 
@@ -531,14 +535,16 @@ every tty `open()` call.
 
 ### Two-layer kernel TTY state
 
-The `EBUSY` error from `VT_DISALLOCATE` (observed during Phase 4 testing) exposes
-an important distinction: the kernel tracks VT state at two independent layers.
+The `EBUSY` error from `VT_DISALLOCATE` (which may occur during shutdown)
+exposes an important distinction: the kernel tracks VT state at two independent
+layers.
 
 **Layer 1 — virtual console struct (`vc_cons[n].d`)**
 This is what `VT_OPENQRY` and `VT_DISALLOCATE` operate on. It represents whether
-the kernel has a live virtual console object for slot N. `close(fd)` — when fd
-is the last open reference to that vc — frees this struct. Once freed, the slot
-appears free to `VT_OPENQRY`.
+the kernel has a live virtual console object for slot N. When all references to
+a vc are closed (e.g. if a getty or compositor held `/dev/ttyN` open, then
+closed it), the kernel frees this struct and the slot appears free to
+`VT_OPENQRY`.
 
 **Layer 2 — tty device open count (`tty->count`)**
 This counts how many processes currently have `/dev/ttyN` open (for any reason).
@@ -547,14 +553,14 @@ to avoid freeing a vc struct that another process is still using.
 
 The two layers can be in seemingly contradictory states:
 
-- `VT_OPENQRY` reports the slot free (vc struct freed by `close(fd)`).
-- `VT_DISALLOCATE` returns `EBUSY` (a getty still has the tty device open).
+- `VT_OPENQRY` reports the slot free (vc struct freed).
+- `VT_DISALLOCATE` returns `EBUSY` (a process still has the tty device open).
 
-Both are correct. The getty opened `/dev/tty1` at boot and never closed it; it
-holds a tty reference but is not the vc allocator. `close(fd)` dropped the last
-vc reference, which freed the vc struct, restoring the slot to the free pool.
-`VT_DISALLOCATE` then has nothing to do and correctly refuses because the tty
-device is still in use.
+Both are correct. For example, a getty that opened `/dev/tty1` at boot holds a
+tty reference even if the associated vc struct has been freed. `VT_DISALLOCATE`
+correctly refuses because the tty device is still in use, even though the VT
+slot itself is available for reuse by another logind session.
 
-atrium silently ignores `EBUSY` from `VT_DISALLOCATE` because `close(fd)` is
-always sufficient to release the VT slot.
+atrium silently ignores `EBUSY` from `VT_DISALLOCATE` because the slot being
+available to `VT_OPENQRY` is sufficient — the kernel will reclaim resources as
+processes close their tty fds.

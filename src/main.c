@@ -79,8 +79,7 @@ int main(void)
         struct seat *s = seat_get(i);
         if (strcmp(s->name, "seat0") != 0)
             continue;
-        s->vt_fd = vt_alloc(&s->vtnr);
-        if (s->vt_fd < 0)
+        if (vt_alloc(&s->vtnr) < 0)
             return EXIT_FAILURE;
         fprintf(stderr, "atrium: seat0: allocated vt%d\n", s->vtnr);
         break;
@@ -94,8 +93,8 @@ int main(void)
     /* Release VT allocations. */
     for (int i = 0; i < seat_count(); i++) {
         struct seat *s = seat_get(i);
-        if (s->vt_fd >= 0)
-            vt_release(s->vt_fd, s->vtnr);
+        if (s->vtnr > 0)
+            vt_release(s->vtnr);
     }
 
     bus_close();

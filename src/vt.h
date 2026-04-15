@@ -11,10 +11,9 @@
  */
 
 /* Allocate the next free VT. On success, stores the VT number in *vtnr_out
- * and returns an open fd for /dev/ttyN (O_RDWR | O_CLOEXEC | O_NOCTTY).
- * Returns -1 on error (error is logged). */
+ * and returns 0. Returns -1 on error (error is logged). */
 int vt_alloc(int *vtnr_out);
 
-/* Release a VT previously allocated by vt_alloc(). Closes the fd and
- * disallocates the VT so the kernel can reclaim it. */
-void vt_release(int fd, int vtnr);
+/* Release a VT previously allocated by vt_alloc(). Disallocates the VT so
+ * the kernel can reclaim it. */
+void vt_release(int vtnr);
