@@ -1,0 +1,242 @@
+#include "session.h"
+#include "bus.h"
+#include "log.h"
+
+#include <systemd/sd-login.h>
+
+#include <errno.h>
+#include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+/* SHORTCUT: username and compositor are hardcoded.  These are replaced by
+ * greeter IPC + PAM authentication in Phases 8-9. */
+#define SESSION_USERNAME "testuser"
+#define COMPOSITOR       "sway"
+
+/* Poll sd_session_is_active() until logind marks the session active.
+ * This reads /run/systemd/sessions/<id> directly — no D-Bus round-trip.
+ * Returns 0 on success, -1 on error or timeout. */
+static int wait_session_active(const char *session_id)
+{
+    const int MAX_POLLS = 100;   /* 100 × 20 ms = 2 s ceiling */
+    const int POLL_US   = 20000; /* 20 ms */
+
+    for (int i = 0; i < MAX_POLLS; i++) {
+        int r = sd_session_is_active(session_id);
+        if (r > 0) {
+            log_info("session %s active (waited %d ms)", session_id, i * 20);
+            return 0;
+        }
+        if (r < 0) {
+            log_error("sd_session_is_active(%s): %s", session_id, strerror(-r));
+            return -1;
+        }
+        usleep(POLL_US);
+    }
+
+    log_error("session %s: timed out waiting for active state (2 s)", session_id);
+    return -1;
+}
+
+/* Configure the environment, drop privileges, and exec the compositor.
+ * Called from the child side of the fork after the sync pipe has signalled
+ * that the parent finished setting up the logind session.
+ * This function never returns. */
+static _Noreturn void child_exec_compositor(const struct seat *s,
+                                            const struct passwd *pw,
+                                            const char *runtime_dir)
+{
+    log_debug("%s: child preparing compositor (uid=%u gid=%u)",
+              s->name, (unsigned)pw->pw_uid, (unsigned)pw->pw_gid);
+    /* Reset the signal mask so the compositor can receive all signals
+     * normally.  fork() inherits the parent's blocked-signal mask, and
+     * exec() does NOT reset it. */
+    sigset_t empty_mask;
+    sigemptyset(&empty_mask);
+    sigprocmask(SIG_SETMASK, &empty_mask, NULL);
+
+    /* Clear display environment variables inherited from the parent.
+     * When running as a systemd service these are never set, so these
+     * calls are no-ops in production. When testing from a graphical
+     * terminal they prevent the compositor from trying to connect to
+     * the existing session's display. */
+    unsetenv("DISPLAY");
+    unsetenv("WAYLAND_DISPLAY");
+
+    /* Set session environment. XDG_RUNTIME_DIR is required by the
+     * compositor; the rest is informational. These are all values known
+     * before fork, so they are valid in the child's address space. */
+    setenv("XDG_SESSION_TYPE",  "wayland",        1);
+    setenv("XDG_SEAT",          s->name,          1);
+    setenv("XDG_RUNTIME_DIR",   runtime_dir,      1);
+    setenv("HOME",              pw->pw_dir,       1);
+    setenv("USER",              pw->pw_name,      1);
+    setenv("LOGNAME",           pw->pw_name,      1);
+    if (pw->pw_shell && pw->pw_shell[0] != '\0')
+        setenv("SHELL",         pw->pw_shell,     1);
+
+    if (s->vtnr > 0) {
+        char vtnr_str[8];
+        snprintf(vtnr_str, sizeof(vtnr_str), "%d", s->vtnr);
+        setenv("XDG_VTNR", vtnr_str, 1);
+    }
+
+    /* Drop root: supplementary groups, then gid, then uid. */
+    if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
+        log_error("initgroups: %s", strerror(errno));
+        _exit(1);
+    }
+    if (setgid(pw->pw_gid) < 0) {
+        log_error("setgid: %s", strerror(errno));
+        _exit(1);
+    }
+    if (setuid(pw->pw_uid) < 0) {
+        log_error("setuid: %s", strerror(errno));
+        _exit(1);
+    }
+
+    execlp(COMPOSITOR, COMPOSITOR, (char *)NULL);
+    log_error("exec %s: %s", COMPOSITOR, strerror(errno));
+    _exit(1);
+}
+
+int session_start(struct seat *s)
+{
+    log_debug("starting session for seat %s", s->name);
+
+    /* Look up the session user's credentials. */
+    struct passwd pwbuf;
+    struct passwd *pw = NULL;
+    char buf[1024];
+    int r = getpwnam_r(SESSION_USERNAME, &pwbuf, buf, sizeof(buf), &pw);
+    if (r != 0 || pw == NULL) {
+        log_error("session_start: getpwnam_r(%s): %s",
+                SESSION_USERNAME, r != 0 ? strerror(r) : "user not found");
+        return -1;
+    }
+
+    log_debug("%s: resolved user %s (uid=%u gid=%u)",
+              s->name, pw->pw_name, (unsigned)pw->pw_uid, (unsigned)pw->pw_gid);
+
+    /* Build the XDG_RUNTIME_DIR path before forking so the child can use it
+     * directly. The authoritative value comes from CreateSession's reply, but
+     * that runs in the parent after fork. Since logind always uses
+     * /run/user/<uid>, we can construct it here.
+     * SHORTCUT: When PAM-based sessions are added (Phase 9), consider passing
+     * session data from parent to child through the sync pipe instead. */
+    char runtime_dir[64];
+    snprintf(runtime_dir, sizeof(runtime_dir), "/run/user/%u",
+            (unsigned)pw->pw_uid);
+
+    /* Create a sync pipe to coordinate with the child. The child will block
+     * reading from this pipe until the parent has created the logind session
+     * and activated it. This ensures the compositor starts in the correct
+     * cgroup and with an active session. */
+    int sync_pipe[2];
+    if (pipe2(sync_pipe, O_CLOEXEC) < 0) {
+        log_error("%s: pipe: %s", s->name, strerror(errno));
+        return -1;
+    }
+
+    /* Fork the compositor. We fork *before* calling CreateSession so we can
+     * pass the child's PID to logind. This ensures the session cgroup contains
+     * the compositor process, not the display manager. */
+    pid_t pid = fork();
+    if (pid < 0) {
+        log_error("%s: fork: %s", s->name, strerror(errno));
+        close(sync_pipe[0]);
+        close(sync_pipe[1]);
+        return -1;
+    }
+
+    if (pid == 0) {
+        /* ---- child ---- */
+
+        /* Block until the parent signals us by closing the write end of the
+         * pipe (which causes read to return 0).  This ensures CreateSession
+         * and ActivateSession have completed before we proceed. */
+        close(sync_pipe[1]);
+        char dummy;
+        ssize_t n = read(sync_pipe[0], &dummy, 1);
+        close(sync_pipe[0]);
+        if (n < 0) {
+            log_error("sync pipe read: %s", strerror(errno));
+            _exit(1);
+        }
+
+        child_exec_compositor(s, pw, runtime_dir);
+        /* unreachable */
+    }
+
+    /* ---- parent ---- */
+
+    /* Close the read end; we only write. */
+    close(sync_pipe[0]);
+
+    /* Create a logind session for this seat, passing the child's PID so the
+     * session cgroup contains the compositor process. */
+    if (bus_create_session(s->name, (uint32_t)s->vtnr, pw->pw_uid, pid,
+                           s->session_id,     sizeof(s->session_id),
+                           s->session_object, sizeof(s->session_object),
+                           s->runtime_path,   sizeof(s->runtime_path),
+                           &s->session_fifo_fd) < 0) {
+        close(sync_pipe[1]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        return -1;
+    }
+
+    log_info("%s: session %s created (runtime %s)",
+            s->name, s->session_id, s->runtime_path);
+
+    s->compositor_pid = pid;
+    log_debug("forked compositor process pid=%d for seat %s", pid, s->name);
+
+    /* Activate the session.  For seat0, logind needs an explicit
+     * ActivateSession call which triggers an internal chvt.  Other seats
+     * become active automatically when they have exactly one session. */
+    if (strcmp(s->name, "seat0") == 0)
+        bus_activate_session(s->session_object);
+
+    /* Wait until logind marks the session active.  Without this the
+     * compositor can race logind and get ENODEV from TakeDevice. */
+    if (wait_session_active(s->session_id) < 0) {
+        log_error("%s: session never became active; tearing down", s->name);
+        close(sync_pipe[1]);
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        return -1;
+    }
+
+    /* Signal the child to proceed by closing the write end. The child will
+     * unblock from its read() and continue with privilege drop and exec. */
+    close(sync_pipe[1]);
+
+    log_debug("%s: sync pipe closed, child released", s->name);
+    return 0;
+}
+
+void session_stop(struct seat *s)
+{
+    log_debug("session_stop for seat %s (child already reaped)", s->name);
+
+    if (s->session_fifo_fd >= 0) {
+        log_debug("closing session fifo fd=%d for seat %s",
+                  s->session_fifo_fd, s->name);
+        close(s->session_fifo_fd);
+        s->session_fifo_fd = -1;
+    }
+
+    s->compositor_pid    = 0;
+    s->session_id[0]     = '\0';
+    s->session_object[0] = '\0';
+    s->runtime_path[0]   = '\0';
+}

@@ -564,3 +564,291 @@ slot itself is available for reuse by another logind session.
 atrium silently ignores `EBUSY` from `VT_DISALLOCATE` because the slot being
 available to `VT_OPENQRY` is sufficient — the kernel will reclaim resources as
 processes close their tty fds.
+
+---
+
+## Phase 5 — Session Launch
+
+Phase 5 forks a compositor process for each seat, creates a logind session via
+D-Bus, and manages the compositor lifecycle. This phase introduces several
+fundamental systems programming concepts: process creation with `fork`/`exec`,
+inter-process synchronization pipes, privilege dropping, and logind session
+management.
+
+### fork and exec
+
+Unix process creation is a two-step operation:
+
+1. **`fork()`** creates an exact copy of the calling process. The parent gets
+   the child's PID as the return value; the child gets 0.
+2. **`exec()`** (or one of its variants: `execlp`, `execve`, etc.) replaces the
+   current process image with a new program. The PID does not change.
+
+After `fork()`, parent and child share the same memory through *copy-on-write*
+(COW): the kernel maps the same physical pages into both processes but marks
+them read-only. The first write to any page triggers a page fault, and the
+kernel creates a private copy for the writer. This means:
+
+- The child *can* read anything the parent had in memory at the time of fork.
+- The child *cannot* see writes the parent makes after fork, and vice versa.
+
+This COW property is critical for atrium's design. The parent needs to call
+`CreateSession` (which populates session_id, runtime_path, etc.) *after* fork,
+but those writes are invisible to the child. Values the child needs must either
+be computed before fork or communicated through an explicit IPC mechanism (like
+the sync pipe).
+
+#### `_exit()` vs `exit()` in the child
+
+After `fork()`, the child should call `_exit()` (not `exit()`) if it needs to
+abort before calling `exec()`. The difference:
+
+- `exit()` runs `atexit` handlers and flushes stdio buffers. Since the child
+  inherited the parent's stdio buffers, flushing them would duplicate any
+  buffered output.
+- `_exit()` terminates immediately without running cleanup handlers.
+
+After a successful `exec()`, this distinction is moot — `exec` replaces the
+entire process image including stdio buffers.
+
+#### `_Noreturn`
+
+C11 provides the `_Noreturn` keyword (or `[[noreturn]]` in C23) to tell the
+compiler that a function never returns to its caller — it always terminates via
+`_exit()`, `exec()`, `abort()`, or an infinite loop. The compiler uses this to:
+
+- Suppress "control reaches end of non-void function" warnings.
+- Optimize the caller by not generating code to save/restore registers.
+- Warn if the function *could* return (e.g. a missing `_exit()` after a failed
+  `exec()`).
+
+atrium uses `_Noreturn` for `child_exec_compositor()`, which either execs the
+compositor or calls `_exit()`.
+
+---
+
+### Synchronization pipe
+
+When a parent process needs to coordinate with a forked child, a pipe provides
+a simple and reliable mechanism. A pipe is a pair of file descriptors: one for
+reading, one for writing. Data written to the write end can be read from the
+read end.
+
+atrium uses a *sync pipe* to make the child wait until the parent has finished
+setting up the logind session:
+
+```
+Parent                              Child
+──────                              ─────
+fork()                              fork()
+close(read_end)                     close(write_end)
+CreateSession(child_pid)            read(read_end)  ← blocks
+ActivateSession()                       ...
+wait_session_active()                   ...
+udevadm settle                          ...
+close(write_end)  ─── EOF ───→      read returns 0
+                                    exec compositor
+```
+
+When the parent closes the write end, the child's `read()` returns 0 (EOF).
+This is the signal to proceed. If the parent dies unexpectedly, `read()` also
+returns 0 (the kernel closes the write end), so the child doesn't hang forever.
+
+#### `pipe2` and `O_CLOEXEC`
+
+`pipe2()` is a Linux extension that creates a pipe and atomically sets flags on
+both file descriptors. The critical flag is `O_CLOEXEC` (*close-on-exec*):
+
+```c
+int sync_pipe[2];
+pipe2(sync_pipe, O_CLOEXEC);
+```
+
+Without `O_CLOEXEC`, the pipe fds would be inherited by any process the child
+`exec`s, and they would remain open in the compositor process. The compositor
+has no use for them, and leaked fds can cause subtle resource exhaustion bugs.
+
+`O_CLOEXEC` tells the kernel to automatically close these fds when `exec()` is
+called. The fds are still available in the child between `fork()` and `exec()`
+(where they're needed for synchronization), but they do not leak into the
+compositor.
+
+The older `pipe()` call does not accept flags. Setting `O_CLOEXEC` after
+`pipe()` via `fcntl()` introduces a race window where another thread could
+`fork()+exec()` and inherit the unprotected fd. `pipe2()` eliminates this race.
+
+#### `F_DUPFD_CLOEXEC`
+
+Similarly, when duplicating a file descriptor (e.g. to preserve the logind
+session fifo fd after `sd_bus_message_unref`), `fcntl(fd, F_DUPFD_CLOEXEC, 0)`
+is preferred over `dup(fd)`. The `dup` call creates a new fd without
+`O_CLOEXEC`, meaning it would leak into child processes (the compositor, or
+even `udevadm settle`). `F_DUPFD_CLOEXEC` atomically duplicates the fd and sets
+the close-on-exec flag.
+
+---
+
+### logind sessions and `CreateSession`
+
+logind (part of systemd) manages user sessions. Each session represents a
+user's login on a specific seat. logind tracks:
+
+- Which user is logged in on which seat.
+- Which VT the session occupies (seat0 only).
+- Whether the session is active (foreground) or inactive (background).
+- Which cgroup scope the session's processes run in.
+
+#### Session leader PID
+
+`CreateSession` accepts a `pid` parameter specifying the *session leader* — the
+process logind considers the main process of the session. This affects:
+
+1. **Cgroup scoping.** logind moves the session leader (and its children) into
+   a dedicated cgroup scope (`session-cXX.scope`). If the display manager's PID
+   is passed instead of the compositor's, the display manager itself gets moved
+   into the session scope, leaving its original service scope. This breaks
+   systemd's ability to manage the display manager (e.g. `systemctl stop` may
+   not reach it because it's no longer in the expected cgroup).
+
+2. **Process tracking.** logind monitors the session leader to detect session
+   end. When the leader exits, logind may clean up the session.
+
+atrium forks the compositor *before* calling `CreateSession`, then passes the
+child's PID. This ensures the compositor (not the daemon) is the session leader.
+
+#### Session activation
+
+After creating a session, it must be *activated* to become the foreground
+session on its seat. For seat0, this requires an explicit D-Bus call
+(`ActivateSession`) which triggers an internal VT switch in logind. Other seats
+become active automatically when they have exactly one session.
+
+However, `ActivateSession` is asynchronous — it returns before the session is
+fully active. The compositor cannot safely call `TakeDevice` (to open DRM/input
+devices) until the session is actually active. atrium polls
+`sd_session_is_active()` (which reads `/run/systemd/sessions/<id>` directly,
+no D-Bus round-trip) every 20 ms for up to 2 seconds.
+
+#### udevadm settle
+
+Even after the session is active, there is a second race: logind triggers udev
+rules to update device ACLs (e.g. granting the session user access to
+`/dev/dri/card0`), but these rules execute asynchronously. `udevadm settle`
+blocks until the udev event queue is drained, ensuring ACLs are in place before
+the compositor opens devices.
+
+#### Session fifo
+
+`CreateSession` returns a file descriptor to a logind-managed FIFO. Keeping
+this fd open tells logind the session is alive. Closing it signals session end.
+This is the mechanism for clean session teardown — when atrium closes the fifo
+(in `session_cleanup`), logind removes the session.
+
+---
+
+### Privilege dropping
+
+atrium runs as root (it needs root to call `CreateSession`, open VTs, etc.).
+The compositor should *not* run as root — it runs as the session user.
+
+Privilege dropping is the sequence of system calls that transitions a process
+from root to a regular user. The order matters:
+
+```c
+initgroups(username, primary_gid);  /* 1. set supplementary groups */
+setresgid(gid, gid, gid);          /* 2. set group ID (all three slots) */
+setresuid(uid, uid, uid);           /* 3. set user ID (all three slots) */
+```
+
+The sequence must be: supplementary groups first, then GID, then UID. Once the
+UID is dropped, the process can no longer call `setresgid` or `initgroups`
+(those require root privileges).
+
+#### `setresuid` / `setresgid` vs `setuid` / `setgid`
+
+Each process has three user IDs:
+
+| ID | Purpose |
+|---|---|
+| **Real UID** | The user who owns the process. |
+| **Effective UID** | The UID used for permission checks. |
+| **Saved set-UID** | A copy preserved across `exec()`. Can be used to re-escalate. |
+
+`setuid(uid)` has complex semantics that depend on whether the process has
+`CAP_SETUID`. For a root process, `setuid(uid)` sets all three IDs — but this
+behavior is an implementation detail, not a guarantee across all contexts.
+
+`setresuid(ruid, euid, suid)` explicitly sets all three IDs in one call. This
+is unambiguous and preferred for security-critical code.
+
+#### Re-escalation check
+
+After dropping privileges, atrium verifies the drop was effective:
+
+```c
+if (setresuid(0, 0, 0) == 0) {
+    /* CRITICAL: this should fail with EPERM */
+    _exit(1);
+}
+```
+
+If `setresuid(0, 0, 0)` succeeds, the saved set-UID was not properly cleared,
+and the process could re-escalate to root. This defence-in-depth check catches
+such cases.
+
+---
+
+### Signal mask inheritance
+
+`fork()` inherits the parent's signal mask. `exec()` does *not* reset it. This
+means any signals blocked in the parent (e.g. `SIGTERM` and `SIGCHLD` for
+`signalfd`) remain blocked in the child after exec.
+
+For a compositor, this is a problem:
+
+- Blocked `SIGTERM` means `kill <compositor>` has no effect (the signal pends
+  indefinitely).
+- Blocked `SIGCHLD` means the compositor cannot reap its own children (e.g.
+  XWayland), leading to zombie processes.
+
+The child must unblock these signals before exec:
+
+```c
+sigset_t parent_mask;
+sigemptyset(&parent_mask);
+sigaddset(&parent_mask, SIGTERM);
+sigaddset(&parent_mask, SIGCHLD);
+sigprocmask(SIG_UNBLOCK, &parent_mask, NULL);
+```
+
+`SIG_UNBLOCK` removes only the specified signals from the mask, preserving any
+other mask state. This is slightly more precise than `SIG_SETMASK` with an
+empty set, which would clear the entire mask (overwriting any signals that might
+have been blocked by other code).
+
+---
+
+### Session lifecycle: stop vs shutdown
+
+atrium distinguishes two paths for ending a session:
+
+**`session_stop()`** — called from the SIGCHLD handler after the child has
+already exited and been reaped by `waitpid`. No signal is sent (the compositor
+is already dead). The function just closes the logind fifo and clears state.
+
+**`session_shutdown()`** — called during daemon-initiated teardown (e.g. atrium
+receives SIGTERM and needs to stop all compositors). The compositor may still be
+running, so this function:
+
+1. Sends `SIGTERM` to the compositor.
+2. Polls `waitpid(pid, &status, WNOHANG)` every 100 ms for up to 5 seconds.
+3. If the compositor still hasn't exited, sends `SIGKILL` (which cannot be
+   caught or ignored).
+
+The `WNOHANG` flag makes `waitpid` non-blocking: it returns 0 if the child
+hasn't exited yet, positive if the child has been reaped, or -1 with
+`errno == ECHILD` if the child was already reaped (e.g. by the SIGCHLD handler).
+
+This timeout-and-escalate pattern is standard in daemon code. Without it, a
+compositor that ignores `SIGTERM` would cause the daemon's shutdown to hang
+indefinitely.

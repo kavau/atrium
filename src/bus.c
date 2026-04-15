@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <systemd/sd-bus.h>
 
 static sd_bus *g_bus = NULL;
@@ -78,6 +79,133 @@ int bus_enumerate_seats(void)
 cleanup:
     sd_bus_error_free(&error);
     sd_bus_message_unref(reply);
+    return (r < 0) ? -1 : 0;
+}
+
+int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,
+                       char *session_id_out, size_t session_id_size,
+                       char *obj_out, size_t obj_size,
+                       char *runtime_out, size_t runtime_size,
+                       int *fifo_fd_out)
+{
+    assert(g_bus);
+    /* Non-seat0 seats must have vtnr == 0; seat0 must have vtnr > 0. */
+    assert(strcmp(seat_id, "seat0") != 0 || vtnr > 0);
+    assert(strcmp(seat_id, "seat0") == 0 || vtnr == 0);
+
+    log_debug("creating session for seat=%s vtnr=%u uid=%u pid=%d", seat_id, vtnr, uid, (int)pid);
+
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *msg = NULL;
+    sd_bus_message *reply = NULL;
+
+    /* For seat0 pass the tty device path; other seats leave it empty.
+     * VT numbers are 1-63 in practice; 32 bytes is ample. */
+    char tty[32] = "";
+    if (vtnr > 0)
+        snprintf(tty, sizeof(tty), "/dev/tty%u", vtnr);
+
+    int r = sd_bus_message_new_method_call(g_bus, &msg,
+            "org.freedesktop.login1",
+            "/org/freedesktop/login1",
+            "org.freedesktop.login1.Manager",
+            "CreateSession");
+    if (r < 0) {
+        log_error("CreateSession (message): %s", strerror(-r));
+        goto cleanup;
+    }
+
+    /* Signature: u u s s s s s u s s b s s a(sv)
+     *            uid pid service type class desktop seat vtnr tty display
+     *            remote remote_user remote_host properties */
+    r = sd_bus_message_append(msg, "uusssssussbss",
+            (uint32_t)uid,
+            (uint32_t)pid,  /* pid of the session leader (compositor process) */
+            "atrium",       /* service name */
+            "wayland",      /* session type */
+            "user",         /* session class */
+            /* SHORTCUT: hardcoded for easy loginctl debugging; will be
+             * derived from the session .desktop file in a later phase. */
+            "atrium-dev",   /* desktop */
+            seat_id,        /* seat */
+            vtnr,           /* vtnr */
+            tty,            /* tty device */
+            "",             /* display */
+            0,              /* remote = false */
+            "",             /* remote_user */
+            "");            /* remote_host */
+    if (r < 0) {
+        log_error("CreateSession (args): %s", strerror(-r));
+        goto cleanup;
+    }
+
+    /* Empty properties array. */
+    r = sd_bus_message_open_container(msg, 'a', "(sv)");
+    if (r >= 0)
+        r = sd_bus_message_close_container(msg);
+    if (r < 0) {
+        log_error("CreateSession (props): %s", strerror(-r));
+        goto cleanup;
+    }
+
+    r = sd_bus_call(g_bus, msg, 0, &error, &reply);
+    if (r < 0) {
+        log_error("CreateSession: %s",
+                error.message ? error.message : strerror(-r));
+        goto cleanup;
+    }
+
+    /* Reply signature: soshusub */
+    const char *session_id, *obj_path, *runtime_path;
+    int fifo_fd;
+    uint32_t ret_uid, ret_vtnr;
+    const char *ret_seat;
+    int existing;
+    r = sd_bus_message_read(reply, "soshusub",
+            &session_id, &obj_path, &runtime_path, &fifo_fd,
+            &ret_uid, &ret_seat, &ret_vtnr, &existing);
+    if (r < 0) {
+        log_error("CreateSession (reply): %s", strerror(-r));
+        goto cleanup;
+    }
+
+    log_debug("session created: id=%s object=%s", session_id, obj_path);
+
+    snprintf(session_id_out, session_id_size, "%s", session_id);
+    snprintf(obj_out, obj_size, "%s", obj_path);
+    snprintf(runtime_out, runtime_size, "%s", runtime_path);
+
+    /* dup the fifo fd so it survives sd_bus_message_unref below. */
+    *fifo_fd_out = dup(fifo_fd);
+    if (*fifo_fd_out < 0) {
+        log_error("CreateSession: dup fifo: %s", strerror(errno));
+        r = -errno;
+    }
+
+cleanup:
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(msg);
+    sd_bus_message_unref(reply);
+    return (r < 0) ? -1 : 0;
+}
+
+int bus_activate_session(const char *session_object)
+{
+    assert(g_bus);
+
+    log_debug("activating session %s", session_object);
+
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    int r = sd_bus_call_method(g_bus,
+            "org.freedesktop.login1",
+            session_object,
+            "org.freedesktop.login1.Session",
+            "Activate",
+            &error, NULL, "");
+    if (r < 0)
+        log_error("ActivateSession: %s",
+                error.message ? error.message : strerror(-r));
+    sd_bus_error_free(&error);
     return (r < 0) ? -1 : 0;
 }
 

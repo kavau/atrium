@@ -2,6 +2,7 @@
 #include "event.h"
 #include "log.h"
 #include "seat.h"
+#include "session.h"
 #include "vt.h"
 
 #include <assert.h>
@@ -11,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/signalfd.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 /* Event loop callback for the signalfd. Reads one signal and dispatches on
@@ -33,7 +35,34 @@ static void on_signal(int fd, void *userdata)
         event_loop_quit();
         break;
     case SIGCHLD:
-        /* Handled in a later phase. */
+        /* Reap all exited children, identify which seat lost its compositor,
+         * wait briefly, then restart it.
+         * SHORTCUT: usleep blocks the event loop.  Phase 7 replaces this
+         * with timerfd-based crash-loop detection. */
+        {
+            int wstatus;
+            pid_t pid;
+            log_debug("SIGCHLD received");
+            while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
+                log_debug("reaped pid %d", (int)pid);
+                int matched = 0;
+                for (int i = 0; i < seat_count(); i++) {
+                    struct seat *s = seat_get(i);
+                    if (s->compositor_pid != pid)
+                        continue;
+                    matched = 1;
+                    s->compositor_pid = 0;
+                    log_info("%s: compositor exited, restarting in 5 s",
+                            s->name);
+                    session_stop(s);  /* close old logind session fifo */
+                    sleep(5); /* SHORTCUT */
+                    session_start(s);
+                    break;
+                }
+                if (!matched)
+                    log_warn("reaped unknown pid %d", (int)pid);
+            }
+        }
         break;
     default:
         assert(0 && "unexpected signal");
@@ -91,6 +120,14 @@ int main(void)
         break;
     }
 
+    /* Start a compositor session on every seat. Failure on one seat is
+     * logged but does not abort — the other seats continue running. */
+    for (int i = 0; i < seat_count(); i++) {
+        if (session_start(seat_get(i)) < 0)
+            log_warn("%s: session_start failed, skipping",
+                    seat_get(i)->name);
+    }
+
     /* Run until event_loop_quit() is called. */
     log_debug("entering main event loop");
     event_loop_run();
@@ -98,6 +135,10 @@ int main(void)
     /* Clean up. On early-exit error paths above, the process terminates and
      * the kernel releases all resources, so explicit cleanup is skipped. */
     log_debug("beginning cleanup sequence");
+    /* Shut down compositor sessions. */
+    for (int i = 0; i < seat_count(); i++)
+        session_stop(seat_get(i));
+
     /* Release VT allocations. */
     int vt_count = 0;
     for (int i = 0; i < seat_count(); i++) {
