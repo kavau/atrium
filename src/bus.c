@@ -1,5 +1,6 @@
 #include "bus.h"
 #include "event.h"
+#include "log.h"
 #include "seat.h"
 
 #include <assert.h>
@@ -19,18 +20,23 @@ static void on_bus(int fd, void *userdata)
     (void)fd;
     (void)userdata;
 
-    int r;
+    int r, count = 0;
     do {
         r = sd_bus_process(g_bus, NULL);
+        if (r > 0) count++;
     } while (r > 0);
 
+    if (count > 0)
+        log_debug("processed %d bus messages", count);
+
     if (r < 0)
-        fprintf(stderr, "atrium: sd_bus_process: %s\n", strerror(-r));
+        log_error("sd_bus_process: %s", strerror(-r));
 }
 
 int bus_enumerate_seats(void)
 {
     assert(g_bus);
+    log_debug("enumerating seats via ListSeats");
 
     sd_bus_error error = SD_BUS_ERROR_NULL;
     sd_bus_message *reply = NULL;
@@ -43,14 +49,14 @@ int bus_enumerate_seats(void)
             &reply,
             "");
     if (r < 0) {
-        fprintf(stderr, "atrium: ListSeats: %s\n", error.message);
+        log_error("ListSeats: %s", error.message);
         goto cleanup;
     }
 
     /* Reply type is a(so): array of (seat-id, object-path) structs. */
     r = sd_bus_message_enter_container(reply, 'a', "(so)");
     if (r < 0) {
-        fprintf(stderr, "atrium: ListSeats reply: %s\n", strerror(-r));
+        log_error("ListSeats reply: %s", strerror(-r));
         goto cleanup;
     }
 
@@ -58,13 +64,16 @@ int bus_enumerate_seats(void)
         const char *seat_id = NULL, *object_path = NULL;
         r = sd_bus_message_read(reply, "so", &seat_id, &object_path);
         if (r < 0) {
-            fprintf(stderr, "atrium: ListSeats read: %s\n", strerror(-r));
+            log_error("ListSeats read: %s", strerror(-r));
             break;
         }
         seat_add(seat_id);
         sd_bus_message_exit_container(reply);
     }
     sd_bus_message_exit_container(reply);
+
+    if (r >= 0)
+        log_debug("enumeration complete, found %d seats", seat_count());
 
 cleanup:
     sd_bus_error_free(&error);
@@ -76,7 +85,7 @@ int bus_open(void)
 {
     int r = sd_bus_open_system(&g_bus);
     if (r < 0) {
-        fprintf(stderr, "atrium: sd_bus_open_system: %s\n", strerror(-r));
+        log_error("sd_bus_open_system: %s", strerror(-r));
         return -1;
     }
 
@@ -88,6 +97,7 @@ int bus_open(void)
         return -1;
     }
 
+    log_debug("system bus opened, fd=%d", sd_bus_get_fd(g_bus));
     return 0;
 }
 
@@ -95,6 +105,7 @@ void bus_close(void)
 {
     if (!g_bus)
         return;
+    log_debug("closing system bus");
     event_remove(sd_bus_get_fd(g_bus));
     sd_bus_unref(g_bus);
     g_bus = NULL;

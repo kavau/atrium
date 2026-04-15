@@ -1,5 +1,7 @@
 #include "event.h"
 
+#include "log.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <poll.h>
@@ -31,7 +33,7 @@ int event_add(int fd, event_cb cb, void *userdata)
     assert(cb != NULL);
 
     if (g_num_entries >= MAX_FDS) {
-        fprintf(stderr, "atrium: event_add: fd limit (%d) reached, cannot register fd %d\n",
+        log_error("event_add: fd limit (%d) reached, cannot register fd %d",
                 MAX_FDS, fd);
         return -1;
     }
@@ -39,6 +41,7 @@ int event_add(int fd, event_cb cb, void *userdata)
     g_fds[g_num_entries]     = (struct pollfd){ .fd = fd, .events = POLLIN };
     g_entries[g_num_entries] = (struct fd_entry){ .cb = cb, .userdata = userdata };
     g_num_entries++;
+    log_debug("registered fd %d (total: %d)", fd, g_num_entries);
     return 0;
 }
 
@@ -53,6 +56,7 @@ void event_remove(int fd)
             g_num_entries--;
             g_fds[i]     = g_fds[g_num_entries];
             g_entries[i] = g_entries[g_num_entries];
+            log_debug("removed fd %d (total: %d)", fd, g_num_entries);
             return;
         }
     }
@@ -61,19 +65,22 @@ void event_remove(int fd)
 void event_loop_run(void)
 {
     g_running = 1;
+    log_debug("entering event loop");
 
     while (g_running) {
         int n = poll(g_fds, g_num_entries, -1);
         if (n < 0) {
+            log_debug("poll returned %d ready fds", n);
             /* EINTR means poll() was interrupted by a signal before any fd
              * became ready. With signalfd we've already blocked all signals
              * via sigprocmask, so this shouldn't happen in normal operation,
              * but it's harmless to retry. */
             if (errno == EINTR)
                 continue;
-            fprintf(stderr, "atrium: poll: %s\n", strerror(errno));
+            log_error("poll: %s", strerror(errno));
             break;
         }
+        log_debug("poll returned %d ready fds", n);
         /*
          * Callbacks must not call event_remove() on the fd they are currently
          * handling. Removal swaps the removed slot with the tail entry; if that
@@ -82,13 +89,16 @@ void event_loop_run(void)
          * fds during teardown, never inside a read-event handler.
          */
         for (int i = 0; i < g_num_entries; i++) {
-            if (g_fds[i].revents & POLLIN)
+            if (g_fds[i].revents & POLLIN) {
+                log_debug("dispatching fd %d", g_fds[i].fd);
                 g_entries[i].cb(g_fds[i].fd, g_entries[i].userdata);
+            }
         }
     }
 }
 
 void event_loop_quit(void)
 {
+    log_debug("event loop quit requested");
     g_running = 0;
 }

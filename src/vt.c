@@ -1,5 +1,7 @@
 #include "vt.h"
 
+#include "log.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/vt.h>
@@ -14,35 +16,35 @@ int vt_alloc(int *vtnr_out)
      * next free (unallocated) VT. */
     int tty0 = open("/dev/tty0", O_RDWR | O_CLOEXEC | O_NOCTTY);
     if (tty0 < 0) {
-        fprintf(stderr, "atrium: vt_alloc: open /dev/tty0: %s\n",
-                strerror(errno));
+        log_error("vt_alloc: open /dev/tty0: %s", strerror(errno));
         return -1;
     }
 
     int vtnr = -1;
     if (ioctl(tty0, VT_OPENQRY, &vtnr) < 0) {
-        fprintf(stderr, "atrium: vt_alloc: VT_OPENQRY: %s\n", strerror(errno));
+        log_error("vt_alloc: VT_OPENQRY: %s", strerror(errno));
         close(tty0);
         return -1;
     }
     close(tty0);
 
     if (vtnr <= 0) {
-        fprintf(stderr, "atrium: vt_alloc: no free VTs available\n");
+        log_error("vt_alloc: no free VTs available");
         return -1;
     }
 
     *vtnr_out = vtnr;
+    log_debug("allocated vt%d", vtnr);
     return 0;
 }
 
 void vt_release(int vtnr)
 {
+    log_debug("releasing vt%d", vtnr);
     /* Disallocate via /dev/tty0 so the kernel can reclaim the VT slot. */
     int tty0 = open("/dev/tty0", O_RDWR | O_CLOEXEC | O_NOCTTY);
     if (tty0 < 0) {
-        fprintf(stderr, "atrium: vt_release: open /dev/tty0: %s\n",
-                strerror(errno));
+        log_error("vt_release: open /dev/tty0: %s", strerror(errno));
         return;
     }
     /* EBUSY means another process (e.g. a getty) still has the tty device
@@ -50,7 +52,6 @@ void vt_release(int vtnr)
      * struct, which is what VT_OPENQRY watches. The tty open-count is
      * independent and does not prevent the VT slot from being reused. */
     if (ioctl(tty0, VT_DISALLOCATE, vtnr) < 0 && errno != EBUSY)
-        fprintf(stderr, "atrium: vt_release: VT_DISALLOCATE vt%d: %s\n",
-                vtnr, strerror(errno));
+        log_error("vt_release: VT_DISALLOCATE vt%d: %s", vtnr, strerror(errno));
     close(tty0);
 }

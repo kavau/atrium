@@ -9,6 +9,11 @@ project('atrium', 'c',
 
 add_project_arguments('-D_GNU_SOURCE', language: 'c')
 
+# Enable debug logging for debug and debugoptimized builds.
+if get_option('buildtype').startswith('debug')
+  add_project_arguments('-DATRIUM_DEBUG', language: 'c')
+endif
+
 # Dependencies — declared here, consumed by subdirectories.
 dep_libsystemd = dependency('libsystemd')
 dep_libpam     = dependency('pam')
