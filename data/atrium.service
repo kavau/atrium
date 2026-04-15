@@ -1,0 +1,12 @@
+[Unit]
+Description=Atrium Display Manager
+After=systemd-logind.service
+Requires=systemd-logind.service
+
+[Service]
+ExecStart=/usr/local/bin/atrium
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+Alias=display-manager.service

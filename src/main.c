@@ -101,7 +101,11 @@ int main(void)
         return EXIT_FAILURE;
     log_debug("bus connection established");
 
-    /* Enumerate seats via logind. */
+    /* Enumerate seats via logind.
+     * SHORTCUT: sleep briefly to let logind finish processing udev seat
+     * events on early boot.  Replaced by SeatNew/SeatRemoved signal
+     * monitoring in Phase 6 (hotplug). */
+    sleep(2);
     log_debug("discovering seats...");
     if (bus_enumerate_seats() < 0)
         return EXIT_FAILURE;

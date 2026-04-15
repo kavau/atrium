@@ -20,3 +20,8 @@ dep_libpam     = dependency('pam')
 dep_gtk4       = dependency('gtk4')
 
 subdir('src')
+
+# Install the systemd service unit.
+install_data('data/atrium.service',
+  install_dir: '/usr/lib/systemd/system',
+)

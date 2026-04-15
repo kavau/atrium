@@ -67,16 +67,12 @@ EOF
 
 if [[ $INSTALL -eq 1 ]]; then
     echo "==> Installing on $HOST"
-    ssh "$HOST" bash <<EOF
-set -euo pipefail
-cd $DEST
-sudo ninja -C build install
-EOF
+    ssh -tt "$HOST" "cd $DEST && sudo ninja -C build install"
 fi
 
 if [[ $RESTART -eq 1 ]]; then
     echo "==> Restarting atrium on $HOST"
-    ssh "$HOST" sudo systemctl restart atrium
+    ssh -t "$HOST" sudo systemctl restart atrium
 fi
 
 echo "==> Done"
