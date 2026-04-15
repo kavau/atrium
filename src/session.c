@@ -110,14 +110,24 @@ static _Noreturn void child_exec_compositor(const struct seat *s,
     /* Set session environment. XDG_RUNTIME_DIR is required by the
      * compositor; the rest is informational. These are all values known
      * before fork, so they are valid in the child's address space. */
-    setenv("XDG_SESSION_TYPE",  "wayland",        1);
-    setenv("XDG_SEAT",          s->name,          1);
-    setenv("XDG_RUNTIME_DIR",   runtime_dir,      1);
+    setenv("XDG_SESSION_TYPE",    "wayland",          1);
+    setenv("XDG_SESSION_DESKTOP", CONFIG_DESKTOP_NAME, 1);
+    setenv("XDG_CURRENT_DESKTOP", CONFIG_DESKTOP_NAME, 1);
+    setenv("XDG_SEAT",            s->name,             1);
+    setenv("XDG_RUNTIME_DIR",     runtime_dir,         1);
     setenv("HOME",              pw->pw_dir,       1);
     setenv("USER",              pw->pw_name,      1);
     setenv("LOGNAME",           pw->pw_name,      1);
     if (pw->pw_shell && pw->pw_shell[0] != '\0')
         setenv("SHELL",         pw->pw_shell,     1);
+
+    /* Set the D-Bus session bus address. On systemd systems the user bus
+     * socket lives at /run/user/<uid>/bus.  Most libraries auto-detect this,
+     * but some applications check the environment variable explicitly. */
+    char dbus_addr[96];
+    snprintf(dbus_addr, sizeof(dbus_addr),
+             "unix:path=/run/user/%u/bus", (unsigned)pw->pw_uid);
+    setenv("DBUS_SESSION_BUS_ADDRESS", dbus_addr, 1);
 
     if (s->vtnr > 0) {
         char vtnr_str[8];
@@ -153,8 +163,16 @@ static _Noreturn void child_exec_compositor(const struct seat *s,
     if (chdir(pw->pw_dir) < 0)
         log_warn("chdir(%s): %s", pw->pw_dir, strerror(errno));
 
-    execlp(CONFIG_COMPOSITOR, CONFIG_COMPOSITOR, (char *)NULL);
-    log_error("exec %s: %s", CONFIG_COMPOSITOR, strerror(errno));
+    /* Launch the compositor via the user's login shell.  The -l flag
+     * triggers login-shell behaviour, which sources .profile / .bash_profile
+     * and sets up the user's PATH and other environment.  The 'exec' in the
+     * -c string replaces the shell with the compositor so there is no extra
+     * process between the daemon and the compositor (SIGTERM reaches it
+     * directly, and waitpid sees the compositor's exit status). */
+    execlp(pw->pw_shell, pw->pw_shell, "-l", "-c",
+           "exec " CONFIG_COMPOSITOR, (char *)NULL);
+    log_error("exec %s -l -c 'exec %s': %s",
+              pw->pw_shell, CONFIG_COMPOSITOR, strerror(errno));
     _exit(1);
 }
 

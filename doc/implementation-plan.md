@@ -132,15 +132,10 @@ environment — matching what a normal login session would provide.
 - **D-Bus session bus** — set `DBUS_SESSION_BUS_ADDRESS` to
   `unix:path=/run/user/<uid>/bus`. Most libraries auto-detect this on
   systemd, but some applications check the environment variable explicitly.
-- **`CanGraphical` gate** — query logind's `CanGraphical` property on each
-  seat before starting a session. Skip seats where the property is false
-  (no monitor attached). This replaces the current behavior of crash-looping
-  on monitorless seats.
 
 **Verification:** Run `atrium`; open a terminal inside the compositor and
 verify `$PATH` matches a normal login session. Confirm `$XDG_CURRENT_DESKTOP`
-and `$DBUS_SESSION_BUS_ADDRESS` are set. Confirm monitorless seats are
-skipped cleanly.
+and `$DBUS_SESSION_BUS_ADDRESS` are set.
 
 ---
 
@@ -150,11 +145,16 @@ skipped cleanly.
 
 - Extend `src/seat.c` — add the udev monitor fd to the event loop; handle
   `add` / `remove` uevent actions.
+- **`CanGraphical` gate** — query logind's `CanGraphical` property on each
+  seat before starting a session. Skip seats where the property is false
+  (no monitor attached). Subscribe to `PropertiesChanged` to start/stop
+  sessions when monitors are plugged or unplugged.
 
 *Removes the `/* SHORTCUT */` from Phase 2.*
 
 **Verification:** Run `atrium`. Plug/unplug a USB seat device; confirm the event
-is detected and the seat is started/stopped accordingly.
+is detected and the seat is started/stopped accordingly. Confirm monitorless
+seats are skipped cleanly.
 
 ---
 

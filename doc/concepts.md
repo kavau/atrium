@@ -852,3 +852,48 @@ hasn't exited yet, positive if the child has been reaped, or -1 with
 This timeout-and-escalate pattern is standard in daemon code. Without it, a
 compositor that ignores `SIGTERM` would cause the daemon's shutdown to hang
 indefinitely.
+
+---
+
+## Phase 6 — Session Environment
+
+Phase 6 closes the gap between "compositor runs" and "compositor runs in a
+proper user session environment."
+
+### Login Shell Wrapping
+
+When the daemon forks the compositor, `execlp(compositor, ...)` runs it
+directly — as a plain process with the daemon's environment. The user's shell
+profile (`.profile`, `.bash_profile`, `.zshenv`/`.zlogin`) never executes,
+so customizations like `PATH` additions, locale settings, and tool-specific
+environment variables are missing from the entire session.
+
+The fix is to exec the compositor *through* the user's login shell:
+
+```c
+execlp(pw->pw_shell, pw->pw_shell, "-l", "-c",
+       "exec compositor", (char *)NULL);
+```
+
+The `-l` flag tells the shell to behave as a login shell, sourcing the
+profile files. The `exec` keyword in the `-c` string replaces the shell
+process with the compositor, so there is no extra process in the hierarchy —
+`SIGTERM` from the daemon reaches the compositor directly, and `waitpid`
+sees the compositor's exit status, not the shell's.
+
+### Desktop Identity Variables
+
+XDG desktop portals use `XDG_CURRENT_DESKTOP` to select the correct portal
+backend (e.g. `xdg-desktop-portal-gnome` vs `xdg-desktop-portal-kde`).
+Without it, portal requests (file chooser, screen sharing, etc.) may use a
+wrong or fallback implementation.
+
+`XDG_SESSION_DESKTOP` serves a similar role for logind and session managers
+that inspect the active session type.
+
+### D-Bus Session Bus Address
+
+On systemd systems, `systemd --user` provides a per-user D-Bus bus socket at
+`/run/user/<uid>/bus`. Most D-Bus libraries auto-detect this path, but some
+applications check `DBUS_SESSION_BUS_ADDRESS` explicitly. Setting it
+defensively avoids subtle failures in applications that rely on the variable.
