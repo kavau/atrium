@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -175,8 +176,9 @@ int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,
     snprintf(obj_out, obj_size, "%s", obj_path);
     snprintf(runtime_out, runtime_size, "%s", runtime_path);
 
-    /* dup the fifo fd so it survives sd_bus_message_unref below. */
-    *fifo_fd_out = dup(fifo_fd);
+    /* dup the fifo fd with CLOEXEC so it survives sd_bus_message_unref
+     * below but does not leak into child processes (e.g. udevadm settle). */
+    *fifo_fd_out = fcntl(fifo_fd, F_DUPFD_CLOEXEC, 0);
     if (*fifo_fd_out < 0) {
         log_error("CreateSession: dup fifo: %s", strerror(errno));
         r = -errno;

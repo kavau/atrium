@@ -135,9 +135,9 @@ int main(void)
     /* Clean up. On early-exit error paths above, the process terminates and
      * the kernel releases all resources, so explicit cleanup is skipped. */
     log_debug("beginning cleanup sequence");
-    /* Shut down compositor sessions. */
+    /* Shut down compositor sessions (SIGTERM + wait + SIGKILL if needed). */
     for (int i = 0; i < seat_count(); i++)
-        session_stop(seat_get(i));
+        session_shutdown(seat_get(i));
 
     /* Release VT allocations. */
     int vt_count = 0;

@@ -21,3 +21,8 @@ int session_start(struct seat *s);
  * send any signal — the child is already dead and reaped.  Safe to call
  * when no session is active (compositor_pid == 0). */
 void session_stop(struct seat *s);
+
+/* Daemon-initiated session teardown (e.g. on SIGTERM to atrium).
+ * Sends SIGTERM to the compositor, polls waitpid for up to 5 seconds,
+ * then escalates to SIGKILL if needed.  Cleans up session state. */
+void session_shutdown(struct seat *s);

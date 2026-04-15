@@ -46,6 +46,29 @@ static int wait_session_active(const char *session_id)
     return -1;
 }
 
+/* Wait for the udev event queue to drain so device ACLs are applied before
+ * the compositor opens DRM/input devices.  Forks udevadm as a subprocess
+ * to avoid blocking the daemon's event loop for long. */
+static void wait_udev_settle(void)
+{
+    pid_t settle_pid = fork();
+    if (settle_pid == 0) {
+        execl("/usr/bin/udevadm", "udevadm", "settle", "--timeout=5",
+              (char *)NULL);
+        _exit(127);
+    } else if (settle_pid > 0) {
+        int settle_st;
+        waitpid(settle_pid, &settle_st, 0);
+        if (!WIFEXITED(settle_st) || WEXITSTATUS(settle_st) != 0)
+            log_warn("udevadm settle exited with status %d",
+                     WEXITSTATUS(settle_st));
+        else
+            log_debug("udevadm settle complete");
+    } else {
+        log_warn("fork for udevadm settle failed: %s", strerror(errno));
+    }
+}
+
 /* Configure the environment, drop privileges, and exec the compositor.
  * Called from the child side of the fork after the sync pipe has signalled
  * that the parent finished setting up the logind session.
@@ -56,12 +79,17 @@ static _Noreturn void child_exec_compositor(const struct seat *s,
 {
     log_debug("%s: child preparing compositor (uid=%u gid=%u)",
               s->name, (unsigned)pw->pw_uid, (unsigned)pw->pw_gid);
-    /* Reset the signal mask so the compositor can receive all signals
-     * normally.  fork() inherits the parent's blocked-signal mask, and
-     * exec() does NOT reset it. */
-    sigset_t empty_mask;
-    sigemptyset(&empty_mask);
-    sigprocmask(SIG_SETMASK, &empty_mask, NULL);
+    /* Unblock the signals the parent masked for signalfd (SIGTERM, SIGCHLD).
+     * fork() inherits the signal mask; exec() does NOT reset it.  Without
+     * this the compositor would run with those signals blocked, preventing
+     * it from receiving SIGTERM and interfering with its own child-reaping.
+     * We use SIG_UNBLOCK rather than SIG_SETMASK so we only undo what the
+     * parent explicitly blocked, preserving any other mask state. */
+    sigset_t parent_mask;
+    sigemptyset(&parent_mask);
+    sigaddset(&parent_mask, SIGTERM);
+    sigaddset(&parent_mask, SIGCHLD);
+    sigprocmask(SIG_UNBLOCK, &parent_mask, NULL);
 
     /* Clear display environment variables inherited from the parent.
      * When running as a systemd service these are never set, so these
@@ -89,23 +117,51 @@ static _Noreturn void child_exec_compositor(const struct seat *s,
         setenv("XDG_VTNR", vtnr_str, 1);
     }
 
-    /* Drop root: supplementary groups, then gid, then uid. */
+    /* Drop root: supplementary groups, then gid, then uid.
+     * setresgid/setresuid set all three ID slots (real, effective, saved)
+     * atomically.  Plain setgid/setuid may leave the saved-set-id as root
+     * when called from a process with CAP_SETUID/CAP_SETGID. */
     if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
         log_error("initgroups: %s", strerror(errno));
         _exit(1);
     }
-    if (setgid(pw->pw_gid) < 0) {
-        log_error("setgid: %s", strerror(errno));
+    if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
+        log_error("setresgid: %s", strerror(errno));
         _exit(1);
     }
-    if (setuid(pw->pw_uid) < 0) {
-        log_error("setuid: %s", strerror(errno));
+    if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
+        log_error("setresuid: %s", strerror(errno));
+        _exit(1);
+    }
+
+    /* Defence-in-depth: verify we cannot re-escalate to root. */
+    if (setresuid(0, 0, 0) == 0) {
+        log_error("CRITICAL: re-escalation to root succeeded after priv drop");
         _exit(1);
     }
 
     execlp(COMPOSITOR, COMPOSITOR, (char *)NULL);
     log_error("exec %s: %s", COMPOSITOR, strerror(errno));
     _exit(1);
+}
+
+/* Clear session state and close the logind fifo.  Shared by both
+ * session_stop() and session_shutdown(), and used in session_start()
+ * error paths. */
+static void session_cleanup(struct seat *s)
+{
+    /* Closing the fifo tells logind the session has ended. */
+    if (s->session_fifo_fd >= 0) {
+        log_debug("closing session fifo fd=%d for seat %s",
+                  s->session_fifo_fd, s->name);
+        close(s->session_fifo_fd);
+        s->session_fifo_fd = -1;
+    }
+
+    s->compositor_pid    = 0;
+    s->session_id[0]     = '\0';
+    s->session_object[0] = '\0';
+    s->runtime_path[0]   = '\0';
 }
 
 int session_start(struct seat *s)
@@ -191,6 +247,7 @@ int session_start(struct seat *s)
         close(sync_pipe[1]);
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
+        session_cleanup(s);  /* clear any partially-written out params */
         return -1;
     }
 
@@ -213,8 +270,14 @@ int session_start(struct seat *s)
         close(sync_pipe[1]);
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
+        session_cleanup(s);  /* close fifo + clear session state */
         return -1;
     }
+
+    /* Wait for udev to finish applying device ACLs before the compositor
+     * tries to open DRM/input devices. */
+    log_debug("%s: waiting for udevadm settle", s->name);
+    wait_udev_settle();
 
     /* Signal the child to proceed by closing the write end. The child will
      * unblock from its read() and continue with privilege drop and exec. */
@@ -227,16 +290,46 @@ int session_start(struct seat *s)
 void session_stop(struct seat *s)
 {
     log_debug("session_stop for seat %s (child already reaped)", s->name);
+    session_cleanup(s);
+}
 
-    if (s->session_fifo_fd >= 0) {
-        log_debug("closing session fifo fd=%d for seat %s",
-                  s->session_fifo_fd, s->name);
-        close(s->session_fifo_fd);
-        s->session_fifo_fd = -1;
+void session_shutdown(struct seat *s)
+{
+    if (s->compositor_pid <= 0) {
+        session_cleanup(s);
+        return;
     }
 
-    s->compositor_pid    = 0;
-    s->session_id[0]     = '\0';
-    s->session_object[0] = '\0';
-    s->runtime_path[0]   = '\0';
+    log_info("%s: shutting down compositor pid=%d",
+             s->name, s->compositor_pid);
+    kill(s->compositor_pid, SIGTERM);
+
+    /* Poll waitpid for up to 5 seconds (50 × 100 ms). */
+    const int MAX_POLLS = 50;
+    const int POLL_US   = 100000; /* 100 ms */
+
+    for (int i = 0; i < MAX_POLLS; i++) {
+        int wstatus;
+        pid_t r = waitpid(s->compositor_pid, &wstatus, WNOHANG);
+        if (r > 0) {
+            log_info("%s: compositor exited after SIGTERM (waited %d ms)",
+                     s->name, i * 100);
+            session_cleanup(s);
+            return;
+        }
+        if (r < 0) {
+            /* ECHILD: already reaped by SIGCHLD handler */
+            log_debug("%s: waitpid: %s", s->name, strerror(errno));
+            session_cleanup(s);
+            return;
+        }
+        usleep(POLL_US);
+    }
+
+    /* Compositor did not exit within 5 seconds — escalate. */
+    log_warn("%s: compositor pid=%d did not exit after 5 s, sending SIGKILL",
+             s->name, s->compositor_pid);
+    kill(s->compositor_pid, SIGKILL);
+    waitpid(s->compositor_pid, NULL, 0);
+    session_cleanup(s);
 }
