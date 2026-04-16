@@ -49,85 +49,103 @@ pacman -S systemd pam gtk4 cage meson ninja
 
 ---
 
-## Building
+## Building and Installation
+
+atrium runs as a systemd service (as root) and must be the only display manager
+active on the system.
+
+### 1. Configure
+
+All settings are compile-time constants in `src/config.h`. Edit before building:
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `CONFIG_COMPOSITOR` | `"sway"` | Compositor/session to launch after login |
+| `CONFIG_DESKTOP_NAME` | `"atrium-dev"` | Desktop identifier for logind `CreateSession` |
+| `CONFIG_GREETER_UID/GID` | `1000` | User account that runs the greeter process |
+| `CONFIG_SEAT_ENUM_DELAY` | `2` | Seconds to wait for logind seat discovery at boot |
+| `CONFIG_RESTART_DELAY` | `5` | Seconds before restarting a crashed compositor |
+
+> **Note:** `CONFIG_GREETER_UID/GID` should ideally be a dedicated system
+> account (e.g. `atrium`). Using a regular user account works but is a
+> shortcut.
+
+### 2. Build and install
 
 ```sh
 meson setup build
 ninja -C build
+sudo ninja -C build install
 ```
 
-The compiled daemon binary lands at `build/src/atrium`.
+This installs:
+- `/usr/local/bin/atrium` — the daemon
+- `/usr/local/libexec/atrium-greeter` — the GTK4 greeter
+- `/usr/lib/systemd/system/atrium.service` — the systemd unit
+
+### 3. Enable and start
+
+```sh
+# Disable any existing display manager
+sudo systemctl disable gdm   # or sddm, lightdm, etc.
+
+# Enable atrium (the unit aliases to display-manager.service)
+sudo systemctl enable atrium
+```
+
+Then reboot. atrium will start on boot and launch a greeter on every seat.
+
+> **Warning:** Using `enable --now` or `disable --now` will immediately
+> start/stop the display manager, killing any active graphical session.
 
 ---
 
-## Running
+## Development
 
-atrium is intended to run as a systemd service (as root). For development, it
-can be invoked directly:
+### Remote deploy
+
+The `tools/deploy.sh` script syncs the source tree to a remote machine, builds
+there, and optionally installs and restarts the service:
 
 ```sh
-sudo ./build/src/atrium
+# Build only
+./tools/deploy.sh user@host:/path/to/dest
+
+# Build, install, and restart
+./tools/deploy.sh user@host:/path/to/dest -r
 ```
 
-> **Note:** Full functionality requires a running logind instance and appropriate
-> udev seat configuration. Running atrium on a machine already in a graphical
-> session is not recommended.
+### Local testing with systemd-run
 
----
-
-## Development Testing (Phase 5 — Headless Session Launch)
-
-Phase 5 launches a hardcoded compositor (`sway`) as a hardcoded user
-(`testuser`) on each seat. The following steps describe how to test this on a
-CachyOS/Arch system with multiple seats.
-
-### Prerequisites
+atrium must run outside any existing logind session cgroup, or `CreateSession`
+will fail with "Already running in a session or user slice". Use `systemd-run`
+to place it in a fresh transient unit:
 
 ```sh
-# Install sway
-sudo pacman -S sway
+# Stop any running display manager first
+sudo systemctl stop atrium   # or gdm, sddm, etc.
 
-# Create the session user
-sudo useradd -m testuser
-
-# Give testuser a sway config (avoids warnings about missing config)
-sudo mkdir -p /home/testuser/.config/sway
-sudo cp /etc/sway/config /home/testuser/.config/sway/config
-sudo chown -R testuser:testuser /home/testuser/.config
-```
-
-### Running
-
-atrium must run outside any existing logind session cgroup or it will fail with
-"Already running in a session or user slice" when calling `CreateSession`. Use
-`systemd-run` to place it in a fresh transient service unit:
-
-```sh
-# Stop any existing display manager first
-sudo systemctl stop lightdm   # or gdm, sddm, etc.
-
-# Launch atrium as a transient systemd service (output goes to journal)
-# If re-running after a previous test, reset the unit first:
-#   sudo systemctl reset-failed atrium-test
-sudo systemd-run --unit=atrium-test /path/to/build/src/atrium
+# Launch atrium as a transient service (output goes to journal)
+sudo systemd-run --unit=atrium-test /usr/local/bin/atrium
 
 # Follow the logs
-sudo journalctl -u atrium-test.service -f
+sudo journalctl -u atrium-test -f
 
-# Stop atrium
+# Stop
 sudo systemctl stop atrium-test
+
+# If re-running after a failure:
+sudo systemctl reset-failed atrium-test
 ```
 
 ### What to verify
 
-- sway launches on each non-seat0 seat (seat0 requires Phase 10 — running as
-  the system display manager service before any login session exists).
-- Exiting sway (default: `Mod+Shift+E`) causes atrium to restart it after
-  ~500 ms and log `compositor exited, restarting in 500 ms`.
-- `loginctl list-sessions` shows an active session with `DESKTOP=atrium-dev`
-  for each seat where sway is running.
-- Sending `SIGTERM` to atrium (or `sudo systemctl stop atrium-test`) shuts down
-  cleanly: sway is killed and the logind session is closed.
+- The greeter (user picker) appears on every seat.
+- Selecting a user launches the configured compositor.
+- Logging out of the compositor restarts the greeter.
+- `loginctl list-sessions` shows an active session for each seat.
+- `sudo systemctl stop atrium` shuts down cleanly: compositors are
+  killed and logind sessions are closed.
 
 ---
 
