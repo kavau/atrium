@@ -139,7 +139,90 @@ and `$DBUS_SESSION_BUS_ADDRESS` are set.
 
 ---
 
-### Phase 7 — Hotplug Monitoring
+### Phase 7 — Standalone Greeter App
+
+**Goal:** A standalone GTK4 login window that communicates with a parent process
+via pipes. Can be built and tested independently of the daemon.
+
+- `greeter/main.c` — parse pipe fds from argv, GLib main loop.
+- `greeter/ui-gtk4.c` — login window: username field, password field, submit
+  button. Write `username\0password\0` to the credential pipe on submit; read
+  a result byte; display error or proceed.
+- `greeter/meson.build` — build `atrium-greeter` linking against gtk4.
+- `tools/greeter-test` — a small launcher that creates pipes, forks the greeter,
+  reads credentials, and writes a result byte. Validates the IPC protocol
+  without involving the daemon.
+
+**Verification:** Run `tools/greeter-test`; confirm the greeter appears, submit
+credentials, confirm the launcher receives them and the greeter shows
+success/failure based on the result byte.
+
+---
+
+### Phase 8 — Greeter Integration
+
+**Goal:** The daemon shows the greeter on each seat, accepts a login, launches
+the compositor, and returns to the greeter when the compositor exits. This
+phase implements the full greeter↔compositor lifecycle.
+
+- `src/greeter.c` / `src/greeter.h` — fork cage hosting `atrium-greeter` on
+  each seat, create credential/result pipes, track the cage PID.
+- Seat state machine: greeter running → user logs in → stop greeter, start
+  compositor → compositor exits → restart greeter.
+- Daemon reads credentials from the pipe, launches the compositor for that user.
+
+**Shortcuts:**
+- `/* SHORTCUT */` No PAM authentication — password is ignored, login always
+  succeeds (passwordless login).
+- `/* SHORTCUT */` No crash-loop detection; greeter restarts unconditionally
+  after a fixed delay.
+
+*Removes the hardcoded-username shortcut from Phase 5/6.*
+
+**Verification:** Run `atrium`; confirm the greeter appears on each seat. Enter
+a username; confirm the compositor launches. Exit the compositor; confirm the
+greeter reappears. Verify both seats work independently.
+
+---
+
+### Phase 9 — Standalone PAM Module
+
+**Goal:** A PAM authentication module that can be tested independently of the
+daemon.
+
+- `src/auth.c` / `src/auth.h` — drive a PAM conversation: open a PAM handle,
+  call `pam_authenticate`, call `pam_acct_mgmt` (account checks: expired,
+  locked, etc.), close the handle.
+- `data/atrium.pam` — PAM stack configuration.
+- `tools/pam-test` — a small binary that takes username and password on stdin
+  and calls the auth module. Validates PAM integration without involving the
+  daemon.
+
+**Verification:** Run `tools/pam-test` with valid credentials; confirm success.
+Run with invalid credentials; confirm failure. Run with a locked/expired
+account; confirm the appropriate error.
+
+---
+
+### Phase 10 — PAM Integration and End-to-End Validation
+
+**Goal:** Wire PAM authentication into the greeter flow. Full login cycle on
+multiple seats.
+
+- Daemon reads credentials from the greeter pipe, calls `auth.c` to
+  authenticate, writes result back. Only calls `CreateSession` on success.
+- End-to-end validation on both seats: valid login, invalid login (error shown),
+  logout (greeter reappears), concurrent sessions.
+
+*Removes the passwordless-login shortcut from Phase 8.*
+
+**Verification:** Enter valid credentials on each seat; confirm the compositor
+launches. Enter invalid credentials; confirm the greeter shows an error.
+Log out of one seat; confirm the other is unaffected.
+
+---
+
+### Phase 11 — Hotplug Monitoring
 
 **Goal:** The daemon reacts to seats being added or removed at runtime.
 
@@ -154,85 +237,57 @@ and `$DBUS_SESSION_BUS_ADDRESS` are set.
 
 **Verification:** Run `atrium`. Plug/unplug a USB seat device; confirm the event
 is detected and the seat is started/stopped accordingly. Confirm monitorless
-seats are skipped cleanly.
+seats are skipped cleanly. Test hotplug with an active session on an adjacent
+seat.
 
 ---
 
-### Phase 8 — Greeter Process Lifecycle
+### Phase 12 — Crash-Loop Detection
 
-**Goal:** The daemon spawns cage (hosting a placeholder child) on each seat and
-restarts it on exit.
+**Goal:** Detect and back off from rapid compositor or greeter restarts.
 
-- `src/greeter.c` / `src/greeter.h` — create credential/result pipes, fork cage
-  with the correct environment (`WAYLAND_DISPLAY`, seat, VT), track the cage
-  PID.
-- Crash-loop detection — count rapid restarts per seat; back off and log an
-  error if exceeded.
+- Count rapid restarts per seat; back off and log an error if a threshold is
+  exceeded.
+- Replace the fixed restart delay with `timerfd`-based tracking.
 
-*Removes the 500 ms restart shortcut from Phase 5.*
+*Removes the fixed-delay restart shortcut from Phase 5/8.*
 
-**Verification:** Run `atrium`; confirm cage appears. Kill cage manually; confirm
-it restarts. Kill it repeatedly; confirm crash-loop detection triggers.
+**Verification:** Kill the compositor or greeter repeatedly; confirm crash-loop
+detection triggers and the daemon backs off instead of restarting indefinitely.
 
 ---
 
-### Phase 9 — Greeter UI (atrium-greeter)
+## Future Features
 
-**Goal:** A GTK4 login window runs inside cage on each seat.
+Features planned for implementation after the core phases are complete. No
+particular order or timeline.
 
-- `greeter/main.c` — parse pipe fds from argv, GLib main loop.
-- `greeter/ui-gtk4.c` — login window: username field, password field, submit
-  button.
-- `greeter/meson.build` — build `atrium-greeter` linking against gtk4.
-- Replace the placeholder in Phase 8 with `atrium-greeter`.
-
-**Verification:** Run `atrium`; confirm the login window appears on each seat.
-
----
-
-### Phase 10 — Greeter IPC and PAM Authentication
-
-**Goal:** Credentials from the greeter are authenticated via PAM before a
-session is created.
-
-- Greeter side: write `username\0password\0` to the credential pipe on submit;
-  read a result byte; display error or proceed.
-- `src/auth.c` / `src/auth.h` — drive a PAM conversation with the received
-  credentials.
-- Daemon side: read credentials from the pipe, call auth, write result back;
-  only call `CreateSession` on success.
-
-*Removes the hardcoded-username shortcut from Phase 5/6.*
-
-**Verification:** Enter valid credentials; confirm the compositor launches.
-Enter invalid credentials; confirm the greeter shows an error.
-
----
-
-### Phase 11 — System Integration
-
-**Goal:** atrium runs correctly as a production systemd service.
-
-- `data/atrium.pam` — PAM stack configuration.
-- `data/atrium.service` — systemd unit.
-- `data/meson.build` — install PAM config and systemd unit.
-- `deploy.sh` — build, install, restart unit.
-
-**Verification:** `systemctl start atrium`; complete a full login cycle. Enable
-the unit and reboot; confirm it takes over at boot.
-
----
-
-### Phase 12 — Multiseat End-to-End
-
-**Goal:** Two independent seats run simultaneously with no interference.
-
-- Exercise the full login flow on each seat concurrently.
-- Verify session isolation: logging out of one seat does not affect the other.
-- Test hotplug: remove and reattach a seat's devices while the other seat has
-  an active session.
-
-**Verification:** Full manual end-to-end test with two seats active.
+- **Passwordless login and autologin** — allow per-seat configuration for
+  passwordless accounts and automatic login (skip the greeter entirely for
+  designated seats/users).
+- **Session .desktop file support** — read `/usr/share/wayland-sessions/*.desktop`
+  (and `/usr/share/xsessions/*.desktop`) to discover available sessions. Let the
+  user pick a session type in the greeter instead of hardcoding the compositor.
+- **X11 session support** — launch X11-based desktop environments from the
+  greeter. The greeter itself remains Wayland (inside cage), but the user
+  session would run under Xwayland or a standalone X server. Only if feasible
+  without disproportionate effort.
+- **Third-party greeter support** — allow using existing greeters (e.g. LightDM
+  greeters) via a compatibility layer or standardized greeter protocol. Only
+  if feasible without disproportionate effort.
+- **Shutdown/reboot from greeter** — allow the user to shut down or reboot the
+  machine from the greeter UI without logging in. Requires a greeter→daemon
+  IPC command and a logind `PowerOff`/`Reboot` D-Bus call.
+- **User list in greeter** — show available users with names/avatars instead of
+  a free-text username field. Read from AccountsService or enumerate non-system
+  users from `/etc/passwd`.
+- **Last user/session memory** — remember the last logged-in user and session
+  type per seat. Pre-select them on the next greeter appearance. Persist to
+  disk.
+- **Custom greeter themes** — allow user-configurable greeter appearance
+  (background, colors, layout).
+- **Basic accessibility** — on-screen keyboard and high-contrast mode in the
+  greeter.
 
 ---
 
