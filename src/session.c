@@ -3,7 +3,9 @@
 #include "config.h"
 #include "log.h"
 
+#include <systemd/sd-journal.h>
 #include <systemd/sd-login.h>
+#include <syslog.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -16,18 +18,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-/* Look up the username configured for this seat in CONFIG_SEAT_USERS.
- * Returns the username string, or NULL if the seat has no mapping. */
-static const char *seat_username(const char *seat_name)
-{
-    static const struct seat_user_config seat_users[] = CONFIG_SEAT_USERS;
-    for (int i = 0; seat_users[i].seat != NULL; i++) {
-        if (strcmp(seat_users[i].seat, seat_name) == 0)
-            return seat_users[i].username;
-    }
-    return NULL;
-}
 
 /* Poll sd_session_is_active() until logind marks the session active.
  * This reads /run/systemd/sessions/<id> directly — no D-Bus round-trip.
@@ -77,16 +67,30 @@ static void wait_udev_settle(void)
     }
 }
 
-/* Configure the environment, drop privileges, and exec the compositor.
+/* Configure the environment, drop privileges, and exec the child process.
+ * When is_greeter is set, execs cage hosting atrium-greeter.  Otherwise
+ * execs the compositor via the user's login shell.
  * Called from the child side of the fork after the sync pipe has signalled
  * that the parent finished setting up the logind session.
  * This function never returns. */
-static _Noreturn void child_exec_compositor(const struct seat *s,
-                                            const struct passwd *pw,
-                                            const char *runtime_dir)
+static _Noreturn void child_exec(const struct seat *s,
+                                 const struct passwd *pw,
+                                 const char *runtime_dir,
+                                 int is_greeter)
 {
-    log_debug("%s: child preparing compositor (uid=%u gid=%u)",
-              s->name, (unsigned)pw->pw_uid, (unsigned)pw->pw_gid);
+    log_debug("%s: child preparing %s (uid=%u gid=%u)",
+              s->name, is_greeter ? "greeter" : "compositor",
+              (unsigned)pw->pw_uid, (unsigned)pw->pw_gid);
+
+    /* Redirect stderr to the journal so that child output (cage, greeter,
+     * compositor) appears under the "atrium" syslog identifier alongside
+     * daemon messages, regardless of cgroup placement. */
+    int jfd = sd_journal_stream_fd("atrium", LOG_DEBUG, 0);
+    if (jfd >= 0) {
+        dup2(jfd, STDERR_FILENO);
+        close(jfd);
+    }
+
     /* Unblock the signals the parent masked for signalfd (SIGTERM, SIGCHLD).
      * fork() inherits the signal mask; exec() does NOT reset it.  Without
      * this the compositor would run with those signals blocked, preventing
@@ -163,16 +167,28 @@ static _Noreturn void child_exec_compositor(const struct seat *s,
     if (chdir(pw->pw_dir) < 0)
         log_warn("chdir(%s): %s", pw->pw_dir, strerror(errno));
 
-    /* Launch the compositor via the user's login shell.  The -l flag
-     * triggers login-shell behaviour, which sources .profile / .bash_profile
-     * and sets up the user's PATH and other environment.  The 'exec' in the
-     * -c string replaces the shell with the compositor so there is no extra
-     * process between the daemon and the compositor (SIGTERM reaches it
-     * directly, and waitpid sees the compositor's exit status). */
-    execlp(pw->pw_shell, pw->pw_shell, "-l", "-c",
-           "exec " CONFIG_COMPOSITOR, (char *)NULL);
-    log_error("exec %s -l -c 'exec %s': %s",
-              pw->pw_shell, CONFIG_COMPOSITOR, strerror(errno));
+    if (is_greeter) {
+        /* cage is a kiosk compositor — exec it directly, no login shell.
+         * ATRIUM_FULLSCREEN tells the greeter to go fullscreen inside cage
+         * rather than using its default windowed mode. */
+        setenv("ATRIUM_FULLSCREEN", "1", 1);
+        static const char *const greeter_argv[] = CONFIG_GREETER_ARGS;
+        log_info("exec greeter: %s", CONFIG_GREETER_CMD);
+        execvp(CONFIG_GREETER_CMD, (char *const *)greeter_argv);
+        log_error("execvp(%s): %s", CONFIG_GREETER_CMD, strerror(errno));
+    } else {
+        /* Launch the compositor via the user's login shell.  The -l flag
+         * triggers login-shell behaviour, which sources .profile /
+         * .bash_profile and sets up the user's PATH and other environment.
+         * The 'exec' in the -c string replaces the shell with the compositor
+         * so there is no extra process between the daemon and the compositor
+         * (SIGTERM reaches it directly, and waitpid sees the compositor's
+         * exit status). */
+        execlp(pw->pw_shell, pw->pw_shell, "-l", "-c",
+               "exec " CONFIG_COMPOSITOR, (char *)NULL);
+        log_error("exec %s -l -c 'exec %s': %s",
+                  pw->pw_shell, CONFIG_COMPOSITOR, strerror(errno));
+    }
     _exit(1);
 }
 
@@ -190,31 +206,47 @@ static void session_cleanup(struct seat *s)
     }
 
     s->compositor_pid    = 0;
+    s->state             = SEAT_IDLE;
     s->session_id[0]     = '\0';
     s->session_object[0] = '\0';
     s->runtime_path[0]   = '\0';
 }
 
-int session_start(struct seat *s)
+static int session_start_impl(struct seat *s, int is_greeter)
 {
-    log_debug("starting session for seat %s", s->name);
+    const char *label = is_greeter ? "greeter" : "compositor";
+    log_debug("starting %s for seat %s", label, s->name);
 
-    /* Look up the username for this seat. */
-    const char *username = seat_username(s->name);
-    if (username == NULL) {
-        log_debug("%s: no user configured, skipping", s->name);
-        return -1;
-    }
-
-    /* Look up the session user's credentials. */
+    /* Resolve the session user.
+     * Greeter: fixed uid from config.h (dedicated unprivileged account).
+     * Compositor: username received from greeter via credentials pipe. */
     struct passwd pwbuf;
     struct passwd *pw = NULL;
-    char buf[1024];
-    int r = getpwnam_r(username, &pwbuf, buf, sizeof(buf), &pw);
-    if (r != 0 || pw == NULL) {
-        log_error("session_start: getpwnam_r(%s): %s",
-                username, r != 0 ? strerror(r) : "user not found");
-        return -1;
+    char pwbuf_data[1024];
+
+    if (is_greeter) {
+        int r = getpwuid_r(CONFIG_GREETER_UID, &pwbuf, pwbuf_data,
+                           sizeof(pwbuf_data), &pw);
+        if (r != 0 || pw == NULL) {
+            log_error("%s: getpwuid_r(%d): %s", s->name,
+                      CONFIG_GREETER_UID,
+                      r != 0 ? strerror(r) : "user not found");
+            return -1;
+        }
+    } else {
+        if (s->greeter_username[0] == '\0') {
+            log_error("%s: no username (greeter did not send credentials?)",
+                      s->name);
+            return -1;
+        }
+        int r = getpwnam_r(s->greeter_username, &pwbuf, pwbuf_data,
+                           sizeof(pwbuf_data), &pw);
+        if (r != 0 || pw == NULL) {
+            log_error("%s: getpwnam_r(%s): %s", s->name,
+                      s->greeter_username,
+                      r != 0 ? strerror(r) : "user not found");
+            return -1;
+        }
     }
 
     log_debug("%s: resolved user %s (uid=%u gid=%u)",
@@ -266,7 +298,7 @@ int session_start(struct seat *s)
             _exit(1);
         }
 
-        child_exec_compositor(s, pw, runtime_dir);
+        child_exec(s, pw, runtime_dir, is_greeter);
         /* unreachable */
     }
 
@@ -293,7 +325,7 @@ int session_start(struct seat *s)
             s->name, s->session_id, s->runtime_path);
 
     s->compositor_pid = pid;
-    log_debug("forked compositor process pid=%d for seat %s", pid, s->name);
+    log_debug("forked %s process pid=%d for seat %s", label, pid, s->name);
 
     /* Activate the session.  For seat0, logind needs an explicit
      * ActivateSession call which triggers an internal chvt.  Other seats
@@ -321,8 +353,20 @@ int session_start(struct seat *s)
      * unblock from its read() and continue with privilege drop and exec. */
     close(sync_pipe[1]);
 
-    log_debug("%s: sync pipe closed, child released", s->name);
+    s->state = is_greeter ? SEAT_GREETER : SEAT_SESSION;
+    log_info("%s: %s started (pid=%d vt=%d uid=%u)",
+             s->name, label, (int)pid, s->vtnr, (unsigned)pw->pw_uid);
     return 0;
+}
+
+int session_start(struct seat *s)
+{
+    return session_start_impl(s, 0);
+}
+
+int session_start_greeter(struct seat *s)
+{
+    return session_start_impl(s, 1);
 }
 
 void session_stop(struct seat *s)

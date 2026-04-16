@@ -1,6 +1,7 @@
 #include "bus.h"
 #include "config.h"
 #include "event.h"
+#include "greeter.h"
 #include "log.h"
 #include "seat.h"
 #include "session.h"
@@ -16,9 +17,79 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/*
+ * on_greeter_credentials — fires when the greeter writes credentials.
+ *
+ * Wire format: "<username>\0<password>\0" — two consecutive null-terminated
+ * strings.  We parse the username, store it in s->greeter_username, and
+ * reply "ok\n".  The greeter then exits cleanly, triggering SIGCHLD which
+ * launches the compositor.
+ *
+ * SHORTCUT: password is ignored (no PAM authentication).  Login always
+ * succeeds.
+ *
+ * SHORTCUT: reads the entire message in one read().  Safe for pipe writes
+ * under PIPE_BUF (4096 bytes).
+ */
+static void on_greeter_credentials(int fd, void *userdata)
+{
+    struct seat *s = userdata;
+
+    char buf[1024];
+    memset(buf, 0, sizeof(buf));
+    ssize_t n = read(fd, buf, sizeof(buf) - 1);
+
+    if (n == 0) {
+        /* Greeter closed the pipe without submitting (exited or crashed). */
+        log_info("credentials pipe closed on %s", s->name);
+        return;
+    }
+    if (n < 0) {
+        log_error("credentials pipe read on %s: %s", s->name, strerror(errno));
+        return;
+    }
+
+    /* Locate the boundary: first '\0' separates username from password. */
+    const char *username = buf;
+    const char *password = NULL;
+    for (ssize_t i = 0; i < n; i++) {
+        if (buf[i] == '\0' && i + 1 < n) {
+            password = buf + i + 1;
+            break;
+        }
+    }
+
+    if (!password) {
+        log_error("credentials(%s): malformed message", s->name);
+        memset(buf, 0, sizeof(buf));
+        greeter_send_result(s, "fail:Internal error\n");
+        return;
+    }
+
+    log_info("login request on %s: user='%s'", s->name, username);
+
+    /* Validate username length before storing. */
+    size_t ulen = strlen(username);
+    if (ulen >= sizeof(s->greeter_username)) {
+        log_error("credentials(%s): username too long (%zu bytes)",
+                  s->name, ulen);
+        memset(buf, 0, sizeof(buf));
+        greeter_send_result(s, "fail:Username too long\n");
+        return;
+    }
+
+    /* SHORTCUT: no PAM — accept any credentials. */
+    memcpy(s->greeter_username, username, ulen + 1);
+
+    /* Wipe credentials from the buffer. */
+    memset(buf, 0, sizeof(buf));
+
+    greeter_send_result(s, "ok\n");
+    /* Greeter will now exit(0), triggering SIGCHLD → session_start(). */
+}
+
 /* Event loop callback for the signalfd. Reads one signal and dispatches on
- * signal number. Handles SIGTERM (initiates shutdown) and SIGCHLD (deferred
- * to a later phase). */
+ * signal number. */
 static void on_signal(int fd, void *userdata)
 {
     (void)userdata;
@@ -35,36 +106,72 @@ static void on_signal(int fd, void *userdata)
         log_info("received SIGTERM, shutting down");
         event_loop_quit();
         break;
-    case SIGCHLD:
-        /* Reap all exited children, identify which seat lost its compositor,
-         * wait briefly, then restart it.
-         * SHORTCUT: usleep blocks the event loop.  Phase 7 replaces this
-         * with timerfd-based crash-loop detection. */
-        {
-            int wstatus;
-            pid_t pid;
-            log_debug("SIGCHLD received");
-            while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
-                log_debug("reaped pid %d", (int)pid);
-                int matched = 0;
-                for (int i = 0; i < seat_count(); i++) {
-                    struct seat *s = seat_get(i);
-                    if (s->compositor_pid != pid)
-                        continue;
-                    matched = 1;
-                    s->compositor_pid = 0;
-                    log_info("%s: compositor exited, restarting in 5 s",
-                            s->name);
-                    session_stop(s);  /* close old logind session fifo */
-                    sleep(CONFIG_RESTART_DELAY); /* SHORTCUT */
-                    session_start(s);
+    case SIGCHLD: {
+        /*
+         * Reap all exited children.  For each, determine whether it was the
+         * greeter or the compositor, and take the appropriate action:
+         *   - Greeter exited cleanly (exit 0): start the compositor session.
+         *   - Greeter crashed / compositor exited: restart the greeter.
+         *
+         * SHORTCUT: sleep() blocks the event loop on restart.  Phase 12
+         * replaces this with timerfd-based crash-loop detection.
+         */
+        int wstatus;
+        pid_t pid;
+        log_debug("SIGCHLD received");
+        while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
+            if (WIFEXITED(wstatus))
+                log_info("child %d exited with status %d",
+                         (int)pid, WEXITSTATUS(wstatus));
+            else if (WIFSIGNALED(wstatus))
+                log_info("child %d killed by signal %d",
+                         (int)pid, WTERMSIG(wstatus));
+
+            /* Find the seat this pid belongs to. */
+            struct seat *s = NULL;
+            for (int i = 0; i < seat_count(); i++) {
+                if (seat_get(i)->compositor_pid == pid) {
+                    s = seat_get(i);
                     break;
                 }
-                if (!matched)
-                    log_warn("reaped unknown pid %d", (int)pid);
+            }
+
+            if (!s) {
+                log_debug("reaped unknown pid %d", (int)pid);
+                continue;
+            }
+
+            int was_greeter = (s->state == SEAT_GREETER);
+            int exit_ok     = WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0;
+
+            if (was_greeter) {
+                event_remove(s->credentials_rfd);
+                greeter_stop(s);
+            }
+            session_stop(s);
+
+            if (was_greeter && exit_ok) {
+                /* Greeter exited cleanly — start compositor session. */
+                log_info("%s: greeter completed — starting compositor",
+                         s->name);
+                if (session_start(s) < 0)
+                    log_error("%s: session_start failed", s->name);
+            } else {
+                /* Greeter crashed or compositor exited — restart greeter. */
+                log_info("%s: %s exited — restarting greeter in %d s",
+                         s->name,
+                         was_greeter ? "greeter" : "compositor",
+                         CONFIG_RESTART_DELAY);
+                sleep(CONFIG_RESTART_DELAY); /* SHORTCUT */
+                if (greeter_start(s) < 0)
+                    log_error("%s: greeter_start failed", s->name);
+                else if (event_add(s->credentials_rfd,
+                                   on_greeter_credentials, s) < 0)
+                    log_error("%s: event_add(credentials) failed", s->name);
             }
         }
         break;
+    }
     default:
         assert(0 && "unexpected signal");
     }
@@ -125,12 +232,16 @@ int main(void)
         break;
     }
 
-    /* Start a compositor session on every seat. Failure on one seat is
-     * logged but does not abort — the other seats continue running. */
+    /* Start the greeter on every seat.  The greeter collects credentials;
+     * on success SIGCHLD triggers session_start for the compositor. */
     for (int i = 0; i < seat_count(); i++) {
-        if (session_start(seat_get(i)) < 0)
-            log_warn("%s: session_start failed, skipping",
-                    seat_get(i)->name);
+        struct seat *s = seat_get(i);
+        if (greeter_start(s) < 0) {
+            log_warn("%s: greeter_start failed, skipping", s->name);
+            continue;
+        }
+        if (event_add(s->credentials_rfd, on_greeter_credentials, s) < 0)
+            log_warn("%s: event_add(credentials) failed", s->name);
     }
 
     /* Run until event_loop_quit() is called. */
@@ -140,9 +251,15 @@ int main(void)
     /* Clean up. On early-exit error paths above, the process terminates and
      * the kernel releases all resources, so explicit cleanup is skipped. */
     log_debug("beginning cleanup sequence");
-    /* Shut down compositor sessions (SIGTERM + wait + SIGKILL if needed). */
-    for (int i = 0; i < seat_count(); i++)
-        session_shutdown(seat_get(i));
+    /* Shut down all sessions and greeters. */
+    for (int i = 0; i < seat_count(); i++) {
+        struct seat *s = seat_get(i);
+        if (s->state == SEAT_GREETER) {
+            event_remove(s->credentials_rfd);
+            greeter_stop(s);
+        }
+        session_shutdown(s);
+    }
 
     /* Release VT allocations. */
     int vt_count = 0;

@@ -22,6 +22,12 @@ int session_start(struct seat *s);
  * when no session is active (compositor_pid == 0). */
 void session_stop(struct seat *s);
 
+/* Start a greeter session on the given seat.  Creates a logind session,
+ * forks and execs cage hosting atrium-greeter.  The caller (greeter.c)
+ * must set up IPC pipes before calling this.  Returns 0 on success,
+ * -1 on error (error is logged). */
+int session_start_greeter(struct seat *s);
+
 /* Daemon-initiated session teardown (e.g. on SIGTERM to atrium).
  * Sends SIGTERM to the compositor, polls waitpid for up to 5 seconds,
  * then escalates to SIGKILL if needed.  Cleans up session state. */

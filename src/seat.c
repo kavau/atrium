@@ -17,11 +17,15 @@ int seat_add(const char *name)
     snprintf(g_seats[g_num_seats].name, sizeof(g_seats[g_num_seats].name),
              "%s", name);
     g_seats[g_num_seats].vtnr             = 0;
+    g_seats[g_num_seats].state            = SEAT_IDLE;
     g_seats[g_num_seats].compositor_pid   = 0;
     g_seats[g_num_seats].session_fifo_fd  = -1;
     g_seats[g_num_seats].session_id[0]    = '\0';
     g_seats[g_num_seats].session_object[0] = '\0';
     g_seats[g_num_seats].runtime_path[0]  = '\0';
+    g_seats[g_num_seats].credentials_rfd  = -1;
+    g_seats[g_num_seats].result_wfd       = -1;
+    g_seats[g_num_seats].greeter_username[0] = '\0';
     g_num_seats++;
     log_debug("added seat '%s' (total: %d)", name, g_num_seats);
     return 0;

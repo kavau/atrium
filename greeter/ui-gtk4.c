@@ -19,6 +19,7 @@
  */
 
 #include "ui.h"
+#include "log.h"
 
 #include <gtk/gtk.h>
 #include <glib-unix.h>
@@ -149,6 +150,7 @@ static gboolean on_result_ready(gint fd, GIOCondition condition, gpointer user_d
      */
     char    buf[256] = {0};
     ssize_t n        = read(fd, buf, sizeof(buf) - 1);
+    log_debug("result_fd ready: n=%zd buf='%.*s'", n, (int)(n > 0 ? n : 0), buf);
 
     if (n > 0 && strncmp(buf, "ok", 2) == 0) {
         /* Clear the password field before destroying the window. */
@@ -190,12 +192,14 @@ static void on_login(GtkWidget *widget, gpointer user_data)
     login_ctx *ctx = user_data;
 
     if (ctx->credentials_fd == -1) {
+        log_debug("no credentials_fd, quitting directly");
         g_application_quit(G_APPLICATION(ctx->app));
         return;
     }
 
     const char *u = gtk_editable_get_text(GTK_EDITABLE(ctx->username_entry));
     const char *p = gtk_editable_get_text(GTK_EDITABLE(ctx->password_entry));
+    log_debug("submitting credentials for user '%s'", u);
 
     /*
      * MINOR: write() return values are not checked.  These are small writes
@@ -339,17 +343,20 @@ static void on_activate(GtkApplication *app, gpointer user_data)
     gtk_widget_grab_focus(username_entry);
 
     gtk_window_present(GTK_WINDOW(window));
+    log_debug("window presented");
 }
 
 void greeter_run_ui(const char *username, int credentials_fd, int result_fd)
 {
+    log_debug("greeter_run_ui: username='%s' cfd=%d rfd=%d",
+             username, credentials_fd, result_fd);
     activate_ctx actx = {
         .username       = username,
         .credentials_fd = credentials_fd,
         .result_fd      = result_fd,
     };
     GtkApplication *app = gtk_application_new("org.kavau.atrium.greeter",
-                                              G_APPLICATION_DEFAULT_FLAGS);
+                                              G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(on_activate), &actx);
     g_application_run(G_APPLICATION(app), 0, NULL);
     g_object_unref(app);

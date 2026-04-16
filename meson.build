@@ -14,6 +14,9 @@ if get_option('buildtype').startswith('debug')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
 
+# Shared include directory for lib/log.h etc.
+inc_lib = include_directories('lib')
+
 # Dependencies — declared here, consumed by subdirectories.
 dep_libsystemd = dependency('libsystemd')
 dep_libpam     = dependency('pam')
@@ -38,6 +41,8 @@ executable('atrium-greeter',
   dependencies: [
     dep_gtk4,
   ],
+  include_directories: inc_lib,
+  c_args: ['-DLOG_PREFIX="atrium-greeter"'],
   install: true,
   install_dir: get_option('libexecdir'),
 )

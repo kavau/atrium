@@ -12,11 +12,14 @@
  */
 
 #include "ui.h"
+#include "log.h"
 
 #include <stdlib.h>
+#include <unistd.h>
 
 int main(void)
 {
+    log_info("starting (pid=%d)", (int)getpid());
     /*
      * ATRIUM_USERNAME is optional: when set by the daemon it pre-fills the
      * username entry; when absent the field starts empty.
@@ -36,6 +39,10 @@ int main(void)
     if (cfd && *cfd) credentials_fd = atoi(cfd);
     if (rfd && *rfd) result_fd      = atoi(rfd);
 
+    log_debug("username='%s' credentials_fd=%d result_fd=%d",
+             username, credentials_fd, result_fd);
+
     greeter_run_ui(username, credentials_fd, result_fd);
+    log_info("exiting");
     return EXIT_SUCCESS;
 }

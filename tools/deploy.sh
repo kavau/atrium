@@ -61,6 +61,9 @@ cd $DEST
 if [[ ! -d build ]]; then
     echo "--- Running meson setup"
     meson setup build
+else
+    echo "--- Reconfiguring meson"
+    meson setup build --reconfigure
 fi
 ninja -C build
 EOF

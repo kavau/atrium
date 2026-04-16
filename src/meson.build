@@ -6,9 +6,11 @@ executable('atrium',
     'bus.c',
     'vt.c',
     'session.c',
+    'greeter.c',
   ],
   dependencies: [
     dep_libsystemd,
   ],
+  include_directories: inc_lib,
   install: true,
 )
