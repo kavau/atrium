@@ -1,6 +1,6 @@
 ---
 Created: April 13, 2026
-Last Updated: April 15, 2026
+Last Updated: April 16, 2026
 ---
 
 # atrium — Concepts
@@ -933,3 +933,181 @@ react to data arriving on the result pipe without blocking the UI.
 that a callback fires when the fd becomes readable — the same idea as the
 daemon's `poll()` loop, but using GLib's infrastructure.  This avoids
 spawning a thread or doing a blocking `read()` that would freeze the UI.
+
+---
+
+## Phase 8 — Greeter Integration
+
+Phase 8 wires the standalone greeter into the daemon. The daemon forks cage
+hosting `atrium-greeter` on each seat, reads credentials from the pipe, launches
+the user's compositor, and restarts the greeter when the compositor exits. This
+introduces a seat state machine, deliberate exceptions to the `O_CLOEXEC` rule,
+and several defensive patterns around pipe lifecycle and credential handling.
+
+### Seat State Machine
+
+Each seat progresses through three states:
+
+```
+SEAT_IDLE  →  SEAT_GREETER  →  SEAT_SESSION
+                    ↑                 │
+                    └─────────────────┘
+```
+
+- **`SEAT_IDLE`** — no process running. Initial state at startup and after
+  `session_stop()`.
+- **`SEAT_GREETER`** — cage + atrium-greeter is running, credential pipe is
+  open. The daemon is waiting for the user to select a username.
+- **`SEAT_SESSION`** — the user's compositor is running. The daemon is waiting
+  for it to exit.
+
+All state transitions are driven by `SIGCHLD`. When the daemon reaps a child,
+it looks up the seat by PID and decides the next action based on the current
+state and exit status:
+
+| Previous state | Exit status | Action |
+|---|---|---|
+| `SEAT_GREETER` | exit(0) | Greeter completed successfully — start compositor (`SEAT_SESSION`) |
+| `SEAT_GREETER` | crash/non-zero | Greeter failed — restart greeter after delay |
+| `SEAT_SESSION` | any | Compositor exited — restart greeter |
+
+This approach keeps the state machine entirely event-driven: there are no
+threads, no polling loops, and no timers involved in the normal flow. The
+`SIGCHLD` handler in the daemon's event loop is the single point where all
+child-exit events converge.
+
+### Pipes Without `O_CLOEXEC`
+
+atrium's coding conventions require `O_CLOEXEC` on all file descriptors to
+prevent fd leaks across `exec` boundaries. The greeter IPC pipes are the one
+deliberate exception.
+
+The pipes must survive *two* `exec` calls:
+
+1. daemon `fork()` → child `exec(cage)` — cage inherits the pipe fds
+2. cage starts the greeter → `exec(atrium-greeter)` — greeter inherits them
+
+If the pipes were created with `O_CLOEXEC`, the kernel would close them at
+the first `exec` and the greeter would never see them. Creating them with
+plain `pipe()` (no flags) ensures they propagate through the entire chain.
+
+This is safe because the daemon closes the child-side pipe ends immediately
+after fork (see below), so they do not leak into *other* children. Only the
+one child that needs them inherits them.
+
+### Fd Numbers and Environment Variables
+
+When a parent forks a child, the child inherits copies of all open file
+descriptors — but there is no API for a child to discover *which* fds it has
+or what they are for. The parent must communicate the fd numbers explicitly.
+
+atrium uses environment variables:
+
+```c
+char cfd_str[16];
+snprintf(cfd_str, sizeof(cfd_str), "%d", cr_pipe[1]);
+setenv("CREDENTIALS_FD", cfd_str, 1);
+```
+
+The `setenv` happens *before* `fork()`, so the child inherits the variable
+in its environment. The greeter reads it at startup:
+
+```c
+const char *cfd_env = getenv("CREDENTIALS_FD");
+int credentials_fd = atoi(cfd_env);
+```
+
+The alternative — passing fd numbers as command-line arguments — would expose
+them in `/proc/<pid>/cmdline`, which any process on the system can read.
+Environment variables are slightly more private (`/proc/<pid>/environ` requires
+same-uid or `CAP_SYS_PTRACE`).
+
+### Environment Variable Cleanup After Fork
+
+The `setenv()` / `unsetenv()` pattern has a subtle timing requirement. The
+daemon calls `setenv` before fork so the child inherits the variable.
+Immediately after fork (in the parent), it calls `unsetenv`:
+
+```c
+setenv("CREDENTIALS_FD", cfd_str, 1);
+setenv("RESULT_FD",      rfd_str, 1);
+
+int r = session_start_greeter(s);   /* forks internally */
+
+unsetenv("CREDENTIALS_FD");
+unsetenv("RESULT_FD");
+```
+
+Without the `unsetenv`, the variables would persist in the daemon's
+environment and be inherited by *every* subsequent `fork`/`exec` — including
+compositor launches. A compositor process would inherit stale pipe fd numbers
+pointing at already-closed file descriptors (or worse, recycled fds pointing
+at something unrelated).
+
+### Parent-Side Pipe Hygiene
+
+After forking, the daemon immediately closes the pipe ends that belong to
+the child:
+
+```c
+close(cr_pipe[1]); /* greeter's write end — daemon only reads [0] */
+close(re_pipe[0]); /* greeter's read end  — daemon only writes [1] */
+```
+
+This is not just for tidiness — it is essential for correct EOF behavior.
+
+A pipe delivers EOF to the reader only when *all* write-end file descriptors
+are closed. If the daemon kept `cr_pipe[1]` open, then when the greeter
+exits (closing its copy of the write end), the daemon's `read()` on
+`cr_pipe[0]` would block forever instead of returning 0 (EOF). The daemon
+would never learn that the greeter has gone.
+
+The same logic applies in reverse: the greeter needs EOF on the result pipe
+if the daemon crashes. Closing `re_pipe[0]` in the daemon ensures the greeter
+is the only holder of the read end.
+
+### Credential Wiping
+
+The credentials pipe carries plaintext passwords (even though they are
+currently ignored). As a defensive measure, the daemon wipes the read buffer
+immediately after parsing:
+
+```c
+memcpy(s->greeter_username, username, ulen + 1);
+memset(buf, 0, sizeof(buf));         /* wipe credentials */
+```
+
+This limits the window during which the password exists in process memory.
+It does not provide strong security — the kernel, a debugger, or a core dump
+could still capture the password — but it reduces the exposure surface and
+establishes the pattern for when PAM authentication is wired in later.
+
+### User Enumeration with `getpwent()`
+
+The greeter needs a list of local users to display in the user picker. The
+POSIX password database API provides this:
+
+```c
+setpwent();                      /* rewind to start of database */
+while ((pw = getpwent()) != NULL) {
+    /* pw->pw_name, pw->pw_uid, pw->pw_gecos, pw->pw_shell */
+}
+endpwent();                      /* release resources */
+```
+
+`getpwent()` iterates over every entry in `/etc/passwd` (and any configured
+NSS backends like LDAP). Each call returns a pointer to a `struct passwd`
+in static storage — the next call overwrites it, so fields must be copied
+out immediately.
+
+The greeter filters the raw list to show only interactive login accounts:
+
+- **UID range:** `uid >= 1000 && uid < 65534` — excludes system accounts
+  (uid < 1000) and the `nobody` user (65534).
+- **Shell check:** excludes users whose shell contains `nologin` or is
+  `/bin/false` — these are service accounts that cannot log in.
+
+The `pw_gecos` field traditionally holds the user's full name (possibly
+followed by comma-separated fields like room number and phone). The greeter
+uses it as-is for the display name, falling back to the username if GECOS is
+empty.
