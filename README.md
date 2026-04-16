@@ -1,8 +1,26 @@
 # atrium
 
 A Wayland display manager for Linux with first-class multiseat support.
+Discovers seats via logind, launches a GTK4 greeter on each seat inside a
+[cage](https://github.com/cage-kiosk/cage) kiosk compositor, and hands off
+to a user-selected Wayland session.
+
+> **Status: v0.1.0 — functional, pre-authentication.**
+>
+> atrium is usable as a daily-driver display manager today. The core workflow
+> — greeter on every seat, user selection, session launch, and automatic
+> greeter restart on logout — is fully operational. The main gap is
+> authentication: PAM is not yet wired up, so any credentials are accepted.
+>
+> Known limitations:
+> - **No authentication** — PAM integration is next (passwords are currently ignored)
+> - **No hotplug** — seats added/removed after startup are not detected
+> - **Compile-time config only** — all settings live in `src/config.h`
+> - **No `CanGraphical` gating** — monitorless seats crash-loop the greeter
 
 See [doc/architecture.md](doc/architecture.md) for a detailed design overview.
+For multiseat hardware setup, see the
+[Debian Multi-Seat HOWTO](https://wiki.debian.org/Multi_Seat_Debian_HOWTO).
 
 ---
 
