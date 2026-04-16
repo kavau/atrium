@@ -1,17 +1,19 @@
 /*
  * auth-test.c — standalone PAM authentication test for atrium.
  *
- * Exercises the full auth_begin() / auth_close() sequence against the real
- * PAM stack with real credentials.  The purpose is to validate src/auth.c in
- * complete isolation — before it touches the daemon — so that any failures
- * can be diagnosed without compositor, D-Bus, or VT involvement.
+ * Exercises the full auth_begin() / auth_open_session() / auth_close()
+ * sequence against the real PAM stack with real credentials.  The purpose is
+ * to validate src/auth.c in complete isolation — before it touches the
+ * daemon — so that any failures can be diagnosed without compositor, D-Bus,
+ * or VT involvement.
  *
  * Usage:
  *   sudo ./build/atrium-auth-test <username>
  *
  * The binary prompts for a password via getpass(3) (which reads directly from
  * /dev/tty so the prompt appears even when stdout is redirected), calls
- * auth_begin(), prints the full result, then calls auth_close().
+ * auth_begin(), auth_open_session(), prints the full result, then calls
+ * auth_close().
  *
  * Must be run as root: pam_open_session writes to the audit log and updates
  * /proc/self/loginuid, both of which require CAP_AUDIT_WRITE / CAP_SYS_ADMIN.
@@ -65,6 +67,16 @@ int main(int argc, char **argv)
     printf("auth_begin: OK\n");
     printf("  uid     = %u\n", (unsigned)result.uid);
     printf("  gid     = %u\n", (unsigned)result.gid);
+
+    r = auth_open_session(&result);
+    if (r != PAM_SUCCESS) {
+        fprintf(stderr, "%s: auth_open_session failed (PAM error %d)\n",
+                argv[0], r);
+        auth_close(&result);
+        return 1;
+    }
+
+    printf("auth_open_session: OK\n");
     printf("  pam_env:\n");
     if (result.pam_env) {
         for (char **e = result.pam_env; *e; e++)

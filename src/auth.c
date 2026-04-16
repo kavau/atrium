@@ -1,18 +1,26 @@
 /*
  * auth.c — PAM (Pluggable Authentication Modules) authentication for atrium.
  *
- * Implements auth_begin() and auth_close() declared in auth.h.
+ * Implements auth_begin(), auth_open_session(), and auth_close() declared in
+ * auth.h.
  *
- * auth_begin() runs the standard display-manager PAM sequence:
- *   pam_authenticate  — password check (delegates to common-auth modules)
- *   pam_acct_mgmt     — account validity (expiry, lockout, time restrictions)
- *   pam_setcred       — establish user credentials (Kerberos tickets, etc.)
- *   pam_open_session  — session setup (audit log, loginuid, keyring, limits)
- * then resolves uid/gid via getpwnam() and captures any environment variables
- * the modules added with pam_getenvlist().
+ * The PAM sequence is split across two processes:
  *
- * auth_close() reverses this: pam_close_session() followed by pam_end(),
- * then frees the pam_env array.
+ *   Daemon (parent):  auth_begin()
+ *     pam_authenticate  — password check (delegates to auth modules)
+ *     pam_acct_mgmt     — account validity (expiry, lockout, time restrictions)
+ *     getpwnam          — resolve uid and gid from the username
+ *
+ *   Compositor child:  auth_open_session()  [called after fork, before exec]
+ *     pam_setcred       — establish user credentials (Kerberos tickets, etc.)
+ *     pam_open_session  — session setup (audit log, loginuid, keyring, limits)
+ *     pam_getenvlist    — collect environment variables set by PAM modules
+ *
+ * This split is necessary because pam_open_session triggers pam_loginuid.so
+ * (which writes /proc/self/loginuid — a one-shot value) and other session
+ * modules that must run in the compositor's PID context, not the daemon's.
+ *
+ * auth_close() runs in the daemon after the compositor exits.
  *
  * GNU extensions used:
  *   strdup(3)    — POSIX.1-2008, exposed via _GNU_SOURCE
@@ -139,21 +147,6 @@ int auth_begin(const char *username, const char *password, auth_result *out)
         return r;
     }
 
-    r = pam_setcred(pamh, PAM_ESTABLISH_CRED);
-    if (r != PAM_SUCCESS) {
-        log_error("pam_setcred: %s", pam_strerror(pamh, r));
-        pam_end(pamh, r);
-        return r;
-    }
-
-    r = pam_open_session(pamh, 0);
-    if (r != PAM_SUCCESS) {
-        log_error("pam_open_session: %s", pam_strerror(pamh, r));
-        pam_setcred(pamh, PAM_DELETE_CRED);
-        pam_end(pamh, r);
-        return r;
-    }
-
     /*
      * Resolve uid/gid while we still have valid user context.  getpwnam()
      * returns NULL both on hard error (errno set) and for an unknown user
@@ -164,19 +157,41 @@ int auth_begin(const char *username, const char *password, auth_result *out)
     if (!pw) {
         log_error("getpwnam(%s): %s", username,
                   errno ? strerror(errno) : "user not found");
-        pam_close_session(pamh, 0);
-        pam_setcred(pamh, PAM_DELETE_CRED);
         pam_end(pamh, PAM_SYSTEM_ERR);
         return PAM_SYSTEM_ERR;
     }
 
     out->uid     = pw->pw_uid;
     out->gid     = pw->pw_gid;
-    out->pam_env = pam_getenvlist(pamh);   /* may be NULL if no vars were set */
+    out->pam_env = NULL;
     out->pamh    = pamh;
 
     log_info("auth: %s authenticated, uid=%u gid=%u", username,
              (unsigned)out->uid, (unsigned)out->gid);
+    return PAM_SUCCESS;
+}
+
+int auth_open_session(auth_result *result)
+{
+    assert(result);
+    assert(result->pamh);
+
+    pam_handle_t *pamh = result->pamh;
+
+    int r = pam_setcred(pamh, PAM_ESTABLISH_CRED);
+    if (r != PAM_SUCCESS) {
+        log_error("pam_setcred: %s", pam_strerror(pamh, r));
+        return r;
+    }
+
+    r = pam_open_session(pamh, 0);
+    if (r != PAM_SUCCESS) {
+        log_error("pam_open_session: %s", pam_strerror(pamh, r));
+        pam_setcred(pamh, PAM_DELETE_CRED);
+        return r;
+    }
+
+    result->pam_env = pam_getenvlist(pamh);
     return PAM_SUCCESS;
 }
 

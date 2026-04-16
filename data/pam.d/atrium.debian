@@ -41,7 +41,12 @@ session    required   pam_limits.so
 # Session keyring: create a new keyring so each session is isolated.
 session    optional   pam_keyinit.so force revoke
 
-# Standard account, session, and password management.
+# Standard account and password management.
 @include common-account
-@include common-session
 @include common-password
+
+# Session: utmp/wtmp/lastlog tracking.
+# NOTE: pam_systemd.so is intentionally excluded — atrium manages logind
+# sessions directly via D-Bus CreateSession.  common-session is not included
+# because it pulls in pam_systemd.so.
+session    required   pam_unix.so

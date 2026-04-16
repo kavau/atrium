@@ -26,7 +26,7 @@
 /* Seat name to ignore during enumeration (e.g. a monitorless seat that
  * crashes the greeter).  Set to NULL or "" to disable.
  * To ignore multiple seats, extend this to a NULL-terminated array. */
-#define CONFIG_IGNORE_SEATS     "seat2"
+#define CONFIG_IGNORE_SEATS     ""
 
 /* Greeter command — cage kiosk compositor hosting atrium-greeter.
  *
