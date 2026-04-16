@@ -897,3 +897,39 @@ On systemd systems, `systemd --user` provides a per-user D-Bus bus socket at
 `/run/user/<uid>/bus`. Most D-Bus libraries auto-detect this path, but some
 applications check `DBUS_SESSION_BUS_ADDRESS` explicitly. Setting it
 defensively avoids subtle failures in applications that rely on the variable.
+
+---
+
+## Phase 7 — Standalone Greeter App
+
+### Greeter as a Separate Process
+
+The greeter is a separate binary, not linked into the daemon.  In production
+the daemon will exec it inside a cage compositor; during development it can
+run standalone in a regular desktop session.  This separation means the
+greeter can be built, tested, and iterated on without involving the daemon,
+logind, or PAM.
+
+### Pipe-based IPC Protocol
+
+The greeter communicates with the daemon through two unidirectional pipes:
+
+- **Credential pipe** (greeter → daemon): on submit, the greeter writes
+  `<username>\0<password>\0` — two null-terminated strings.
+- **Result pipe** (daemon → greeter): the daemon replies with either
+  `ok\n` (success, greeter exits) or `fail:<reason>\n` (error shown,
+  user can retry).
+
+Pipe file descriptors are passed via environment variables rather than
+command-line arguments — this avoids exposing them in `/proc/*/cmdline`
+and allows the greeter to detect their absence (standalone mode) cleanly.
+
+### GLib Event Integration
+
+GTK4 runs its own main loop (GLib's `GMainLoop`).  The greeter needs to
+react to data arriving on the result pipe without blocking the UI.
+
+`g_unix_fd_add()` registers a file descriptor as a GLib event source so
+that a callback fires when the fd becomes readable — the same idea as the
+daemon's `poll()` loop, but using GLib's infrastructure.  This avoids
+spawning a thread or doing a blocking `read()` that would freeze the UI.
