@@ -1338,3 +1338,251 @@ for hours).  When the session ends, `auth_close()` calls `pam_close_session`,
 `pam_setcred(DELETE)`, `pam_end`, and frees the environment list — in that
 order.  Calling `pam_end` without first closing the session would leak
 resources held by session modules.
+
+## Phase 10 — PAM Integration
+
+Phase 10 wires the standalone PAM module (Phase 9) into the daemon's login
+flow.  The integration uncovered two critical issues — a logind session
+conflict and a VT keyboard security leak — that required splitting the PAM
+sequence across processes and taking explicit control of VT keyboard modes.
+
+### Splitting PAM Across `fork()`
+
+The PAM API is designed for a single process that authenticates a user and
+then becomes that user's session.  A display manager has a fundamentally
+different architecture: a long-lived daemon authenticates many users over its
+lifetime, but the actual sessions run in forked child processes.
+
+The solution is to split the PAM call sequence at the `fork()` boundary:
+
+```
+Daemon (parent):                  Child (compositor):
+  pam_start()
+  pam_authenticate()
+  pam_acct_mgmt()
+  getpwnam()
+        │
+        ├── fork() ──────────────►  auth_open_session():
+        │                             pam_setcred()
+        │                             pam_open_session()
+        │                             pam_getenvlist()
+        │                             ... exec compositor ...
+        │
+        ╰── (session runs) ──────►  compositor exits
+        │
+  auth_close():
+    pam_close_session()
+    pam_setcred(DELETE)
+    pam_end()
+```
+
+The dividing line is deliberate: `pam_authenticate` and `pam_acct_mgmt` are
+pure checks that don't modify kernel state — they can safely run in the
+daemon.  `pam_setcred` and `pam_open_session` modify per-process state (audit
+records, kernel keyrings, loginuid) that must be associated with the
+compositor's PID, not the daemon's.
+
+The `pamh` handle survives the fork because `fork()` duplicates the entire
+address space.  The child gets a copy of the handle and uses it for
+`pam_setcred` / `pam_open_session` / `pam_getenvlist`.  The parent retains
+the original and uses it later for `pam_close_session` / `pam_end`.  The two
+copies share no state after the fork — this is safe because PAM modules store
+all state either in the handle (process-local memory) or in the kernel
+(per-PID audit records, etc.).
+
+A subtlety: `pam_close_session` runs in the daemon (parent), not the child.
+At that point the child has already exited, so the daemon calls
+`pam_close_session` on its copy of the handle.  Session modules that need to
+undo per-process state (like removing kernel keyring links) cannot do so
+from the parent — but in practice the kernel cleans up process-scoped
+resources automatically when the child exits.  The modules that *do* need
+explicit close (like writing utmp/wtmp logout records) operate on
+system-wide databases, not per-process state, so running in the parent is
+fine.
+
+### `/proc/self/loginuid` and the Audit Subsystem
+
+The Linux audit subsystem (used by `auditd` and tools like `ausearch`)
+tracks which user originally initiated a login session.  This identity is
+stored in `/proc/self/loginuid` — a per-process value that `pam_loginuid.so`
+writes during `pam_open_session`.
+
+The critical property of loginuid: **it is a one-shot value**.  Once set (the
+initial value is `-1` / `4294967295`, meaning "unset"), it is locked.  On
+most modern kernels, even root cannot change it after it has been set
+(`/proc/sys/kernel/loginuid_immutable` or compiled-in policy).
+
+This has profound implications for a display manager:
+
+- If `pam_loginuid` runs in the **daemon**, the daemon's loginuid gets set to
+  the first user who logs in — permanently.  Every subsequent session for any
+  user would inherit the wrong loginuid, breaking audit trails.
+
+- If `pam_loginuid` runs in the **child** (after fork, before exec), it
+  correctly sets the compositor's loginuid to the authenticating user.  Each
+  child gets its own `/proc/self/loginuid`, and the daemon's stays at `-1`.
+
+This is one of the primary reasons the PAM split exists.  The pattern — "run
+session modules in the child's PID context" — is the standard approach used
+by greetd, sddm, and lightdm.
+
+### `pam_systemd.so` and the logind Session Conflict
+
+`pam_systemd.so` is the PAM module that integrates login sessions with
+systemd-logind.  When `pam_open_session` invokes it, it calls logind's
+`CreateSession` D-Bus method for the calling process's PID — effectively
+telling logind "this PID is a new user session."
+
+A display manager like atrium already manages logind sessions explicitly: it
+forks the child, passes the child's PID to `CreateSession` via D-Bus, and
+activates the resulting session.  If `pam_systemd.so` *also* runs during
+`pam_open_session`, one of two things happens depending on where the PAM
+session is opened:
+
+1. **`pam_open_session` in the daemon:** `pam_systemd` creates a logind
+   session scoped to the daemon's PID.  The daemon is now "inside a session."
+   The subsequent explicit `CreateSession` for the compositor child fails:
+   ```
+   CreateSession: Already running in a session or user slice
+   ```
+   logind refuses to create a second session for a process that already
+   belongs to one (the child inherits the daemon's cgroup scope after fork).
+
+2. **`pam_open_session` in the child:** `pam_systemd` creates a session for
+   the child's PID.  But atrium has already called `CreateSession` for that
+   same PID moments earlier (to get the session ID and runtime directory).
+   This would create a *second* logind session for the same PID — at best
+   redundant, at worst confusing.
+
+The clean solution: **exclude `pam_systemd.so` from the PAM stack entirely**.
+atrium manages logind sessions directly via D-Bus and does not need (or want)
+PAM to do it a second time.  This is achieved by replacing the blanket
+`session include system-login` (which pulls in `pam_systemd`) with explicit
+entries for just the session modules we need:
+
+```
+# atrium.arch — session modules (pam_systemd intentionally excluded)
+session    required   pam_loginuid.so
+session    required   pam_env.so
+session    required   pam_limits.so
+session    optional   pam_keyinit.so force revoke
+session    required   pam_unix.so
+```
+
+This gives atrium exactly the session setup it needs (loginuid, environment,
+resource limits, keyring, utmp) without the logind conflict.
+
+### VT Keyboard Modes (`KDSKBMODE`)
+
+When a Wayland compositor runs on a VT (virtual terminal), keyboard input
+follows two separate paths simultaneously:
+
+1. **libinput** reads raw events from `/dev/input/event*` via the evdev
+   interface.  This is how the compositor (and its clients) receive keyboard
+   input.
+
+2. **The VT keyboard driver** translates raw scancodes into characters
+   according to the current keyboard mode and feeds them into the TTY line
+   discipline.  This is how a text console receives keyboard input.
+
+Both paths are active at the same time.  When a Wayland compositor is
+running, path 2 is a problem: characters accumulate in the TTY's input
+buffer, invisible to the user.  When the compositor exits and the VT reverts
+to text mode, those buffered characters are consumed by whatever runs next —
+typically `agetty` / `login`.
+
+This became a security issue in atrium when PAM authentication was wired in:
+passwords typed into the GTK4 greeter's password field were simultaneously
+buffered by the VT.  When the greeter's cage session ended, the password
+appeared in cleartext at the getty login prompt.
+
+The fix is to set the VT keyboard mode to `K_OFF` before launching the
+compositor.  The Linux kernel supports four keyboard modes, configurable via
+the `KDSKBMODE` ioctl:
+
+| Mode           | Behavior                                          |
+|----------------|---------------------------------------------------|
+| `K_UNICODE`    | Translate to UTF-8 characters (text console mode) |
+| `K_XLATE`      | Translate to 8-bit characters (legacy)            |
+| `K_MEDIUMRAW`  | Deliver scancodes with key-up/down info           |
+| `K_RAW`        | Deliver raw scancodes (used by X11)               |
+| `K_OFF`        | Discard all keyboard input on this VT             |
+
+`K_OFF` is precisely what a Wayland compositor needs: it silences path 2
+completely, so no characters accumulate in the TTY buffer.  The compositor
+still receives input through path 1 (libinput/evdev), which is unaffected by
+the VT keyboard mode.
+
+atrium's implementation:
+
+```c
+/* Before launching cage: */
+int fd = open("/dev/ttyN", O_RDWR | O_NOCTTY);
+ioctl(fd, KDGKBMODE, &saved_mode);   /* save current mode (usually K_UNICODE) */
+ioctl(fd, KDSKBMODE, K_OFF);         /* silence the VT keyboard */
+tcflush(fd, TCIFLUSH);               /* discard anything already buffered */
+
+/* On shutdown: */
+tcflush(fd, TCIFLUSH);               /* discard any stray input */
+ioctl(fd, KDSKBMODE, saved_mode);    /* restore original mode */
+close(fd);
+```
+
+The save/restore pattern is important: text consoles need `K_UNICODE` to
+function, so the original mode must be restored when atrium exits (or the VT
+would remain "deaf" to keyboard input).
+
+Why `tcflush` after cage exit is *not* sufficient as the sole fix: there is a
+race between the compositor exiting and the flush.  The kernel processes
+buffered input asynchronously — by the time the daemon runs `tcflush`,
+`agetty` may have already consumed the buffered characters.  Setting `K_OFF`
+*before* the compositor starts eliminates the race entirely: no characters
+ever enter the buffer.
+
+### Custom PAM Stacks for Display Managers
+
+Most Linux distributions provide shared PAM stack fragments — `system-auth`,
+`system-login` (Arch/Fedora), `common-auth`, `common-session`
+(Debian/Ubuntu) — intended for general-purpose login programs.  Using them
+via `include` is convenient but can be problematic for display managers:
+
+**`pam_systemd.so`** is included in nearly every session stack.  As described
+above, it calls `CreateSession` internally, which conflicts with a display
+manager that manages sessions directly.  This module must be excluded.
+
+**`pam_selinux.so`** manages SELinux security contexts, setting the context
+before session setup and optionally restoring it afterward.  On systems
+without SELinux (like CachyOS), it produces harmless but noisy "unable to
+get context" warnings.  On SELinux-enabled systems, it would need careful
+integration with the compositor's security context.  Since atrium's target
+systems don't use SELinux, these entries are omitted.
+
+The pattern for a display manager's PAM config is to **inline the specific
+modules needed** rather than including the system-wide stack:
+
+```
+# Authentication: use the system stack (safe — these are pure checks)
+auth       include    system-auth
+
+# Account: use the system stack (also pure checks)
+account    include    system-login
+
+# Session: cherry-pick individual modules (NOT system-login)
+session    required   pam_loginuid.so     # audit trail
+session    required   pam_env.so          # /etc/environment
+session    required   pam_limits.so       # ulimits from limits.conf
+session    optional   pam_keyinit.so force revoke  # session keyring
+session    required   pam_unix.so         # utmp/wtmp records
+# pam_systemd.so intentionally excluded
+# pam_selinux.so intentionally excluded
+
+# Password changes: use the system stack
+password   include    system-auth
+```
+
+The auth, account, and password groups can safely use `include` because they
+perform checks and modifications to the authentication database — not
+per-process session state.  The session group needs manual curation because
+it is the one that creates side effects (logind sessions, audit records,
+keyrings) that can conflict with the display manager's own session
+management.
