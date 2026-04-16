@@ -10,6 +10,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,12 +77,49 @@ static void on_greeter_credentials(int fd, void *userdata)
         return;
     }
 
+    /* Store username before wiping buf (username points into buf). */
+    memcpy(s->greeter_username, username, ulen + 1);
+
+    /* SHORTCUT: passwordless users bypass PAM entirely.  Resolve uid/gid
+     * via getpwnam() and skip authentication.  No PAM session is opened:
+     * s->auth.pamh stays NULL, so auth_close() and auth_open_session()
+     * will be no-ops for this session. */
+    static const char *passwordless[] = CONFIG_PASSWORDLESS_USERS;
+    int is_passwordless = 0;
+    for (int i = 0; passwordless[i]; i++) {
+        if (strcmp(s->greeter_username, passwordless[i]) == 0) {
+            is_passwordless = 1;
+            break;
+        }
+    }
+
+    if (is_passwordless) {
+        /* Wipe buffer (contains empty password, but be consistent). */
+        memset(buf, 0, sizeof(buf));
+
+        errno = 0;
+        struct passwd *pw = getpwnam(s->greeter_username);
+        if (!pw) {
+            log_error("getpwnam(%s): %s", s->greeter_username,
+                      errno ? strerror(errno) : "user not found");
+            s->greeter_username[0] = '\0';
+            greeter_send_result(s, "fail:Unknown user\n");
+            return;
+        }
+        s->auth = (auth_result){0};
+        s->auth.uid = pw->pw_uid;
+        s->auth.gid = pw->pw_gid;
+        /* pamh stays NULL — auth_close/auth_open_session will skip PAM. */
+        log_info("%s: passwordless login for '%s' (uid=%u gid=%u)",
+                 s->name, s->greeter_username,
+                 (unsigned)pw->pw_uid, (unsigned)pw->pw_gid);
+        greeter_send_result(s, "ok\n");
+        return;
+    }
+
     /* Authenticate via PAM. */
     auth_result auth = {0};
     int pam_rc = auth_begin(username, password, &auth);
-
-    /* Store username before wiping buf (username points into buf). */
-    memcpy(s->greeter_username, username, ulen + 1);
 
     /* Wipe credentials from the buffer immediately. */
     memset(buf, 0, sizeof(buf));

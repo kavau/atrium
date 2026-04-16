@@ -28,6 +28,14 @@
  * To ignore multiple seats, extend this to a NULL-terminated array. */
 #define CONFIG_IGNORE_SEATS     ""
 
+/* SHORTCUT: Users that can log in without a password.
+ * For these users the greeter skips the password screen and sends empty
+ * credentials; the daemon skips PAM authentication and resolves uid/gid
+ * directly via getpwnam().  No PAM session is opened (no loginuid, no
+ * pam_limits, no keyring) — this is a development convenience, not a
+ * production feature.  Set to { NULL } to require passwords for all users. */
+#define CONFIG_PASSWORDLESS_USERS  { NULL }
+
 /* Greeter command — cage kiosk compositor hosting atrium-greeter.
  *
  * SHORTCUT: GREETER_UID/GID should be a dedicated system account

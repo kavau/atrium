@@ -167,7 +167,12 @@ int auth_begin(const char *username, const char *password, auth_result *out)
 int auth_open_session(auth_result *result)
 {
     assert(result);
-    assert(result->pamh);
+
+    /* SHORTCUT: passwordless logins have no PAM handle — skip the PAM
+     * session entirely.  This means no loginuid, no pam_limits, no
+     * keyring setup for these sessions. */
+    if (!result->pamh)
+        return PAM_SUCCESS;
 
     pam_handle_t *pamh = result->pamh;
 
@@ -191,7 +196,14 @@ int auth_open_session(auth_result *result)
 void auth_close(auth_result *result)
 {
     assert(result);
-    assert(result->pamh);
+
+    /* SHORTCUT: passwordless logins set pamh = NULL — no PAM session was
+     * opened, so there is nothing to close.  The caller (SIGCHLD handler,
+     * shutdown) already guards with `if (s->auth.pamh)`, but this check
+     * makes auth_close() independently safe to call with a zero-initialised
+     * auth_result. */
+    if (!result->pamh)
+        return;
 
     pam_close_session(result->pamh, 0);
     pam_setcred(result->pamh, PAM_DELETE_CRED);

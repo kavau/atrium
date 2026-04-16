@@ -23,12 +23,24 @@
  */
 
 #include "ui.h"
+#include "config.h"
 #include "log.h"
 
 #include <gtk/gtk.h>
 #include <glib-unix.h>
 #include <string.h>
 #include <unistd.h>
+
+/* SHORTCUT: check whether a username is in CONFIG_PASSWORDLESS_USERS. */
+static int is_passwordless(const char *username)
+{
+    const char *list[] = CONFIG_PASSWORDLESS_USERS;
+    for (int i = 0; list[i]; i++) {
+        if (strcmp(username, list[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
 
 /* ── CSS ───────────────────────────────────────────────────────────────────── */
 
@@ -259,6 +271,20 @@ static void on_user_selected(GtkWidget *widget, gpointer user_data)
         if (GTK_IS_BUTTON(child))
             gtk_widget_set_sensitive(child, FALSE);
         child = gtk_widget_get_next_sibling(child);
+    }
+
+    /* SHORTCUT: passwordless users skip the password screen entirely.
+     * Send empty credentials (username + empty password) and wait for
+     * the daemon to respond.  Same code path as on_login() but without
+     * the password prompt. */
+    if (ctx->credentials_fd != -1 && is_passwordless(username)) {
+        log_debug("passwordless login for '%s'", username);
+        gtk_widget_set_visible(ctx->users_spinner, TRUE);
+        gtk_spinner_start(GTK_SPINNER(ctx->users_spinner));
+        write(ctx->credentials_fd, username, strlen(username) + 1);
+        write(ctx->credentials_fd, "", 1);  /* empty password NUL */
+        g_unix_fd_add(ctx->result_fd, G_IO_IN, on_result_ready, ctx);
+        return;
     }
 
     /* Show spinner as visual feedback. */
