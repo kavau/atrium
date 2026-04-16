@@ -262,6 +262,8 @@ detection triggers and the daemon backs off instead of restarting indefinitely.
 Features planned for implementation after the core phases are complete. No
 particular order or timeline.
 
+### Core / Daemon Improvements
+
 - **Passwordless login and autologin** — allow per-seat configuration for
   passwordless accounts and automatic login (skip the greeter entirely for
   designated seats/users).
@@ -272,22 +274,30 @@ particular order or timeline.
   greeter. The greeter itself remains Wayland (inside cage), but the user
   session would run under Xwayland or a standalone X server. Only if feasible
   without disproportionate effort.
-- **Third-party greeter support** — allow using existing greeters (e.g. LightDM
-  greeters) via a compatibility layer or standardized greeter protocol. Only
-  if feasible without disproportionate effort.
+- **Third-party greeter support** — allow using existing greeters from other
+  display managers instead of atrium-greeter, primarily
+  [greetd](https://git.sr.ht/~kennylevinsen/greetd) 
+  (gtkgreet, tuigreet, ReGreet). Only if feasible without disproportionate
+  effort.
+- **Last user/session memory** — remember the last logged-in user and session
+  type per seat. Pre-select them on the next greeter appearance. Persist to
+  disk.
+
+### Greeter Improvements
+
 - **Shutdown/reboot from greeter** — allow the user to shut down or reboot the
   machine from the greeter UI without logging in. Requires a greeter→daemon
   IPC command and a logind `PowerOff`/`Reboot` D-Bus call.
 - **User list in greeter** — show available users with names/avatars instead of
   a free-text username field. Read from AccountsService or enumerate non-system
   users from `/etc/passwd`.
-- **Last user/session memory** — remember the last logged-in user and session
-  type per seat. Pre-select them on the next greeter appearance. Persist to
-  disk.
 - **Custom greeter themes** — allow user-configurable greeter appearance
   (background, colors, layout).
 - **Basic accessibility** — on-screen keyboard and high-contrast mode in the
   greeter.
+- **Greeter screen blanking** — turn off the display after a configurable idle
+  timeout while the greeter is waiting for input. Wake on any input event.
+  Reduces power consumption and avoids burn-in on always-on login screens.
 
 ---
 

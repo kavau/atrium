@@ -13,6 +13,10 @@ to a user-selected Wayland session.
 > logind session creation, compositor launch, and automatic greeter restart
 > on logout — is fully operational.
 >
+> **Warning:** atrium runs as a system service with root privileges. It is
+> experimental software — use at your own risk. See [LICENSE](LICENSE) for
+> warranty and liability terms.
+>
 > Known limitations:
 > - **No hotplug** — seats added/removed after startup are not detected
 > - **Compile-time config only** — all settings live in `src/config.h`
