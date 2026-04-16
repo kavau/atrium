@@ -4,11 +4,19 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/kd.h>
 #include <linux/vt.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <termios.h>
 #include <unistd.h>
+
+/*
+ * Saved keyboard mode from vt_suppress_keyboard().  A single static int
+ * suffices because atrium only allocates one VT (for seat0).
+ */
+static int saved_kb_mode = -1;
 
 int vt_alloc(int *vtnr_out)
 {
@@ -54,4 +62,65 @@ void vt_release(int vtnr)
     if (ioctl(tty0, VT_DISALLOCATE, vtnr) < 0 && errno != EBUSY)
         log_error("vt_release: VT_DISALLOCATE vt%d: %s", vtnr, strerror(errno));
     close(tty0);
+}
+
+int vt_suppress_keyboard(int vtnr)
+{
+    char tty_path[32];
+    snprintf(tty_path, sizeof(tty_path), "/dev/tty%d", vtnr);
+
+    int fd = open(tty_path, O_RDWR | O_CLOEXEC | O_NOCTTY);
+    if (fd < 0) {
+        log_error("vt_suppress_keyboard: open %s: %s",
+                  tty_path, strerror(errno));
+        return -1;
+    }
+
+    /* Save the current keyboard mode so we can restore it later. */
+    int kb_mode;
+    if (ioctl(fd, KDGKBMODE, &kb_mode) < 0) {
+        log_error("vt_suppress_keyboard: KDGKBMODE %s: %s",
+                  tty_path, strerror(errno));
+        close(fd);
+        return -1;
+    }
+    saved_kb_mode = kb_mode;
+
+    /* K_OFF: kernel drops all keyboard input for this VT.  No characters
+     * reach the TTY line discipline, preventing password keystrokes from
+     * being buffered while a Wayland compositor reads input via libinput. */
+    if (ioctl(fd, KDSKBMODE, K_OFF) < 0) {
+        log_error("vt_suppress_keyboard: KDSKBMODE K_OFF %s: %s",
+                  tty_path, strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    /* Flush any input already buffered before we set K_OFF. */
+    tcflush(fd, TCIFLUSH);
+
+    log_debug("vt%d: keyboard suppressed (saved mode %d)", vtnr, kb_mode);
+    return fd;
+}
+
+void vt_restore_keyboard(int tty_fd)
+{
+    if (tty_fd < 0)
+        return;
+
+    /* Flush any stale input that may have accumulated despite K_OFF
+     * (e.g. from a race at mode transition boundaries). */
+    tcflush(tty_fd, TCIFLUSH);
+
+    /* Restore the keyboard mode saved by vt_suppress_keyboard(). */
+    if (saved_kb_mode >= 0) {
+        if (ioctl(tty_fd, KDSKBMODE, saved_kb_mode) < 0)
+            log_error("vt_restore_keyboard: KDSKBMODE %d: %s",
+                      saved_kb_mode, strerror(errno));
+        else
+            log_debug("vt keyboard restored to mode %d", saved_kb_mode);
+        saved_kb_mode = -1;
+    }
+
+    close(tty_fd);
 }

@@ -1,4 +1,5 @@
 #include "session.h"
+#include "auth.h"
 #include "bus.h"
 #include "config.h"
 #include "log.h"
@@ -73,7 +74,7 @@ static void wait_udev_settle(void)
  * Called from the child side of the fork after the sync pipe has signalled
  * that the parent finished setting up the logind session.
  * This function never returns. */
-static _Noreturn void child_exec(const struct seat *s,
+static _Noreturn void child_exec(struct seat *s,
                                  const struct passwd *pw,
                                  const char *runtime_dir,
                                  int is_greeter)
@@ -137,6 +138,33 @@ static _Noreturn void child_exec(const struct seat *s,
         char vtnr_str[8];
         snprintf(vtnr_str, sizeof(vtnr_str), "%d", s->vtnr);
         setenv("XDG_VTNR", vtnr_str, 1);
+    }
+
+    /* Open the PAM session in the compositor child so that session
+     * modules (pam_loginuid, pam_keyinit, pam_limits) run in the
+     * correct PID context — not the daemon's.  Must happen before
+     * privilege drop (some modules need root).  Greeter sessions
+     * skip this: they have no PAM handle. */
+    if (!is_greeter) {
+        int pr = auth_open_session(&s->auth);
+        if (pr != PAM_SUCCESS) {
+            log_error("auth_open_session failed, aborting child");
+            _exit(1);
+        }
+    }
+
+    /* Apply PAM environment variables (e.g. MAIL, MOTD_SHOWN) to the
+     * compositor session.  These were collected by auth_open_session() via
+     * pam_getenvlist() and stored in s->auth.pam_env. */
+    if (!is_greeter && s->auth.pam_env) {
+        for (char **env = s->auth.pam_env; *env; env++) {
+            char *eq = strchr(*env, '=');
+            if (eq) {
+                *eq = '\0';
+                setenv(*env, eq + 1, 1);
+                *eq = '=';
+            }
+        }
     }
 
     /* Drop root: supplementary groups, then gid, then uid.
@@ -239,6 +267,8 @@ static int session_start_impl(struct seat *s, int is_greeter)
                       s->name);
             return -1;
         }
+        /* uid/gid already resolved by auth_begin() in on_greeter_credentials.
+         * We still need a passwd struct for pw_name, pw_shell, pw_dir. */
         int r = getpwnam_r(s->greeter_username, &pwbuf, pwbuf_data,
                            sizeof(pwbuf_data), &pw);
         if (r != 0 || pw == NULL) {
@@ -255,9 +285,7 @@ static int session_start_impl(struct seat *s, int is_greeter)
     /* Build the XDG_RUNTIME_DIR path before forking so the child can use it
      * directly. The authoritative value comes from CreateSession's reply, but
      * that runs in the parent after fork. Since logind always uses
-     * /run/user/<uid>, we can construct it here.
-     * SHORTCUT: When PAM-based sessions are added (Phase 9), consider passing
-     * session data from parent to child through the sync pipe instead. */
+     * /run/user/<uid>, we can construct it here. */
     char runtime_dir[64];
     snprintf(runtime_dir, sizeof(runtime_dir), "/run/user/%u",
             (unsigned)pw->pw_uid);

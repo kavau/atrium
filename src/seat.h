@@ -1,5 +1,7 @@
 #pragma once
 
+#include "auth.h"
+
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -20,6 +22,7 @@
 struct seat {
     char  name[64];
     int   vtnr;              /* allocated VT number; 0 for non-seat0 seats */
+    int   vt_kb_fd;          /* tty fd with keyboard suppressed; -1 if none */
 
     /* Session state (populated by session_start / session_start_greeter). */
     int   state;             /* SEAT_IDLE, SEAT_GREETER, or SEAT_SESSION */
@@ -33,6 +36,9 @@ struct seat {
     int   credentials_rfd;   /* read end of greeter→daemon credential pipe; -1 if none */
     int   result_wfd;        /* write end of daemon→greeter result pipe; -1 if none */
     char  greeter_username[64]; /* username received from greeter credentials */
+
+    /* PAM session state (populated by auth_begin in on_greeter_credentials). */
+    auth_result auth;        /* valid while state == SEAT_SESSION */
 };
 
 /* Add a seat by name. Returns 0 on success, -1 if the seat limit is reached

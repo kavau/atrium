@@ -265,11 +265,6 @@ static void on_user_selected(GtkWidget *widget, gpointer user_data)
     gtk_widget_set_visible(ctx->users_spinner, TRUE);
     gtk_spinner_start(GTK_SPINNER(ctx->users_spinner));
 
-    /* SHORTCUT: skip password input — no PAM auth yet, daemon always
-     * replies "ok".  Remove this block once PAM is wired up. */
-    on_login(NULL, ctx);
-    return;
-
     char heading[256];
     snprintf(heading, sizeof(heading), "Log in as %s", display);
     gtk_label_set_text(GTK_LABEL(ctx->login_heading), heading);

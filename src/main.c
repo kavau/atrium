@@ -1,3 +1,4 @@
+#include "auth.h"
 #include "bus.h"
 #include "config.h"
 #include "event.h"
@@ -21,12 +22,9 @@
  * on_greeter_credentials — fires when the greeter writes credentials.
  *
  * Wire format: "<username>\0<password>\0" — two consecutive null-terminated
- * strings.  We parse the username, store it in s->greeter_username, and
- * reply "ok\n".  The greeter then exits cleanly, triggering SIGCHLD which
- * launches the compositor.
- *
- * SHORTCUT: password is ignored (no PAM authentication).  Login always
- * succeeds.
+ * strings.  We authenticate the user via PAM, and on success store the
+ * auth_result and reply "ok\n".  The greeter then exits cleanly, triggering
+ * SIGCHLD which launches the compositor.
  *
  * SHORTCUT: reads the entire message in one read().  Safe for pipe writes
  * under PIPE_BUF (4096 bytes).
@@ -78,11 +76,25 @@ static void on_greeter_credentials(int fd, void *userdata)
         return;
     }
 
-    /* SHORTCUT: no PAM — accept any credentials. */
+    /* Authenticate via PAM. */
+    auth_result auth = {0};
+    int pam_rc = auth_begin(username, password, &auth);
+
+    /* Store username before wiping buf (username points into buf). */
     memcpy(s->greeter_username, username, ulen + 1);
 
-    /* Wipe credentials from the buffer. */
+    /* Wipe credentials from the buffer immediately. */
     memset(buf, 0, sizeof(buf));
+
+    if (pam_rc != PAM_SUCCESS) {
+        log_error("%s: authentication failed for '%s'",
+                  s->name, s->greeter_username);
+        s->greeter_username[0] = '\0';
+        greeter_send_result(s, "fail:Authentication failed\n");
+        return;
+    }
+
+    s->auth = auth;
 
     greeter_send_result(s, "ok\n");
     /* Greeter will now exit(0), triggering SIGCHLD → session_start(). */
@@ -147,6 +159,9 @@ static void on_signal(int fd, void *userdata)
             if (was_greeter) {
                 event_remove(s->credentials_rfd);
                 greeter_stop(s);
+            } else if (s->auth.pamh) {
+                /* Compositor exited — close PAM session. */
+                auth_close(&s->auth);
             }
             session_stop(s);
 
@@ -229,6 +244,12 @@ int main(void)
         if (vt_alloc(&s->vtnr) < 0)
             return EXIT_FAILURE;
         log_info("seat0: allocated vt%d", s->vtnr);
+
+        /* Suppress VT keyboard input so keystrokes typed into the Wayland
+         * greeter/compositor don't leak into the TTY's input buffer. */
+        s->vt_kb_fd = vt_suppress_keyboard(s->vtnr);
+        if (s->vt_kb_fd < 0)
+            log_warn("seat0: failed to suppress VT keyboard (continuing)");
         break;
     }
 
@@ -258,6 +279,8 @@ int main(void)
             event_remove(s->credentials_rfd);
             greeter_stop(s);
         }
+        if (s->state == SEAT_SESSION && s->auth.pamh)
+            auth_close(&s->auth);
         session_shutdown(s);
     }
 
@@ -266,6 +289,8 @@ int main(void)
     for (int i = 0; i < seat_count(); i++) {
         struct seat *s = seat_get(i);
         if (s->vtnr > 0) {
+            vt_restore_keyboard(s->vt_kb_fd);
+            s->vt_kb_fd = -1;
             vt_release(s->vtnr);
             vt_count++;
         }

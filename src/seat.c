@@ -25,6 +25,7 @@ int seat_add(const char *name)
     snprintf(g_seats[g_num_seats].name, sizeof(g_seats[g_num_seats].name),
              "%s", name);
     g_seats[g_num_seats].vtnr             = 0;
+    g_seats[g_num_seats].vt_kb_fd         = -1;
     g_seats[g_num_seats].state            = SEAT_IDLE;
     g_seats[g_num_seats].compositor_pid   = 0;
     g_seats[g_num_seats].session_fifo_fd  = -1;
