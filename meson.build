@@ -19,6 +19,8 @@ inc_lib = include_directories('lib')
 
 # Dependencies — declared here, consumed by subdirectories.
 dep_libsystemd = dependency('libsystemd')
+# libpam does not ship a .pc file on Debian; dependency('pam') falls back to
+# a direct linker probe (-lpam) which is sufficient for our purposes.
 dep_libpam     = dependency('pam')
 dep_gtk4       = dependency('gtk4')
 
@@ -64,4 +66,35 @@ executable('atrium-greeter-test',
 # Install the systemd service unit.
 install_data('data/atrium.service',
   install_dir: '/usr/lib/systemd/system',
+)
+
+# ── PAM configuration ─────────────────────────────────────────────────────────
+#
+# Install the distro-appropriate PAM stack.  Controlled by the -Dpam_config
+# meson option (default: arch).  See data/pam.d/ for the variants.
+
+pam_variant = get_option('pam_config')
+install_data('data/pam.d/atrium.' + pam_variant,
+  install_dir: '/etc/pam.d',
+  rename: 'atrium',
+)
+
+# ── PAM auth test tool ────────────────────────────────────────────────────────
+#
+# Validates src/auth.c against the real PAM stack with real credentials, in
+# complete isolation from the daemon.  Run as root:
+#
+#   sudo ./build/atrium-auth-test <username>
+#
+# Not installed; run directly from build/.
+
+executable('atrium-auth-test',
+  sources: [
+    'tools/auth-test.c',
+    'src/auth.c',
+  ],
+  dependencies: [dep_libpam],
+  include_directories: [include_directories('src'), inc_lib],
+  c_args: ['-DLOG_PREFIX="auth-test"'],
+  install: false,
 )

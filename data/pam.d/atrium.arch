@@ -1,0 +1,43 @@
+#
+# PAM configuration for atrium — Arch / CachyOS / Fedora variant.
+#
+# Based on /etc/pam.d/login.  Display-manager-specific adjustments noted below.
+#
+
+# Enforce a brief delay on auth failure to slow brute-force attempts.
+auth       optional   pam_faildelay.so  delay=3000000
+
+# Disallow logins when /etc/nologin is present (used during system shutdown).
+auth       requisite  pam_nologin.so
+
+# SELinux: clear any lingering context before the session starts.
+# If SELinux is not active the module returns success silently.
+session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux.so close
+
+# Record the loginuid in /proc/self/loginuid for the audit subsystem.
+session    required   pam_loginuid.so
+
+# SELinux: switch to the user's context.
+session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux.so open
+
+# Set up environment variables from /etc/environment.
+session    required   pam_env.so
+
+# Core authentication (password check via pam_unix, etc.).
+# system-auth is the Arch/Fedora equivalent of Debian's common-auth.
+auth       include    system-auth
+
+# Group membership adjustments based on time/tty/service/user.
+auth       optional   pam_group.so
+
+# Per-user resource limits from /etc/security/limits.conf.
+session    required   pam_limits.so
+
+# Session keyring: create a new keyring so each session is isolated.
+session    optional   pam_keyinit.so force revoke
+
+# Standard account, session, and password management.
+# system-login includes pam_systemd.so for logind integration.
+account    include    system-login
+session    include    system-login
+password   include    system-auth

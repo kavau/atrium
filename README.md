@@ -79,15 +79,19 @@ X11 sessions (`/usr/share/xsessions/`) are not supported.
 ### 2. Build and install
 
 ```sh
-meson setup build
+meson setup build -Dpam_config=arch   # or debian
 ninja -C build
 sudo ninja -C build install
 ```
+
+The `-Dpam_config` option selects which PAM stack to install (default: `arch`).
+Use `debian` on Debian/Ubuntu systems.
 
 This installs:
 - `/usr/local/bin/atrium` — the daemon
 - `/usr/local/libexec/atrium-greeter` — the GTK4 greeter
 - `/usr/lib/systemd/system/atrium.service` — the systemd unit
+- `/etc/pam.d/atrium` — the PAM configuration
 
 ### 3. Enable and start
 
