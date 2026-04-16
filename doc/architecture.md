@@ -175,8 +175,8 @@ conversation with the credentials received from the greeter. This means the full
 PAM stack (password aging, account lockout, MOTD, etc.) applies transparently.
 
 PAM authentication runs synchronously in the daemon process. The event loop is
-blocked during authentication. This is acceptable for v0.1.0; a future phase may
-move PAM into a worker subprocess if latency becomes a concern.
+blocked during authentication. This is acceptable for early versions; a future
+phase may move PAM into a worker subprocess if latency becomes a concern.
 
 ### Session Handoff
 
