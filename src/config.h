@@ -23,6 +23,11 @@
  * Replaced by timerfd-based crash-loop detection in Phase 7. */
 #define CONFIG_RESTART_DELAY    5
 
+/* Seat name to ignore during enumeration (e.g. a monitorless seat that
+ * crashes the greeter).  Set to NULL or "" to disable.
+ * To ignore multiple seats, extend this to a NULL-terminated array. */
+#define CONFIG_IGNORE_SEATS     "seat2"
+
 /* Greeter command — cage kiosk compositor hosting atrium-greeter.
  *
  * SHORTCUT: GREETER_UID/GID should be a dedicated system account
