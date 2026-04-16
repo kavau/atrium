@@ -13,11 +13,12 @@
  * which signals the daemon that the greeter completed successfully.
  */
 
+#include "users.h"
+
 /*
  * greeter_run_ui() — display the login prompt and block until dismissed.
  *
- * username        account name to pre-fill in the username entry, set by the
- *                 daemon via ATRIUM_USERNAME.  The user may edit it.
+ * users / user_count  array of eligible login users, enumerated by the caller.
  *
  * credentials_fd  write-end of the credential pipe.  On submit, the UI writes
  *                 "<username>\0<password>\0" here.  Pass -1 for standalone dev
@@ -27,4 +28,5 @@
  *                 success or "fail:<reason>\n" on failure.  Must be -1 when
  *                 credentials_fd is -1.
  */
-void greeter_run_ui(const char *username, int credentials_fd, int result_fd);
+void greeter_run_ui(const greeter_user *users, int user_count,
+                    int credentials_fd, int result_fd);

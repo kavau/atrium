@@ -7,10 +7,12 @@ to a user-selected Wayland session.
 
 > **Status: v0.1.0 — functional, pre-authentication.**
 >
-> atrium is usable as a daily-driver display manager today. The core workflow
-> — greeter on every seat, user selection, session launch, and automatic
-> greeter restart on logout — is fully operational. The main gap is
-> authentication: PAM is not yet wired up, so any credentials are accepted.
+> atrium is still in early development, so expect rough edges and missing
+> features. That said, atrium is usable as a daily-driver display manager
+> today. The core workflow — greeter on every seat, user selection, session
+> launch, and automatic greeter restart on logout — is fully operational. The
+> main gap is authentication: PAM is not yet wired up, so any credentials are
+> accepted.
 >
 > Known limitations:
 > - **No authentication** — PAM integration is next (passwords are currently ignored)
@@ -66,6 +68,10 @@ All settings are compile-time constants in `src/config.h`. Edit before building:
 | `CONFIG_SEAT_ENUM_DELAY` | `2` | Seconds to wait for logind seat discovery at boot |
 | `CONFIG_RESTART_DELAY` | `5` | Seconds before restarting a crashed compositor |
 
+`CONFIG_COMPOSITOR` can be set to the `Exec` value from any `.desktop` file in
+`/usr/share/wayland-sessions/` (e.g. `sway`, `labwc`, `plasma-wayland`, `gnome-session`).
+X11 sessions (`/usr/share/xsessions/`) are not supported.
+
 > **Note:** `CONFIG_GREETER_UID/GID` should ideally be a dedicated system
 > account (e.g. `atrium`). Using a regular user account works but is a
 > shortcut.
@@ -105,7 +111,8 @@ Then reboot. atrium will start on boot and launch a greeter on every seat.
 ### Remote deploy
 
 The `tools/deploy.sh` script syncs the source tree to a remote machine, builds
-there, and optionally installs and restarts the service:
+there, and optionally installs and restarts the service (`/path/to/dest` can be
+any temp directory):
 
 ```sh
 # Build only

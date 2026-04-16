@@ -36,6 +36,7 @@ subdir('src')
 executable('atrium-greeter',
   sources: [
     'greeter/main.c',
+    'greeter/users.c',
     'greeter/ui-gtk4.c',
   ],
   dependencies: [
