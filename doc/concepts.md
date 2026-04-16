@@ -1111,3 +1111,230 @@ The `pw_gecos` field traditionally holds the user's full name (possibly
 followed by comma-separated fields like room number and phone). The greeter
 uses it as-is for the display name, falling back to the username if GECOS is
 empty.
+
+## Phase 9 — Standalone PAM Module
+
+Phase 9 introduces PAM (Pluggable Authentication Modules) — the standard
+Linux framework for authenticating users.  atrium's `auth.c` wraps the PAM C
+API into three functions (`auth_begin`, `auth_open_session`, `auth_close`)
+that the daemon calls at different points in the login lifecycle.
+
+### PAM Architecture
+
+Traditional Unix programs that authenticate users (login, su, sshd) each
+contain their own password-checking code.  PAM replaces this with a shared
+framework: the application calls a generic "authenticate this user" API, and
+PAM delegates to a configurable stack of *modules* that perform the actual
+work.
+
+The key abstraction: **the application does not know how authentication
+happens**.  PAM reads a service-specific configuration file in `/etc/pam.d/`
+(named after the application — `atrium` in our case) and executes the listed
+modules in order.  An administrator can change the authentication policy
+(require a hardware token, add two-factor, use LDAP) without recompiling
+the application.
+
+PAM organises its work into four *management groups*:
+
+| Group       | Purpose                                                    |
+|-------------|------------------------------------------------------------|
+| `auth`      | Verify the user's identity (password, fingerprint, etc.)   |
+| `account`   | Check whether the account is valid (expired, locked, etc.) |
+| `session`   | Set up / tear down the login environment (audit, limits)   |
+| `password`  | Change the user's authentication token (not used by atrium)|
+
+Each line in a PAM config file specifies one module for one group, with a
+*control flag* that determines how failure is handled:
+
+- **`required`** — the module must succeed, but the stack continues to run
+  remaining modules (so all are exercised before the final result).
+- **`requisite`** — the module must succeed; on failure, return immediately
+  without running further modules.
+- **`sufficient`** — if this module succeeds (and no prior `required` module
+  failed), return success immediately without running further modules.
+- **`optional`** — the module's result is ignored unless it is the only module
+  in the stack for this group.
+
+The `include` directive (Arch/Fedora) and `@include` directive (Debian) pull
+in another file's rules, e.g. `auth include system-auth` pulls in the
+system-wide authentication stack.  This is convenient but means the
+application inherits every module in the included file — including modules
+that may be inappropriate for its context (as we discovered with
+`pam_systemd.so` in Phase 10).
+
+### The PAM Conversation Mechanism
+
+PAM's most unusual design decision is the *conversation function*.  Rather
+than accepting a password as a direct argument, `pam_authenticate()` calls
+back into the application to request credentials:
+
+```c
+struct pam_conv conv = {
+    .conv        = pam_conv_fn,      /* callback function */
+    .appdata_ptr = (void *)password, /* opaque pointer passed to callback */
+};
+pam_start("atrium", username, &conv, &pamh);
+```
+
+When a PAM module needs input (e.g. "Password: "), it sends a message through
+the conversation function.  The application responds with the appropriate
+credential.  This indirection exists because PAM was designed for interactive
+terminals — the conversation function would prompt the user and read their
+response.  A display manager like atrium already has the password (received
+from the greeter via pipe), so its conversation function simply returns the
+pre-collected value.
+
+The callback receives an array of messages, each tagged with a style:
+
+| Style                | Meaning                                    |
+|----------------------|--------------------------------------------|
+| `PAM_PROMPT_ECHO_OFF`| Request secret input (password)           |
+| `PAM_PROMPT_ECHO_ON` | Request visible input (username, OTP)     |
+| `PAM_ERROR_MSG`      | Error text from a module (display to user) |
+| `PAM_TEXT_INFO`       | Informational text (display to user)      |
+
+For each prompt, the callback allocates a `pam_response` containing the
+reply string.  **PAM takes ownership** of both the response array and the
+strings inside it — they must be `malloc`'d, not stack-allocated or
+string-literal pointers.  PAM calls `free()` on them when it is done.
+
+This ownership model is why `strdup(password)` is used rather than returning
+the pointer directly: PAM will `free()` whatever it receives, and freeing a
+pointer into a stack buffer or static storage would corrupt the heap.
+
+### The PAM API Call Sequence
+
+A complete PAM session follows a strict order.  Each step depends on the
+previous one succeeding:
+
+```
+pam_start()          — initialise the PAM library; creates the handle
+    │
+pam_authenticate()   — verify the password via the "auth" module stack
+    │
+pam_acct_mgmt()      — check account validity via the "account" stack
+    │                   (expiry, lockout, time restrictions)
+    │
+pam_setcred()        — establish user credentials (Kerberos tickets,
+    │                   supplementary group memberships, etc.)
+    │
+pam_open_session()   — open a login session (audit log, utmp/wtmp,
+    │                   kernel keyring, pam_loginuid, resource limits)
+    │
+pam_getenvlist()     — collect environment variables set by modules
+    │                   (e.g. MAIL, KRB5CCNAME)
+    │
+    ╰── ... session runs ...
+    │
+pam_close_session()  — tear down the session (close audit record, etc.)
+    │
+pam_setcred(DELETE)  — destroy credentials created earlier
+    │
+pam_end()            — release all PAM resources; invalidates the handle
+```
+
+Each function returns `PAM_SUCCESS` on success or an error code.
+`pam_strerror(pamh, r)` converts error codes to human-readable strings.
+
+On failure at any step, the sequence must be unwound: if `pam_authenticate`
+fails, only `pam_end` is needed (no session was opened).  If
+`pam_open_session` fails, `pam_setcred(DELETE)` and `pam_end` are needed.
+The cleanup must mirror what was successfully set up — skipping a close call
+can leak kernel resources (audit records, keyring references).
+
+### `pam_fail_delay` and Brute-Force Protection
+
+`pam_unix` (the standard password module) inserts a random delay (roughly
+0–2 seconds) after each failed authentication attempt.  This slows down
+brute-force attacks over SSH or at a text console where an attacker can
+script rapid retries.  On top of that, many distributions include
+`pam_faildelay.so` in their system-auth stack that sets a fixed floor (e.g.
+3 seconds on Arch/CachyOS).
+
+The application *can* influence the delay via `pam_fail_delay(pamh, usec)`,
+but the actual delay is the maximum of all delays requested by the
+application and every module in the stack.  An application can only raise
+the floor, never lower it below what the modules set.
+
+atrium does **not** call `pam_fail_delay` at all — it defers entirely to the
+system's PAM configuration.  A display manager's greeter UI already
+serialises login attempts (the user must type a password and click "Login"),
+so the module-level delay simply adds a brief pause before the
+"authentication failed" message appears.  Calling `pam_fail_delay(pamh, 0)`
+would be pointless at best (modules override it) and a security weakness at
+worst (on a minimal PAM config that omits `pam_faildelay.so`, it would
+remove the `pam_unix` baseline delay entirely).
+
+### `getpwnam` and the Name Service Switch
+
+After successful authentication, atrium needs the user's numeric uid and gid
+to create the logind session and drop privileges.  `getpwnam()` resolves a
+username to a `struct passwd`:
+
+```c
+struct passwd *pw = getpwnam(username);
+/* pw->pw_uid, pw->pw_gid, pw->pw_dir, pw->pw_shell */
+```
+
+`getpwnam` returns a pointer to *static storage* — the next call to
+`getpwnam` (or `getpwent`) overwrites it.  Any fields needed later must be
+copied out immediately.  In atrium's case, we store uid and gid as integers
+in `auth_result`, which is safe.
+
+The function returns NULL on both "user not found" and "system error".  To
+distinguish the two, clear `errno` before the call:
+
+```c
+errno = 0;
+struct passwd *pw = getpwnam(username);
+if (!pw) {
+    if (errno)
+        /* hard error: LDAP timeout, NSS misconfiguration, etc. */
+    else
+        /* user simply does not exist in any database */
+}
+```
+
+Behind the scenes, `getpwnam` does not just read `/etc/passwd`.  It goes
+through the **Name Service Switch** (NSS), configured in `/etc/nsswitch.conf`.
+A typical entry:
+
+```
+passwd: files systemd
+```
+
+This means: first check `/etc/passwd` (the `files` provider), then try
+`systemd` (which can synthesise entries for `root` and `nobody`).  On systems
+with LDAP or SSSD, additional providers appear here, and `getpwnam` queries
+them transparently.  The application never needs to know where the user
+database lives.
+
+### PAM Handle Lifecycle
+
+The PAM handle (`pam_handle_t *pamh`) is an opaque structure created by
+`pam_start()` and destroyed by `pam_end()`.  It carries all state for the
+PAM transaction: which modules are loaded, what credentials were established,
+whether a session is open.
+
+A critical design constraint: **the handle must remain live between
+`pam_open_session` and `pam_close_session`**.  The session may run for hours
+(a user's desktop session), and `pam_close_session` must use the same handle
+to properly undo what `pam_open_session` set up (close audit records, remove
+kernel keyring links, etc.).
+
+This is why `auth_result` stores the handle:
+
+```c
+typedef struct auth_result {
+    uid_t         uid;
+    gid_t         gid;
+    char        **pam_env;
+    pam_handle_t *pamh;     /* retained for auth_close() */
+} auth_result;
+```
+
+`auth_begin()` creates the handle and stores it.  The session runs (possibly
+for hours).  When the session ends, `auth_close()` calls `pam_close_session`,
+`pam_setcred(DELETE)`, `pam_end`, and frees the environment list — in that
+order.  Calling `pam_end` without first closing the session would leak
+resources held by session modules.

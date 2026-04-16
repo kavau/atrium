@@ -126,13 +126,6 @@ int auth_begin(const char *username, const char *password, auth_result *out)
         return r;
     }
 
-    /*
-     * Suppress the per-failure delay that pam_unix inserts to slow brute-force
-     * attacks.  The display manager serialises retries through the greeter UI
-     * anyway, so the kernel-level delay only harms user experience here.
-     */
-    pam_fail_delay(pamh, 0);
-
     r = pam_authenticate(pamh, 0);
     if (r != PAM_SUCCESS) {
         log_error("pam_authenticate: %s", pam_strerror(pamh, r));
