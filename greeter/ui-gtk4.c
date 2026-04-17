@@ -163,7 +163,14 @@ typedef struct {
     char            selected_user[64];
     int             credentials_fd;
     int             result_fd;
+
+    /* SHORTCUT: screen blanking via black overlay window (not true DPMS). */
+    GtkWidget      *blank_window;     /* fullscreen black window */
+    guint           idle_timeout_id;  /* g_timeout_add_seconds() source ID */
 } login_ctx;
+
+/* Forward declaration for idle timer reset. */
+static void reset_idle_timer(login_ctx *ctx);
 
 /* ── Callbacks ─────────────────────────────────────────────────────────────── */
 
@@ -191,6 +198,17 @@ static gboolean on_result_ready(gint fd, GIOCondition condition,
     if (n > 0 && strncmp(buf, "ok", 2) == 0) {
         /* Clear the password field before destroying the window. */
         gtk_editable_set_text(GTK_EDITABLE(ctx->password_entry), "");
+
+        /* Stop the idle timer to prevent blank window from appearing during shutdown. */
+        if (ctx->idle_timeout_id) {
+            g_source_remove(ctx->idle_timeout_id);
+            ctx->idle_timeout_id = 0;
+        }
+
+        /* Destroy both windows to trigger application shutdown. Order matters:
+         * destroy blank_window first to avoid leaving it visible during teardown. */
+        if (ctx->blank_window)
+            gtk_window_destroy(GTK_WINDOW(ctx->blank_window));
         gtk_window_destroy(GTK_WINDOW(ctx->window));
         return G_SOURCE_REMOVE;
     }
@@ -230,6 +248,9 @@ static void on_login(GtkWidget *widget, gpointer user_data)
     (void)widget;
     login_ctx *ctx = user_data;
 
+    /* Reset idle timer on user interaction. */
+    reset_idle_timer(ctx);
+
     if (ctx->credentials_fd == -1) {
         log_debug("no credentials_fd, quitting directly");
         g_application_quit(G_APPLICATION(ctx->app));
@@ -267,6 +288,9 @@ static void on_user_selected(GtkWidget *widget, gpointer user_data)
     login_ctx  *ctx      = user_data;
     const char *username = g_object_get_data(G_OBJECT(widget), "username");
     const char *display  = g_object_get_data(G_OBJECT(widget), "display");
+
+    /* Reset idle timer on user interaction. */
+    reset_idle_timer(ctx);
 
     snprintf(ctx->selected_user, sizeof(ctx->selected_user), "%s", username);
     log_debug("selected user '%s' (%s)", username, display);
@@ -308,6 +332,9 @@ static void on_back(GtkWidget *widget, gpointer user_data)
     (void)widget;
     login_ctx *ctx = user_data;
 
+    /* Reset idle timer on user interaction. */
+    reset_idle_timer(ctx);
+
     /* Reset login page state. */
     gtk_editable_set_text(GTK_EDITABLE(ctx->password_entry), "");
     gtk_widget_set_visible(ctx->error_label, FALSE);
@@ -316,6 +343,95 @@ static void on_back(GtkWidget *widget, gpointer user_data)
     ctx->selected_user[0] = '\0';
 
     gtk_stack_set_visible_child_name(GTK_STACK(ctx->stack), "users");
+}
+
+/* ── Screen blanking (SHORTCUT) ────────────────────────────────────────────── */
+
+/*
+ * SHORTCUT: idle screen blanking via black overlay window.
+ *
+ * After CONFIG_BLANK_TIMEOUT seconds of idle time, show a fullscreen black
+ * window over the greeter.  Hide it on any input (keyboard/mouse) event.
+ *
+ * This does NOT power down the display — LCD backlights stay on, saving only
+ * burn-in, not power.  True DPMS blanking would require daemon-side DRM
+ * control (drmModeConnectorSetProperty DPMS=Off), which is significantly more
+ * complex and fragile (needs per-seat connector discovery, privilege handling,
+ * coordination with cage's DRM master).
+ */
+
+/* Idle timeout callback — show the black overlay window. */
+static gboolean on_idle_timeout(gpointer user_data)
+{
+    login_ctx *ctx = user_data;
+    if (ctx->blank_window) {
+        gtk_window_present(GTK_WINDOW(ctx->blank_window));
+        log_debug("screen blanked after %d seconds idle", CONFIG_BLANK_TIMEOUT);
+    }
+    ctx->idle_timeout_id = 0;
+    return G_SOURCE_REMOVE;
+}
+
+/* Reset the idle timer — cancel existing timer and start a new one. */
+static void reset_idle_timer(login_ctx *ctx)
+{
+    if (CONFIG_BLANK_TIMEOUT == 0)
+        return;
+
+    if (ctx->idle_timeout_id) {
+        g_source_remove(ctx->idle_timeout_id);
+        ctx->idle_timeout_id = 0;
+    }
+
+    ctx->idle_timeout_id = g_timeout_add_seconds(CONFIG_BLANK_TIMEOUT,
+                                                   on_idle_timeout, ctx);
+}
+
+/* Key press handler — hide blank window if visible, reset idle timer. */
+static gboolean on_key_press(GtkEventControllerKey *controller,
+                               guint keyval, guint keycode,
+                               GdkModifierType state, gpointer user_data)
+{
+    (void)controller;
+    (void)keyval;
+    (void)keycode;
+    (void)state;
+    login_ctx *ctx = user_data;
+
+    if (ctx->blank_window && gtk_widget_get_visible(ctx->blank_window)) {
+        gtk_widget_set_visible(ctx->blank_window, FALSE);
+        log_debug("screen unblanked on key press");
+    }
+
+    reset_idle_timer(ctx);
+    /* Return FALSE to propagate the event to the focused widget (e.g. the
+     * password entry). Returning TRUE would swallow the keystroke. */
+    return FALSE;
+}
+
+/* Motion handler — hide blank window if visible, reset idle timer. */
+static void on_motion(GtkEventControllerMotion *controller,
+                       gdouble x, gdouble y, gpointer user_data)
+{
+    (void)controller;
+    (void)x;
+    (void)y;
+    login_ctx *ctx = user_data;
+
+    if (ctx->blank_window && gtk_widget_get_visible(ctx->blank_window)) {
+        gtk_widget_set_visible(ctx->blank_window, FALSE);
+        log_debug("screen unblanked on motion");
+    }
+
+    reset_idle_timer(ctx);
+}
+
+/* GtkEditable::changed wrapper — any keystroke in the password entry counts as
+ * user activity and resets the idle timer. */
+static void on_keystroke(GtkEditable *editable, gpointer user_data)
+{
+    (void)editable;
+    reset_idle_timer((login_ctx *)user_data);
 }
 
 /* ── Window construction ───────────────────────────────────────────────────── */
@@ -418,6 +534,9 @@ static void on_activate(GtkApplication *app, gpointer user_data)
 
     g_signal_connect(button,         "clicked",  G_CALLBACK(on_login), ctx);
     g_signal_connect(password_entry, "activate", G_CALLBACK(on_login), ctx);
+    /* Any keystroke in the password field counts as activity — reset the
+     * idle timer so the screen doesn't blank while the user is typing. */
+    g_signal_connect(password_entry, "changed",  G_CALLBACK(on_keystroke), ctx);
 
     GtkWidget *login_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_box_append(GTK_BOX(login_box), login_heading);
@@ -442,6 +561,13 @@ static void on_activate(GtkApplication *app, gpointer user_data)
     gtk_widget_add_css_class(card, "card");
     gtk_widget_set_halign(card, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(card, GTK_ALIGN_CENTER);
+    /* KNOWN ISSUE: after navigating user → login → back, the left/right borders
+     * of the user buttons appear clipped.  The card shrinks to the login page's
+     * natural width while that page is shown; on return the button borders
+     * overflow the card and are clipped by its border-radius.  Several layout
+     * workarounds were attempted (hhomogeneous, queue_resize, size_request,
+     * CSS min-width) without success.  Accept for now; revisit when the greeter
+     * UI is redesigned. */
     gtk_box_append(GTK_BOX(card), stack);
 
     GtkWidget *window = gtk_application_window_new(app);
@@ -462,6 +588,57 @@ static void on_activate(GtkApplication *app, gpointer user_data)
 
     gtk_window_present(GTK_WINDOW(window));
     log_debug("window presented with %d users", user_count);
+
+    /* ── Screen blanking setup (SHORTCUT) ────────────────────────────────── */
+
+    if (CONFIG_BLANK_TIMEOUT > 0) {
+        /* Create a separate fullscreen black window for blanking.
+         * Use GtkWindow (not GtkApplicationWindow) to avoid lifecycle issues
+         * when destroying multiple application windows during shutdown. */
+        GtkWidget *blank_window = gtk_window_new();
+        ctx->blank_window = blank_window;
+        gtk_window_set_title(GTK_WINDOW(blank_window), "atrium-blank");
+
+        /* Black background via CSS.  Scope the rule to the "atrium-blank"
+         * CSS class so it does not bleed onto the main greeter window. */
+        gtk_widget_add_css_class(blank_window, "atrium-blank");
+        GtkCssProvider *black_css = gtk_css_provider_new();
+#if GTK_CHECK_VERSION(4, 12, 0)
+        gtk_css_provider_load_from_string(black_css,
+            ".atrium-blank { background-color: #000000; }");
+#else
+        gtk_css_provider_load_from_data(black_css,
+            ".atrium-blank { background-color: #000000; }", -1);
+#endif
+        gtk_style_context_add_provider_for_display(
+            gtk_widget_get_display(blank_window),
+            GTK_STYLE_PROVIDER(black_css),
+            GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_unref(black_css);
+
+        /* Fullscreen but hidden — don't present() until timeout fires. */
+        gtk_window_fullscreen(GTK_WINDOW(blank_window));
+        gtk_widget_set_visible(blank_window, FALSE);
+        
+        /* Hide the cursor on the blank screen by setting it to "none". */
+        gtk_widget_set_cursor_from_name(blank_window, "none");
+
+        /* Event controllers ONLY on blank window to dismiss it. */
+        GtkEventController *blank_key = gtk_event_controller_key_new();
+        g_signal_connect(blank_key, "key-pressed",
+                         G_CALLBACK(on_key_press), ctx);
+        gtk_widget_add_controller(blank_window, blank_key);
+
+        GtkEventController *blank_motion = gtk_event_controller_motion_new();
+        g_signal_connect(blank_motion, "motion",
+                         G_CALLBACK(on_motion), ctx);
+        gtk_widget_add_controller(blank_window, blank_motion);
+
+        /* Start the idle timer. */
+        reset_idle_timer(ctx);
+        log_debug("screen blanking enabled: %d second timeout",
+                  CONFIG_BLANK_TIMEOUT);
+    }
 }
 
 void greeter_run_ui(const greeter_user *users, int user_count,

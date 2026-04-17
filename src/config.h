@@ -23,6 +23,13 @@
  * Replaced by timerfd-based crash-loop detection in Phase 7. */
 #define CONFIG_RESTART_DELAY    5
 
+/* SHORTCUT: Seconds of idle time before blanking the greeter display.
+ * After this timeout a black fullscreen overlay is shown to prevent screen
+ * burn-in.  The overlay is hidden on any input event.  This does NOT power
+ * down the display (LCD backlight stays on) — true DPMS blanking via DRM
+ * would require daemon-side DRM control.  Set to 0 to disable blanking. */
+#define CONFIG_BLANK_TIMEOUT    300
+
 /* Seat name to ignore during enumeration (e.g. a monitorless seat that
  * crashes the greeter).  Set to NULL or "" to disable.
  * To ignore multiple seats, extend this to a NULL-terminated array. */
