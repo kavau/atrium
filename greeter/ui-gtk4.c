@@ -195,7 +195,13 @@ static gboolean on_result_ready(gint fd, GIOCondition condition,
         return G_SOURCE_REMOVE;
     }
 
-    /* "fail:<reason>\n" — strip trailing newline, show error, allow retry. */
+    /* "fail:<reason>\n" — strip trailing newline, show error, allow retry.
+     *
+     * KNOWN GAP: this branch always resets the login page widgets.  If the
+     * failure came from the passwordless path (user was still on the users
+     * page), the users page is left with its spinner spinning and buttons
+     * disabled, making the greeter unusable.  Fix: detect which stack page
+     * is active and reset the appropriate widgets accordingly. */
     const char *msg = "Authentication failed.";
     if (n > 5 && strncmp(buf, "fail:", 5) == 0) {
         buf[n - 1] = '\0';
@@ -265,20 +271,18 @@ static void on_user_selected(GtkWidget *widget, gpointer user_data)
     snprintf(ctx->selected_user, sizeof(ctx->selected_user), "%s", username);
     log_debug("selected user '%s' (%s)", username, display);
 
-    /* Disable all user buttons to prevent double-submit. */
-    GtkWidget *child = gtk_widget_get_first_child(ctx->users_box);
-    while (child) {
-        if (GTK_IS_BUTTON(child))
-            gtk_widget_set_sensitive(child, FALSE);
-        child = gtk_widget_get_next_sibling(child);
-    }
-
     /* SHORTCUT: passwordless users skip the password screen entirely.
-     * Send empty credentials (username + empty password) and wait for
-     * the daemon to respond.  Same code path as on_login() but without
-     * the password prompt. */
+     * Send empty credentials and wait for the daemon on the users page,
+     * showing a spinner to indicate the request is in flight. */
     if (ctx->credentials_fd != -1 && is_passwordless(username)) {
         log_debug("passwordless login for '%s'", username);
+        /* Disable buttons and show spinner while waiting for auth result. */
+        GtkWidget *child = gtk_widget_get_first_child(ctx->users_box);
+        while (child) {
+            if (GTK_IS_BUTTON(child))
+                gtk_widget_set_sensitive(child, FALSE);
+            child = gtk_widget_get_next_sibling(child);
+        }
         gtk_widget_set_visible(ctx->users_spinner, TRUE);
         gtk_spinner_start(GTK_SPINNER(ctx->users_spinner));
         write(ctx->credentials_fd, username, strlen(username) + 1);
@@ -287,10 +291,7 @@ static void on_user_selected(GtkWidget *widget, gpointer user_data)
         return;
     }
 
-    /* Show spinner as visual feedback. */
-    gtk_widget_set_visible(ctx->users_spinner, TRUE);
-    gtk_spinner_start(GTK_SPINNER(ctx->users_spinner));
-
+    /* Password user — switch directly to the login page, no spinner needed. */
     char heading[256];
     snprintf(heading, sizeof(heading), "Log in as %s", display);
     gtk_label_set_text(GTK_LABEL(ctx->login_heading), heading);
@@ -307,11 +308,13 @@ static void on_back(GtkWidget *widget, gpointer user_data)
     (void)widget;
     login_ctx *ctx = user_data;
 
+    /* Reset login page state. */
     gtk_editable_set_text(GTK_EDITABLE(ctx->password_entry), "");
     gtk_widget_set_visible(ctx->error_label, FALSE);
     gtk_widget_set_sensitive(ctx->password_entry, TRUE);
     gtk_widget_set_sensitive(ctx->button, TRUE);
     ctx->selected_user[0] = '\0';
+
     gtk_stack_set_visible_child_name(GTK_STACK(ctx->stack), "users");
 }
 
