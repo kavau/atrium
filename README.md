@@ -5,6 +5,23 @@ Discovers seats via logind, launches a GTK4 greeter on each seat inside a
 [cage](https://github.com/cage-kiosk/cage) kiosk compositor, and hands off
 to a user-selected Wayland session.
 
+### Why atrium?
+
+The Linux kernel and the low-level system stack — udev device tagging, logind
+seat management, VT allocation — are fully capable of multiseat operation.
+Wayland compositors are seat-agnostic by design: they simply claim whatever
+display and input devices logind assigns to their seat. The missing piece has
+always been the display manager. Historically, display managers have treated
+multiseat as an afterthought. The implementations are brittle, poorly tested
+on real hardware, and often impossible to get working reliably.
+
+atrium aims to fill this gap. It is a display manager that puts multiseat
+first: discover every seat, run a greeter on each one, authenticate the user,
+and start the session — with correct seat lifecycle management throughout. The
+project targets a modern, minimal setup: systemd/logind for session management,
+PAM for authentication, and Wayland as the primary target. No historical
+baggage.
+
 > **Status: v0.2.0 — fully functional with authentication.**
 >
 > atrium is still in early development, so expect rough edges and missing
@@ -17,14 +34,13 @@ to a user-selected Wayland session.
 > experimental software — use at your own risk. See [LICENSE](LICENSE) for
 > warranty and liability terms.
 >
-> Known limitations:
+> Known current limitations:
 > - **No hotplug** — seats added/removed after startup are not detected
 > - **Compile-time config only** — all settings live in `src/config.h`
 > - **No `CanGraphical` gating** — monitorless seats crash-loop the greeter
 
 See [doc/architecture.md](doc/architecture.md) for a detailed design overview.
-For multiseat hardware setup, see the
-[Debian Multi-Seat HOWTO](https://wiki.debian.org/Multi_Seat_Debian_HOWTO).
+For multiseat hardware setup, see [doc/multiseat-setup.md](doc/multiseat-setup.md).
 
 ---
 
@@ -68,7 +84,7 @@ All settings are compile-time constants in `src/config.h`. Edit before building:
 | `CONFIG_DESKTOP_NAME` | `"atrium-dev"` | Desktop identifier for logind `CreateSession` |
 | `CONFIG_GREETER_UID/GID` | `1000` | User account that runs the greeter process |
 | `CONFIG_SEAT_ENUM_DELAY` | `2` | Seconds to wait for logind seat discovery at boot |
-| `CONFIG_RESTART_DELAY` | `5` | Seconds before restarting a crashed compositor |
+| `CONFIG_RESTART_DELAY` | `2` | Seconds before restarting a crashed compositor |
 
 `CONFIG_COMPOSITOR` can be set to the `Exec` value from any `.desktop` file in
 `/usr/share/wayland-sessions/` (e.g. `sway`, `labwc`, `plasma-wayland`, `gnome-session`).
@@ -97,11 +113,17 @@ This installs:
 
 ### 3. Enable and start
 
-```sh
-# Disable any existing display manager
-sudo systemctl disable gdm   # or sddm, lightdm, etc.
+First, note which display manager is currently active so you can restore it if needed:
 
-# Enable atrium (the unit aliases to display-manager.service)
+```sh
+readlink /etc/systemd/system/display-manager.service
+# e.g. /usr/lib/systemd/system/gdm.service  →  re-enable with: systemctl enable gdm
+```
+
+Then disable it and enable atrium:
+
+```sh
+sudo systemctl disable gdm   # substitute your current display manager
 sudo systemctl enable atrium
 ```
 
@@ -109,6 +131,26 @@ Then reboot. atrium will start on boot and launch a greeter on every seat.
 
 > **Warning:** Using `enable --now` or `disable --now` will immediately
 > start/stop the display manager, killing any active graphical session.
+
+---
+
+## If Things Go Wrong
+
+If atrium fails to start or you can't log in, switch back to your previous
+display manager from a TTY (`Ctrl+Alt+F2`, log in as root or with `sudo`):
+
+```sh
+sudo systemctl disable atrium
+sudo systemctl enable gdm   # substitute your previous display manager
+sudo reboot
+```
+
+To check what went wrong, inspect the journal:
+
+```sh
+sudo journalctl -u atrium -b   # logs from the current boot
+sudo journalctl -u atrium -b-1 # logs from the previous boot
+```
 
 ---
 

@@ -21,7 +21,7 @@
 
 /* Seconds to wait before restarting a crashed compositor.
  * Replaced by timerfd-based crash-loop detection in Phase 7. */
-#define CONFIG_RESTART_DELAY    5
+#define CONFIG_RESTART_DELAY    2
 
 /* SHORTCUT: Seconds of idle time before blanking the greeter display.
  * After this timeout a black fullscreen overlay is shown to prevent screen
