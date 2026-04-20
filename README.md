@@ -12,4 +12,3 @@ A lightweight display manager for Linux with first-class multiseat support.
 meson setup build
 ninja -C build
 ```
-

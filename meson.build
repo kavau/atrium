@@ -8,6 +8,7 @@ project('atrium', 'c',
 )
 
 add_project_arguments(
+  '-D_GNU_SOURCE',
   '-Wcast-align',
   '-Werror=return-type',
   '-Wformat=2',
