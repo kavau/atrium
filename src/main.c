@@ -461,11 +461,8 @@ int main(void)
     if (bus_subscribe_seat_signals(on_seat_new, on_seat_removed) < 0)
         return EXIT_FAILURE;
 
-    /* Enumerate seats via logind.
-     * SHORTCUT: sleep briefly to let logind finish processing udev seat
-     * events on early boot.  Replaced by SeatNew/SeatRemoved signal
-     * monitoring in Phase 6 (hotplug). */
-    sleep(CONFIG_SEAT_ENUM_DELAY);
+    /* Enumerate seats known to logind at startup.  Seats that appear later
+     * are handled by on_seat_new via the SeatNew signal subscription above. */
     log_debug("discovering seats...");
     if (bus_enumerate_seats() < 0)
         return EXIT_FAILURE;

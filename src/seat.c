@@ -1,6 +1,5 @@
 #include "seat.h"
 
-#include "config.h"
 #include "log.h"
 
 #include <stdio.h>
@@ -11,12 +10,6 @@ static int         g_num_seats = 0;
 
 int seat_add(const char *name, const char *object_path)
 {
-    /* Check CONFIG_IGNORE_SEATS before adding. */
-    if (CONFIG_IGNORE_SEATS && CONFIG_IGNORE_SEATS[0] != '\0' &&
-        strcmp(name, CONFIG_IGNORE_SEATS) == 0) {
-        log_info("seat_add: ignoring %s (CONFIG_IGNORE_SEATS)", name);
-        return -1;
-    }
     if (g_num_seats >= MAX_SEATS) {
         log_warn("seat_add: limit (%d) reached, ignoring %s",
                 MAX_SEATS, name);

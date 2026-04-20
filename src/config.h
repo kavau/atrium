@@ -14,11 +14,6 @@
 /* Desktop identifier passed to logind's CreateSession. */
 #define CONFIG_DESKTOP_NAME     "atrium-dev"
 
-/* Seconds to wait before enumerating seats at startup.
- * Gives logind time to finish processing udev seat events on early boot.
- * Replaced by SeatNew/SeatRemoved signal monitoring in Phase 6. */
-#define CONFIG_SEAT_ENUM_DELAY  2
-
 /* Seconds to wait before restarting a crashed compositor.
  * Replaced by timerfd-based crash-loop detection in Phase 7. */
 #define CONFIG_RESTART_DELAY    2
@@ -29,11 +24,6 @@
  * down the display (LCD backlight stays on) — true DPMS blanking via DRM
  * would require daemon-side DRM control.  Set to 0 to disable blanking. */
 #define CONFIG_BLANK_TIMEOUT    300
-
-/* Seat name to ignore during enumeration (e.g. a monitorless seat that
- * crashes the greeter).  Set to NULL or "" to disable.
- * To ignore multiple seats, extend this to a NULL-terminated array. */
-#define CONFIG_IGNORE_SEATS     ""
 
 /* SHORTCUT: Users that can log in without a password.
  * For these users the greeter skips the password screen and sends empty
