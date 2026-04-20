@@ -1,6 +1,6 @@
 ---
-Created: April 13, 2026
-Last Updated: April 16, 2026
+Created: April 13, 2025
+Last Updated: April 20, 2026
 ---
 
 # atrium — Concepts
@@ -1586,3 +1586,261 @@ per-process session state.  The session group needs manual curation because
 it is the one that creates side effects (logind sessions, audit records,
 keyrings) that can conflict with the display manager's own session
 management.
+
+---
+
+## Phase 11 — Hotplug Monitoring
+
+### udev and the kernel device model
+
+The Linux kernel maintains a hierarchy of devices in a virtual filesystem
+called *sysfs*, mounted at `/sys`. Every device the kernel knows about has a
+directory there, containing files that expose its properties — vendor ID,
+device class, status, and so on.
+
+**udev** is the userspace daemon that reacts to kernel device events. When a
+device is added, removed, or changes state, the kernel emits a *uevent* (a
+netlink message) and udev receives it. udev then:
+
+1. Runs *rules* (files in `/etc/udev/rules.d/`, `/lib/udev/rules.d/`, etc.)
+   to augment the event with derived properties (`ID_SEAT`, `ID_INPUT`, ...).
+2. Writes the result to the *udev database* (under `/run/udev/data/`).
+3. Re-emits the augmented event on a second netlink socket.
+
+The key distinction:
+
+| Socket | Source | Contains |
+|---|---|---|
+| `"kernel"` | Raw kernel uevent | Only kernel-set properties |
+| `"udev"` | udev, after rules | Kernel + udev-derived properties like `ID_SEAT` |
+
+atrium subscribes to the `"udev"` socket so that `ID_SEAT` is always present
+on received events.
+
+---
+
+### The udev monitor API
+
+`udev_monitor` is the libudev interface for receiving live device events:
+
+```c
+struct udev_monitor *mon =
+    udev_monitor_new_from_netlink(udev, "udev");   /* subscribe to post-rules events */
+udev_monitor_filter_add_match_subsystem_devtype(mon, "drm", NULL);
+udev_monitor_enable_receiving(mon);
+int fd = udev_monitor_get_fd(mon);                 /* poll this fd for readability */
+```
+
+When the fd becomes readable, call `udev_monitor_receive_device()` to dequeue
+one event:
+
+```c
+struct udev_device *dev = udev_monitor_receive_device(mon);
+const char *action = udev_device_get_action(dev);   /* "change", "add", "remove" */
+udev_device_unref(dev);
+```
+
+The fd follows normal O_NONBLOCK semantics: `receive_device` returns NULL when
+the queue is empty. The `action` field indicates what happened:
+
+| Action | Meaning |
+|---|---|
+| `change` | Device or one of its properties changed (e.g. connector status flipped) |
+| `add` | A new device appeared (e.g. GPU hot-plugged) |
+| `remove` | A device was removed (e.g. GPU hot-unplugged) |
+
+---
+
+### DRM and connector status
+
+**DRM** (Direct Rendering Manager) is the kernel subsystem that manages GPUs
+and display outputs. Every GPU is represented as a `cardN` device under
+`/sys/class/drm/`. Each display connector on the GPU (HDMI, DisplayPort, etc.)
+has its own sub-directory:
+
+```
+/sys/class/drm/card1/
+    card1-HDMI-A-1/status    → "connected" | "disconnected" | "unknown"
+    card1-DP-1/status
+    card1-Writeback-1/status → virtual connector; always "unknown"
+```
+
+The `status` file is updated by the kernel when the monitor's hotplug detect
+line changes state (e.g. a cable is plugged or unplugged). The kernel also
+emits a `change` uevent on the parent `card1` device at the same time.
+
+This means a single physical cable plug/unplug produces:
+- One `change` event on `cardN` (no direction encoded)
+- An updated `status` file on the affected connector (the truth)
+
+**Reading status to determine direction:** because the event carries no
+direction information, the correct pattern is to query the `status` file(s)
+*after* receiving the event:
+
+```c
+// On receiving a change event for a card:
+int has_display = drm_seat_has_display(seat_id);  // reads status files
+// now act based on current state + seat state machine
+```
+
+By the time the udev-side event is delivered, the kernel has already updated
+the `status` files, so the read always reflects the post-event state.
+
+---
+
+### The udev database and the implicit-seat0 problem
+
+The udev database stores persistent properties for each device, indexed by
+device path. `udev_enumerate` queries this database.
+
+`ID_SEAT` is only written to the database when a device is *explicitly*
+assigned to a seat via `loginctl attach`. Devices that belong to seat0 by
+default (i.e. they were never explicitly assigned to any seat) have **no
+`ID_SEAT` entry** in the database at all — the implicit seat0 assignment is a
+logind convention, not a stored property.
+
+This has an important consequence: you cannot reliably use
+`udev_enumerate_add_match_property(e, "ID_SEAT", "seat0")` to find seat0's
+GPU. The filter would exclude all implicitly-assigned devices.
+
+The correct approach is to:
+1. Enumerate all devices in the subsystem (no `ID_SEAT` filter).
+2. Open each device with `udev_device_new_from_syspath()` to get its live
+   property values.
+3. Read `ID_SEAT` from the device; treat NULL as `"seat0"`.
+
+```c
+udev_enumerate_add_match_subsystem(e, "drm");
+udev_enumerate_scan_devices(e);
+udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(e)) {
+    struct udev_device *dev = udev_device_new_from_syspath(udev, syspath);
+    const char *seat = udev_device_get_property_value(dev, "ID_SEAT");
+    if (!seat) seat = "seat0";   /* implicit default */
+    ...
+}
+```
+
+Note that `udev_monitor_receive_device()` does *not* have this problem —
+events from the `"udev"` socket include all properties including implicitly-
+derived ones, because udev applies its full rule pipeline before re-emitting.
+
+---
+
+### CanGraphical vs DRM connector status
+
+logind exposes a `CanGraphical` property on each seat object. It is tempting
+to use this as a "display attached" gate. Testing reveals it is insufficient:
+
+- `CanGraphical=true` if the seat has a graphics device assigned to it.
+- It does **not** reflect whether a monitor is physically connected.
+
+A seat with a GPU but no cable reports `CanGraphical=true` permanently. The
+DRM connector `status` file is the only correct source of truth for physical
+display presence.
+
+`CanGraphical` is still useful: it tells you whether a seat has the *capability*
+to run a graphical session at all (i.e. has a GPU). The combination of
+`CanGraphical=true` **and** `drm_seat_has_display()=true` is the correct
+gate for "start a greeter on this seat".
+
+---
+
+### D-Bus PropertiesChanged signals and dynamic subscriptions
+
+D-Bus objects emit a `PropertiesChanged` signal (on the
+`org.freedesktop.DBus.Properties` interface) when their properties change.
+The signal is emitted on the object's own path.
+
+Subscribing with `sd_bus_add_match` requires specifying the `path=` of the
+object you want to watch. This means **each seat needs its own subscription**,
+registered when the seat becomes known (either at enumeration or when a
+`SeatNew` signal arrives).
+
+Failing to re-subscribe when a new seat appears dynamically means property
+changes for that seat are silently dropped — verified in experiment: after
+`loginctl attach seat3 ...`, `CanGraphical` changes for seat3 were never
+logged because `on_seat_new` did not call `bus_subscribe_properties_changed`.
+
+The reliable pattern is: whenever a seat is added (enumeration *or* `SeatNew`),
+immediately subscribe to `PropertiesChanged` for it.
+
+---
+
+### Signal ordering: CanGraphical before SeatRemoved
+
+Testing confirmed that when a GPU is reassigned away from a seat (via
+`loginctl attach seat3 /sys/devices/...`), logind emits events in this
+order:
+
+1. `PropertiesChanged` → `CanGraphical=false` on the losing seat
+2. `SeatRemoved` for the losing seat (once all devices are gone)
+
+This ordering is reliable and useful: the `CanGraphical=false` signal gives
+an opportunity to initiate greeter teardown *before* the seat disappears
+entirely, so the cleanup can be done gracefully within the seat's lifetime.
+
+---
+
+### logind session cgroup as a process reaper
+
+When atrium creates a logind session via `CreateSession`, logind places all
+processes that join the session into a systemd *session scope* cgroup (e.g.
+`session-c123.scope`). This cgroup lives as long as the session is "active"
+— defined by the session FIFO being held open.
+
+atrium passes the session FIFO fd to cage (intentionally, without
+`O_CLOEXEC`). As long as cage is alive, it holds the FIFO fd open, and the
+logind session remains active. When cage exits, it closes all its fds
+including the FIFO. At that point, logind detects the FIFO closure, marks
+the session as ended, and sends `SIGTERM` (followed by `SIGKILL` after a
+timeout) to every process remaining in the session cgroup.
+
+This is the mechanism that cleans up `atrium-greeter` when cage is
+force-stopped:
+
+1. atrium sends `SIGTERM` to cage (the compositor pid).
+2. cage exits, closing its copy of the FIFO fd.
+3. logind ends the session and terminates the cgroup → `atrium-greeter` is
+   killed automatically.
+4. atrium's SIGCHLD handler fires for cage, cleans up state, and decides
+   whether to restart the greeter.
+
+The implication is that atrium does **not** need to track `atrium-greeter`'s
+pid or send it signals directly — the cgroup mechanism handles it. This
+only works because cage inherits the FIFO fd; if it were created with
+`O_CLOEXEC`, cage would not hold it open and the session would end
+immediately on fork, before the greeter even starts.
+
+---
+
+### Exit code ambiguity when a process is killed by a signal
+
+POSIX defines two ways a process can terminate: `exit(code)` with a status
+code, or by a signal. `waitpid()` encodes both in the `wstatus` word:
+
+```c
+if (WIFEXITED(wstatus))   code = WEXITSTATUS(wstatus);  /* clean exit */
+if (WIFSIGNALED(wstatus)) sig  = WTERMSIG(wstatus);     /* killed by signal */
+```
+
+Checking `WIFEXITED && WEXITSTATUS == 0` is therefore **not** a reliable
+indicator that a process completed its intended work. Many programs — cage
+among them — call `exit(0)` in their signal handlers, meaning a process
+killed by `SIGTERM` is indistinguishable from one that finished successfully
+by exit code alone.
+
+The general solution is to use *application-level state* to record whether
+the process reached its intended completion point before checking the exit
+code. In atrium, `greeter_username` serves this role:
+
+- If the greeter submitted credentials, `greeter_username` is non-empty
+  before cage exits. `credentials_received = (greeter_username[0] != '\0')`
+  is captured in the SIGCHLD handler *before* `session_stop()` clears it.
+- If cage was force-stopped (via SIGTERM), no credentials were submitted,
+  `greeter_username` is empty, and `credentials_received` is false — even
+  if the exit code is 0.
+
+The pattern generalises: whenever you send SIGTERM to a child and need to
+distinguish that from a natural exit, maintain a flag or piece of state in
+the parent that the child sets (via IPC, shared memory, or pipe) only on
+the successful completion path.
