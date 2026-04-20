@@ -19,6 +19,7 @@ inc_lib = include_directories('lib')
 
 # Dependencies — declared here, consumed by subdirectories.
 dep_libsystemd = dependency('libsystemd')
+dep_libudev    = dependency('libudev')
 # libpam does not ship a .pc file on Debian; dependency('pam') falls back to
 # a direct linker probe (-lpam) which is sufficient for our purposes.
 dep_libpam     = dependency('pam')

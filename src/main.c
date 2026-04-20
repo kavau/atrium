@@ -1,6 +1,7 @@
 #include "auth.h"
 #include "bus.h"
 #include "config.h"
+#include "drm.h"
 #include "event.h"
 #include "greeter.h"
 #include "log.h"
@@ -293,6 +294,11 @@ int main(void)
         return EXIT_FAILURE;
     log_debug("bus connection established");
 
+    /* Start the udev DRM monitor and register it with the event loop.
+     * In Phase 11 Step 2 the callback only logs; Step 4 will act on events. */
+    if (drm_init() < 0)
+        return EXIT_FAILURE;
+
     /* Subscribe to seat hotplug signals.  In Phase 11 Step 1 the callbacks
      * only log; they will be wired to start/stop greeters in Step 2. */
     if (bus_subscribe_seat_signals(on_seat_new, on_seat_removed) < 0)
@@ -379,6 +385,7 @@ int main(void)
     if (vt_count > 0)
         log_debug("released %d VT allocations", vt_count);
 
+    drm_close();
     bus_close();
     event_remove(sfd);
     close(sfd);

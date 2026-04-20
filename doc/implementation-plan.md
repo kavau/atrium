@@ -1,6 +1,6 @@
 ---
 Created: April 12, 2026
-Last Updated: April 15, 2026
+Last Updated: April 20, 2026
 ---
 
 # atrium — Implementation Plan
@@ -224,21 +224,69 @@ Log out of one seat; confirm the other is unaffected.
 
 ### Phase 11 — Hotplug Monitoring
 
-**Goal:** The daemon reacts to seats being added or removed at runtime.
+**Goal:** The daemon reacts to seats being added or removed at runtime, and
+skips seats that have no display attached.
 
-- Extend `src/seat.c` — add the udev monitor fd to the event loop; handle
-  `add` / `remove` uevent actions.
-- **`CanGraphical` gate** — query logind's `CanGraphical` property on each
-  seat before starting a session. Skip seats where the property is false
-  (no monitor attached). Subscribe to `PropertiesChanged` to start/stop
-  sessions when monitors are plugged or unplugged.
+Two independent event sources are needed:
 
-*Removes the `/* SHORTCUT */` from Phase 2.*
+- **D-Bus signals** from logind: `SeatNew` / `SeatRemoved` for seat lifecycle;
+  `PropertiesChanged` → `CanGraphical` for display readiness per seat.
+- **udev monitor** on the `drm` subsystem: `change` events for connector
+  plug/unplug (cable inserted/removed); `add`/`remove` for GPU hotplug.
 
-**Verification:** Run `atrium`. Plug/unplug a USB seat device; confirm the event
-is detected and the seat is started/stopped accordingly. Confirm monitorless
-seats are skipped cleanly. Test hotplug with an active session on an adjacent
-seat.
+`CanGraphical` alone is insufficient: testing confirmed it reports `true` for
+a seat whose GPU has no monitor cabled — it only reflects whether a graphics
+device is assigned to the seat, not whether a display is connected. The DRM
+connector status files (`/sys/class/drm/cardN-*/status`) give the correct
+signal (`connected` vs `disconnected`).
+
+Implemented in five steps to verify each monitoring mechanism in isolation
+before acting on it:
+
+**Step 1** *(complete)*: D-Bus signal subscriptions — log only.
+- `SeatNew` / `SeatRemoved` match rules; per-seat `PropertiesChanged` match
+  on `CanGraphical`; `bus_query_can_graphical()` at enumeration.
+- Verified on tux: `CanGraphical` queried and logged for each seat;
+  subscriptions registered without error.
+
+**Step 2**: udev DRM monitor — log only.
+- Open a `udev_monitor` on the `drm` subsystem; register its fd with the
+  event loop.
+- Log all events: action (`change`/`add`/`remove`), devpath, `ID_SEAT`.
+- Verify on tux by plugging/unplugging a cable and reading the journal.
+
+**Step 3**: Act on D-Bus signals.
+- `SeatNew`: `seat_add` + **call `bus_subscribe_properties_changed`** (currently
+  omitted — dynamically-added seats get no `CanGraphical` tracking without
+  this) + start greeter if `drm_seat_has_display()` true.
+- `SeatRemoved`: stop greeter if `SEAT_GREETER`; log and leave if
+  `SEAT_SESSION`.
+- `PropertiesChanged` → `CanGraphical` true: start greeter if `SEAT_IDLE`
+  and `drm_seat_has_display()` true.
+- `PropertiesChanged` → `CanGraphical` false: stop greeter if
+  `SEAT_GREETER`; leave session alone if `SEAT_SESSION`.
+- Add `drm_seat_has_display()` static gate at initial greeter launch
+  (enumeration path): defer seats with no connected display instead of
+  crash-looping.
+
+**Step 4**: Act on udev DRM events.
+- Connector `change` (plug) → re-check `drm_seat_has_display()`; if now
+  true and seat is `SEAT_IDLE`, start greeter.
+- Connector `change` (unplug) → if `SEAT_GREETER`, stop greeter and return
+  to `SEAT_IDLE`; if `SEAT_SESSION`, leave alone.
+- GPU `remove` → treat as unplug (stop greeter; leave session).
+
+**Step 5**: Remove shortcuts.
+- Remove `CONFIG_SEAT_ENUM_DELAY` (startup sleep no longer needed — deferred
+  seats wait for D-Bus/udev events instead).
+- Remove `CONFIG_IGNORE_SEATS` (superseded by the `drm_seat_has_display()`
+  gate).
+
+**Verification:** Run `atrium` with all seats enabled. Confirm monitorless
+seats are deferred at startup (no crash-loop). Plug in a cable; confirm the
+greeter starts. Unplug; confirm the greeter stops. Hot-add a seat; confirm
+greeter starts. Remove it; confirm clean teardown. Confirm `CONFIG_IGNORE_SEATS`
+and `CONFIG_SEAT_ENUM_DELAY` are gone.
 
 ---
 
@@ -285,9 +333,10 @@ particular order or timeline.
 
 ### Greeter Improvements
 
-- **Shutdown/reboot from greeter** — allow the user to shut down or reboot the
-  machine from the greeter UI without logging in. Requires a greeter→daemon
-  IPC command and a logind `PowerOff`/`Reboot` D-Bus call.
+- **Shutdown/reboot/suspend from greeter** — allow the user to shut down,
+  reboot, or suspend the machine from the greeter UI without logging in.
+  Requires a greeter→daemon IPC command and logind `PowerOff`/`Reboot`/
+  `Suspend` D-Bus calls.
 - **User list in greeter** — show available users with names/avatars instead of
   a free-text username field. Read from AccountsService or enumerate non-system
   users from `/etc/passwd`.
@@ -298,6 +347,15 @@ particular order or timeline.
 - **Greeter screen blanking** — turn off the display after a configurable idle
   timeout while the greeter is waiting for input. Wake on any input event.
   Reduces power consumption and avoids burn-in on always-on login screens.
+  *(Implemented as SHORTCUT in v0.2.0 — black overlay, backlight stays on.)*
+- **Show/hide password toggle** — button to reveal the password field contents
+  while typing, to reduce frustration with long or complex passwords.
+- **Keyboard layout switcher** — allow switching between configured system
+  keyboard layouts from the greeter, for multi-layout setups. Read available
+  layouts from the system configuration (e.g. `/etc/X11/xorg.conf.d/` or
+  `localectl`) and send the selection to the compositor.
+- **Clock display** — show the current date and time in the greeter UI,
+  updated every minute.
 
 ---
 
