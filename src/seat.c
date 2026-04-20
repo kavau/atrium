@@ -9,7 +9,7 @@
 static struct seat g_seats[MAX_SEATS];
 static int         g_num_seats = 0;
 
-int seat_add(const char *name)
+int seat_add(const char *name, const char *object_path)
 {
     /* Check CONFIG_IGNORE_SEATS before adding. */
     if (CONFIG_IGNORE_SEATS && CONFIG_IGNORE_SEATS[0] != '\0' &&
@@ -24,6 +24,8 @@ int seat_add(const char *name)
     }
     snprintf(g_seats[g_num_seats].name, sizeof(g_seats[g_num_seats].name),
              "%s", name);
+    snprintf(g_seats[g_num_seats].object_path, sizeof(g_seats[g_num_seats].object_path),
+             "%s", object_path ? object_path : "");
     g_seats[g_num_seats].vtnr             = 0;
     g_seats[g_num_seats].vt_kb_fd         = -1;
     g_seats[g_num_seats].state            = SEAT_IDLE;
@@ -50,4 +52,13 @@ struct seat *seat_get(int i)
     if (i < 0 || i >= g_num_seats)
         return NULL;
     return &g_seats[i];
+}
+
+struct seat *seat_find(const char *name)
+{
+    for (int i = 0; i < g_num_seats; i++) {
+        if (strcmp(g_seats[i].name, name) == 0)
+            return &g_seats[i];
+    }
+    return NULL;
 }

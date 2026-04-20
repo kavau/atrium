@@ -274,6 +274,8 @@ $ loginctl seat-status seat1
 Keyboards and mice plugged into the assigned USB controller's ports should also appear
 under `seat1`.
 
+For systems with more than two seats, repeat the process above for `seat2`, `seat3`, etc.
+
 ## Step 4: Activate atrium
 
 If atrium is installed but not yet enabled:

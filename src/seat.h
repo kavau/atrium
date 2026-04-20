@@ -21,6 +21,7 @@
 
 struct seat {
     char  name[64];
+    char  object_path[256];  /* logind D-Bus object path, e.g. "/org/freedesktop/login1/seat/seat0" */
     int   vtnr;              /* allocated VT number; 0 for non-seat0 seats */
     int   vt_kb_fd;          /* tty fd with keyboard suppressed; -1 if none */
 
@@ -41,9 +42,12 @@ struct seat {
     auth_result auth;        /* valid while state == SEAT_SESSION */
 };
 
-/* Add a seat by name. Returns 0 on success, -1 if the seat limit is reached
- * (error is logged). */
-int seat_add(const char *name);
+/* Add a seat by name and object path. Returns 0 on success, -1 if the seat
+ * limit is reached or the seat is ignored (error is logged). */
+int seat_add(const char *name, const char *object_path);
+
+/* Find a seat by name. Returns a pointer to the seat, or NULL if not found. */
+struct seat *seat_find(const char *name);
 
 /* Return the number of seats in the list. */
 int seat_count(void);

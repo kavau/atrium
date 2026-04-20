@@ -70,7 +70,7 @@ int bus_enumerate_seats(void)
             log_error("ListSeats read: %s", strerror(-r));
             break;
         }
-        seat_add(seat_id);
+        seat_add(seat_id, object_path);
         sd_bus_message_exit_container(reply);
     }
     sd_bus_message_exit_container(reply);
@@ -208,6 +208,227 @@ int bus_activate_session(const char *session_object)
                 error.message ? error.message : strerror(-r));
     sd_bus_error_free(&error);
     return (r < 0) ? -1 : 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Signal subscriptions
+ * ------------------------------------------------------------------------- */
+
+/* Stored callback pointers for SeatNew / SeatRemoved handlers. */
+static on_seat_new_fn     g_on_seat_new     = NULL;
+static on_seat_removed_fn g_on_seat_removed = NULL;
+
+/* Per-seat context for PropertiesChanged handlers.
+ * One slot per seat — bounded by MAX_SEATS. */
+struct prop_slot {
+    char                seat_id[64];
+    on_can_graphical_fn cb;
+};
+static struct prop_slot g_prop_slots[MAX_SEATS];
+static int              g_prop_slot_count = 0;
+
+static int on_seat_new_signal(sd_bus_message *m, void *userdata,
+                              sd_bus_error *ret_error)
+{
+    (void)userdata; (void)ret_error;
+    const char *seat_id = NULL, *object_path = NULL;
+    int r = sd_bus_message_read(m, "so", &seat_id, &object_path);
+    if (r < 0) {
+        log_error("SeatNew: parse error: %s", strerror(-r));
+        return 0;
+    }
+    log_info("SeatNew: seat_id=%s object_path=%s", seat_id, object_path);
+    if (g_on_seat_new)
+        g_on_seat_new(seat_id, object_path);
+    return 0;
+}
+
+static int on_seat_removed_signal(sd_bus_message *m, void *userdata,
+                                  sd_bus_error *ret_error)
+{
+    (void)userdata; (void)ret_error;
+    const char *seat_id = NULL, *object_path = NULL;
+    int r = sd_bus_message_read(m, "so", &seat_id, &object_path);
+    if (r < 0) {
+        log_error("SeatRemoved: parse error: %s", strerror(-r));
+        return 0;
+    }
+    log_info("SeatRemoved: seat_id=%s object_path=%s", seat_id, object_path);
+    if (g_on_seat_removed)
+        g_on_seat_removed(seat_id, object_path);
+    return 0;
+}
+
+static int on_properties_changed(sd_bus_message *m, void *userdata,
+                                 sd_bus_error *ret_error)
+{
+    (void)ret_error;
+    struct prop_slot *slot = userdata;
+
+    /* Signature: sa{sv}as — interface, changed properties, invalidated. */
+    const char *iface = NULL;
+    int r = sd_bus_message_read(m, "s", &iface);
+    if (r < 0) {
+        log_error("PropertiesChanged(%s): parse iface: %s",
+                  slot->seat_id, strerror(-r));
+        return 0;
+    }
+
+    if (strcmp(iface, "org.freedesktop.login1.Seat") != 0)
+        return 0;  /* ignore PropertiesChanged for other interfaces */
+
+    int found = 0;
+
+    /* Iterate the changed-properties dict looking for CanGraphical. */
+    r = sd_bus_message_enter_container(m, 'a', "{sv}");
+    if (r < 0) {
+        log_error("PropertiesChanged(%s): enter dict: %s",
+                  slot->seat_id, strerror(-r));
+        return 0;
+    }
+
+    while ((r = sd_bus_message_enter_container(m, 'e', "sv")) > 0) {
+        const char *key = NULL;
+        r = sd_bus_message_read(m, "s", &key);
+        if (r < 0) break;
+
+        if (strcmp(key, "CanGraphical") == 0) {
+            int val = 0;
+            r = sd_bus_message_read(m, "v", "b", &val);
+            if (r >= 0) {
+                log_info("PropertiesChanged: %s CanGraphical=%s",
+                         slot->seat_id, val ? "true" : "false");
+                found = 1;
+                if (slot->cb)
+                    slot->cb(slot->seat_id, val);
+            } else {
+                log_error("PropertiesChanged(%s): read CanGraphical: %s",
+                          slot->seat_id, strerror(-r));
+            }
+        } else {
+            /* Skip the variant value for unrelated keys. */
+            r = sd_bus_message_skip(m, "v");
+        }
+
+        if (r < 0) break;
+        sd_bus_message_exit_container(m);
+    }
+    sd_bus_message_exit_container(m);
+
+    /* Check the invalidated-properties array.  Some logind versions may
+     * place CanGraphical here (with no value) instead of in the changed
+     * dict.  In that case we must query the property ourselves. */
+    if (!found) {
+        r = sd_bus_message_enter_container(m, 'a', "s");
+        if (r >= 0) {
+            const char *prop = NULL;
+            while ((r = sd_bus_message_read(m, "s", &prop)) > 0) {
+                if (strcmp(prop, "CanGraphical") == 0) {
+                    const char *path = sd_bus_message_get_path(m);
+                    int val = bus_query_can_graphical(path);
+                    if (val >= 0) {
+                        log_info("PropertiesChanged (invalidated): %s CanGraphical=%s",
+                                 slot->seat_id, val ? "true" : "false");
+                        if (slot->cb)
+                            slot->cb(slot->seat_id, val);
+                    }
+                    break;
+                }
+            }
+            sd_bus_message_exit_container(m);
+        }
+    }
+
+    return 0;
+}
+
+int bus_query_can_graphical(const char *object_path)
+{
+    assert(g_bus);
+
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    int val = 0;
+    int r = sd_bus_get_property_trivial(g_bus,
+            "org.freedesktop.login1",
+            object_path,
+            "org.freedesktop.login1.Seat",
+            "CanGraphical",
+            &error, 'b', &val);
+    sd_bus_error_free(&error);
+    if (r < 0) {
+        log_error("CanGraphical(%s): %s", object_path, strerror(-r));
+        return -1;
+    }
+    return val ? 1 : 0;
+}
+
+int bus_subscribe_seat_signals(on_seat_new_fn on_new,
+                               on_seat_removed_fn on_removed)
+{
+    assert(g_bus);
+    g_on_seat_new     = on_new;
+    g_on_seat_removed = on_removed;
+
+    int r = sd_bus_add_match(g_bus, NULL,
+            "type='signal'"
+            ",sender='org.freedesktop.login1'"
+            ",interface='org.freedesktop.login1.Manager'"
+            ",member='SeatNew'",
+            on_seat_new_signal, NULL);
+    if (r < 0) {
+        log_error("subscribe SeatNew: %s", strerror(-r));
+        return -1;
+    }
+
+    r = sd_bus_add_match(g_bus, NULL,
+            "type='signal'"
+            ",sender='org.freedesktop.login1'"
+            ",interface='org.freedesktop.login1.Manager'"
+            ",member='SeatRemoved'",
+            on_seat_removed_signal, NULL);
+    if (r < 0) {
+        log_error("subscribe SeatRemoved: %s", strerror(-r));
+        return -1;
+    }
+
+    log_debug("subscribed to SeatNew/SeatRemoved signals");
+    return 0;
+}
+
+int bus_subscribe_properties_changed(const char *seat_id,
+                                     const char *object_path,
+                                     on_can_graphical_fn on_changed)
+{
+    assert(g_bus);
+
+    if (g_prop_slot_count >= MAX_SEATS) {
+        log_error("bus_subscribe_properties_changed: slot limit reached");
+        return -1;
+    }
+
+    struct prop_slot *slot = &g_prop_slots[g_prop_slot_count++];
+    snprintf(slot->seat_id, sizeof(slot->seat_id), "%s", seat_id);
+    slot->cb = on_changed;
+
+    /* Build a match rule filtered to the specific seat object path. */
+    char match[512];
+    snprintf(match, sizeof(match),
+             "type='signal'"
+             ",sender='org.freedesktop.login1'"
+             ",path='%s'"
+             ",interface='org.freedesktop.DBus.Properties'"
+             ",member='PropertiesChanged'",
+             object_path);
+
+    int r = sd_bus_add_match(g_bus, NULL, match, on_properties_changed, slot);
+    if (r < 0) {
+        log_error("subscribe PropertiesChanged(%s): %s", seat_id, strerror(-r));
+        g_prop_slot_count--;
+        return -1;
+    }
+
+    log_debug("subscribed to PropertiesChanged on %s (%s)", seat_id, object_path);
+    return 0;
 }
 
 int bus_open(void)

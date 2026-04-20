@@ -20,6 +20,37 @@
 #include <unistd.h>
 
 /*
+ * Phase 11 Step 1 — signal observers (log only, no action yet).
+ *
+ * These callbacks are registered with bus_subscribe_seat_signals() and
+ * bus_subscribe_properties_changed().  In Step 2 they will be wired up to
+ * start/stop greeters; for now they just emit log messages so we can verify
+ * the D-Bus subscriptions are working correctly on tux.
+ */
+static void on_seat_new(const char *seat_id, const char *object_path)
+{
+    log_info("signal: SeatNew seat_id=%s object_path=%s", seat_id, object_path);
+    /* Step 2: query CanGraphical; seat_add + start greeter if true. */
+}
+
+static void on_seat_removed(const char *seat_id, const char *object_path)
+{
+    log_info("signal: SeatRemoved seat_id=%s object_path=%s", seat_id, object_path);
+    /* Step 2: stop greeter/session for this seat. */
+}
+
+static void on_can_graphical_changed(const char *seat_id, int can_graphical)
+{
+    log_info("signal: CanGraphical changed: seat_id=%s can_graphical=%s",
+             seat_id, can_graphical ? "true" : "false");
+    /* Step 2: start greeter if true+SEAT_IDLE; stop greeter if false+SEAT_GREETER.
+     * A running user session (SEAT_SESSION) is left alone when CanGraphical
+     * goes false — the user's work should not be killed just because the
+     * display was unplugged.  The session continues headless; the greeter
+     * will not restart until the compositor exits on its own. */
+}
+
+/*
  * on_greeter_credentials — fires when the greeter writes credentials.
  *
  * Wire format: "<username>\0<password>\0" — two consecutive null-terminated
@@ -262,6 +293,11 @@ int main(void)
         return EXIT_FAILURE;
     log_debug("bus connection established");
 
+    /* Subscribe to seat hotplug signals.  In Phase 11 Step 1 the callbacks
+     * only log; they will be wired to start/stop greeters in Step 2. */
+    if (bus_subscribe_seat_signals(on_seat_new, on_seat_removed) < 0)
+        return EXIT_FAILURE;
+
     /* Enumerate seats via logind.
      * SHORTCUT: sleep briefly to let logind finish processing udev seat
      * events on early boot.  Replaced by SeatNew/SeatRemoved signal
@@ -270,8 +306,15 @@ int main(void)
     log_debug("discovering seats...");
     if (bus_enumerate_seats() < 0)
         return EXIT_FAILURE;
-    for (int i = 0; i < seat_count(); i++)
-        log_info("found seat: %s", seat_get(i)->name);
+    for (int i = 0; i < seat_count(); i++) {
+        struct seat *s = seat_get(i);
+        int cg = bus_query_can_graphical(s->object_path);
+        log_info("found seat: %s (CanGraphical=%s)",
+                 s->name, cg > 0 ? "true" : (cg == 0 ? "false" : "error"));
+        /* Subscribe to CanGraphical property changes for this seat. */
+        bus_subscribe_properties_changed(s->name, s->object_path,
+                                         on_can_graphical_changed);
+    }
 
     /* Allocate a VT for seat0. */
     log_debug("allocating VT for seat0...");
