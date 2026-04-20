@@ -42,6 +42,27 @@ int seat_add(const char *name, const char *object_path)
     return 0;
 }
 
+void seat_remove(const char *name)
+{
+    for (int i = 0; i < g_num_seats; i++) {
+        if (strcmp(g_seats[i].name, name) != 0)
+            continue;
+        /* SHORTCUT: shift remaining entries left to fill the gap.  This
+         * invalidates any struct seat * pointers into g_seats[i+1..] that
+         * were cached elsewhere (e.g. as event_add userdata for a later
+         * seat's credentials fd).  Removing any seat other than the last
+         * while a higher-indexed seat has an active greeter will cause a
+         * use-after-move bug.  Fix: convert seat list to a linked list so
+         * pointers are stable.  See Future TODOs in doc/current-work.md. */
+        for (int j = i; j < g_num_seats - 1; j++)
+            g_seats[j] = g_seats[j + 1];
+        g_num_seats--;
+        log_debug("removed seat '%s' (total: %d)", name, g_num_seats);
+        return;
+    }
+    log_warn("seat_remove: seat '%s' not found", name);
+}
+
 int seat_count(void)
 {
     return g_num_seats;

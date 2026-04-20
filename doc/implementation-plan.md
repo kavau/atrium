@@ -249,16 +249,23 @@ before acting on it:
 - Verified on tux: `CanGraphical` queried and logged for each seat;
   subscriptions registered without error.
 
-**Step 2**: udev DRM monitor — log only.
-- Open a `udev_monitor` on the `drm` subsystem; register its fd with the
-  event loop.
-- Log all events: action (`change`/`add`/`remove`), devpath, `ID_SEAT`.
-- Verify on tux by plugging/unplugging a cable and reading the journal.
+**Step 2** *(complete — verified on tux)*: udev DRM monitor — log only.
+- `src/drm.c` / `src/drm.h`: `udev_monitor` on `drm` subsystem; fd registered
+  with event loop; `on_drm_event` logs action, devpath, `ID_SEAT`, and current
+  `has_display` result after each event.
+- `dep_libudev` added to build.
+- Verified: hotplug events arrive with correct seat and `has_display` value.
+- **Finding:** `udev_enumerate_add_match_property("ID_SEAT", ...)` only matches
+  devices explicitly assigned via `loginctl attach`. Devices implicitly on seat0
+  have no `ID_SEAT` in the udev database. Fix: enumerate all cards and read the
+  live property via `udev_device_new_from_syspath`, treating NULL as `"seat0"`.
 
 **Step 3**: Act on D-Bus signals.
-- `SeatNew`: `seat_add` + **call `bus_subscribe_properties_changed`** (currently
-  omitted — dynamically-added seats get no `CanGraphical` tracking without
-  this) + start greeter if `drm_seat_has_display()` true.
+- **3.1+3.2** *(complete)*: `drm_seat_has_display(seat_id)` implemented;
+  greeter launch at enumeration gated on display presence. Monitorless seats
+  deferred to `SEAT_IDLE` instead of crash-looping.
+  `seat_remove()` added to `seat.c`.
+- **3.3** *(next)*: Wire `on_seat_new`:
 - `SeatRemoved`: stop greeter if `SEAT_GREETER`; log and leave if
   `SEAT_SESSION`.
 - `PropertiesChanged` → `CanGraphical` true: start greeter if `SEAT_IDLE`

@@ -28,27 +28,128 @@
  * start/stop greeters; for now they just emit log messages so we can verify
  * the D-Bus subscriptions are working correctly on tux.
  */
+
+/* Forward declarations required because on_seat_new references these
+ * callbacks, which are defined later in this file. */
+static void on_greeter_credentials(int fd, void *userdata);
+static void on_can_graphical_changed(const char *seat_id, int can_graphical);
+
 static void on_seat_new(const char *seat_id, const char *object_path)
 {
     log_info("signal: SeatNew seat_id=%s object_path=%s", seat_id, object_path);
-    /* Step 2: query CanGraphical; seat_add + start greeter if true. */
+
+    if (seat_add(seat_id, object_path) < 0)
+        return; /* ignored seat or capacity exceeded — already logged */
+
+    /* Subscribe per-seat: sd_bus_add_match requires an explicit object path,
+     * so each seat needs its own subscription registered at the moment it
+     * becomes known.  Without this, CanGraphical changes for dynamically-
+     * added seats are silently dropped. */
+    bus_subscribe_properties_changed(seat_id, object_path,
+                                     on_can_graphical_changed);
+
+    int has_display = drm_seat_has_display(seat_id);
+    if (has_display <= 0) {
+        log_info("%s: no connected display — deferring greeter", seat_id);
+        return;
+    }
+
+    struct seat *s = seat_find(seat_id);
+    if (!s) {
+        log_error("on_seat_new: seat_find(%s) returned NULL after seat_add",
+                  seat_id);
+        return;
+    }
+
+    if (greeter_start(s) < 0) {
+        log_error("%s: greeter_start failed", seat_id);
+        return;
+    }
+    if (event_add(s->credentials_rfd, on_greeter_credentials, s) < 0)
+        log_error("%s: event_add(credentials) failed", seat_id);
 }
 
 static void on_seat_removed(const char *seat_id, const char *object_path)
 {
     log_info("signal: SeatRemoved seat_id=%s object_path=%s", seat_id, object_path);
-    /* Step 2: stop greeter/session for this seat. */
+    (void)object_path;
+
+    struct seat *s = seat_find(seat_id);
+    if (!s) {
+        log_warn("on_seat_removed: unknown seat %s", seat_id);
+        return;
+    }
+
+    if (s->state == SEAT_GREETER) {
+        log_info("%s: seat removed while greeter running — stopping greeter",
+                 seat_id);
+        event_remove(s->credentials_rfd);
+        greeter_stop(s);
+        session_stop(s);
+    } else if (s->state == SEAT_SESSION) {
+        /* A user session is running headless — leave compositor alone.
+         * When it exits, SIGCHLD will reap an unknown pid (harmless). */
+        log_info("%s: seat removed while session running — leaving compositor",
+                 seat_id);
+    }
+
+    /* Remove from seat list.  SHORTCUT: invalidates struct seat * pointers
+     * for all seats after this entry in the array (they shift left).  Any
+     * event_add userdata pointing to those seats becomes stale.  Safe in
+     * the common case; see comment in seat_remove() for details. */
+    seat_remove(seat_id);
 }
 
 static void on_can_graphical_changed(const char *seat_id, int can_graphical)
 {
     log_info("signal: CanGraphical changed: seat_id=%s can_graphical=%s",
              seat_id, can_graphical ? "true" : "false");
-    /* Step 2: start greeter if true+SEAT_IDLE; stop greeter if false+SEAT_GREETER.
-     * A running user session (SEAT_SESSION) is left alone when CanGraphical
-     * goes false — the user's work should not be killed just because the
-     * display was unplugged.  The session continues headless; the greeter
-     * will not restart until the compositor exits on its own. */
+
+    struct seat *s = seat_find(seat_id);
+    if (!s) {
+        /* May arrive for ignored or not-yet-added seats; not an error. */
+        log_debug("on_can_graphical_changed: unknown seat %s — ignoring",
+                  seat_id);
+        return;
+    }
+
+    if (!can_graphical) {
+        /* GPU removed from this seat. */
+        if (s->state == SEAT_GREETER) {
+            log_info("%s: CanGraphical=false while greeter running — stopping",
+                     seat_id);
+            event_remove(s->credentials_rfd);
+            greeter_stop(s);
+            session_stop(s);
+        } else if (s->state == SEAT_SESSION) {
+            /* Leave the running compositor alone — session continues headless.
+             * The greeter will not restart until the compositor exits. */
+            log_info("%s: CanGraphical=false while session running — leaving",
+                     seat_id);
+        }
+        /* SEAT_IDLE: nothing to do. */
+        return;
+    }
+
+    /* can_graphical == true: GPU (re-)assigned to this seat. */
+    if (s->state == SEAT_IDLE) {
+        /* Only start if a display is also connected. */
+        int has_display = drm_seat_has_display(seat_id);
+        if (has_display <= 0) {
+            log_info("%s: CanGraphical=true but no display — staying idle",
+                     seat_id);
+            return;
+        }
+        log_info("%s: CanGraphical=true with display — starting greeter",
+                 seat_id);
+        if (greeter_start(s) < 0) {
+            log_error("%s: greeter_start failed", seat_id);
+            return;
+        }
+        if (event_add(s->credentials_rfd, on_greeter_credentials, s) < 0)
+            log_error("%s: event_add(credentials) failed", seat_id);
+    }
+    /* SEAT_GREETER / SEAT_SESSION: already running, nothing to do. */
 }
 
 /*
@@ -340,10 +441,17 @@ int main(void)
         break;
     }
 
-    /* Start the greeter on every seat.  The greeter collects credentials;
-     * on success SIGCHLD triggers session_start for the compositor. */
+    /* Start the greeter on every seat that has a connected display.
+     * Seats with no display are left in SEAT_IDLE; Step 4 will start them
+     * when a cable is plugged in.  This replaces the CONFIG_IGNORE_SEATS
+     * and CONFIG_SEAT_ENUM_DELAY shortcuts (removed in Step 5). */
     for (int i = 0; i < seat_count(); i++) {
         struct seat *s = seat_get(i);
+        int has_display = drm_seat_has_display(s->name);
+        if (has_display <= 0) {
+            log_info("%s: no connected display — deferring greeter", s->name);
+            continue;
+        }
         if (greeter_start(s) < 0) {
             log_warn("%s: greeter_start failed, skipping", s->name);
             continue;

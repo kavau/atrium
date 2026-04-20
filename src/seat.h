@@ -46,6 +46,12 @@ struct seat {
  * limit is reached or the seat is ignored (error is logged). */
 int seat_add(const char *name, const char *object_path);
 
+/* Remove a seat by name, shifting the array to fill the gap.  The caller is
+ * responsible for stopping any greeter/session on the seat before calling
+ * this.  Note: removal invalidates pointers to seats that followed the
+ * removed entry in the array. */
+void seat_remove(const char *name);
+
 /* Find a seat by name. Returns a pointer to the seat, or NULL if not found. */
 struct seat *seat_find(const char *name);
 

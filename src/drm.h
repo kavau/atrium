@@ -14,3 +14,8 @@ int drm_init(void);
 
 /* Deregister the drm fd from the event loop and release udev resources. */
 void drm_close(void);
+
+/* Return 1 if seat_id has at least one connected DRM connector, 0 if not,
+ * -1 on error.  Reads connector status files under /sys/class/drm/ directly;
+ * can be called at any time after drm_init(). */
+int drm_seat_has_display(const char *seat_id);
