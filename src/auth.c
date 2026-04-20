@@ -126,14 +126,20 @@ int auth_begin(const char *username, const char *password, auth_result *out)
         return r;
     }
 
+    log_debug("auth_begin(%s): calling pam_authenticate", username);
     r = pam_authenticate(pamh, 0);
+    log_debug("auth_begin(%s): pam_authenticate returned %d (%s)",
+              username, r, pam_strerror(pamh, r));
     if (r != PAM_SUCCESS) {
         log_error("pam_authenticate: %s", pam_strerror(pamh, r));
         pam_end(pamh, r);
         return r;
     }
 
+    log_debug("auth_begin(%s): calling pam_acct_mgmt", username);
     r = pam_acct_mgmt(pamh, 0);
+    log_debug("auth_begin(%s): pam_acct_mgmt returned %d (%s)",
+              username, r, pam_strerror(pamh, r));
     if (r != PAM_SUCCESS) {
         log_error("pam_acct_mgmt: %s", pam_strerror(pamh, r));
         pam_end(pamh, r);

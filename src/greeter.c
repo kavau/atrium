@@ -25,6 +25,11 @@ int greeter_start(struct seat *s)
      * to reference them.  atrium-greeter reads CREDENTIALS_FD and RESULT_FD
      * in greeter/main.c.
      */
+    /* Clear any username left from a previous greeter cycle.  greeter_start()
+     * is never called during a greeter→compositor handoff, so clearing here
+     * does not race with session_start(). */
+    s->greeter_username[0] = '\0';
+
     int cr_pipe[2]; /* credentials: greeter → daemon */
     int re_pipe[2]; /* result:      daemon  → greeter */
 

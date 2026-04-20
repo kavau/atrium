@@ -238,6 +238,9 @@ static void session_cleanup(struct seat *s)
     s->session_id[0]     = '\0';
     s->session_object[0] = '\0';
     s->runtime_path[0]   = '\0';
+    /* greeter_username is cleared in greeter_start(), not here: this function
+     * is called on the greeter→compositor handoff, and session_start() still
+     * needs the field at that point. */
 }
 
 static int session_start_impl(struct seat *s, int is_greeter)

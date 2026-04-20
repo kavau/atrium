@@ -81,14 +81,22 @@ static void on_seat_removed(const char *seat_id, const char *object_path)
     }
 
     if (s->state == SEAT_GREETER) {
-        log_info("%s: seat removed while greeter running — stopping greeter",
-                 seat_id);
+        log_info("%s: seat removed while greeter running — killing greeter (pid=%d)",
+                 seat_id, s->compositor_pid);
         event_remove(s->credentials_rfd);
         greeter_stop(s);
+        /* Kill cage so logind terminates the session cgroup, which reaps
+         * atrium-greeter.  We still call session_stop() immediately since
+         * this seat is gone for good — SIGCHLD will silently drop the
+         * resulting reap as an unknown pid, which is harmless.
+         * SHORTCUT: no SIGTERM→SIGKILL escalation; Phase 12 adds timerfd
+         * escalation for compositors that ignore SIGTERM. */
+        kill(s->compositor_pid, SIGTERM);
         session_stop(s);
     } else if (s->state == SEAT_SESSION) {
-        /* A user session is running headless — leave compositor alone.
-         * When it exits, SIGCHLD will reap an unknown pid (harmless). */
+        /* A user session is running — leave the compositor alone.  The
+         * session continues headless; SIGCHLD will drop the eventual reap
+         * as an unknown pid once seat_remove() erases it from our list. */
         log_info("%s: seat removed while session running — leaving compositor",
                  seat_id);
     }
@@ -116,11 +124,12 @@ static void on_can_graphical_changed(const char *seat_id, int can_graphical)
     if (!can_graphical) {
         /* GPU removed from this seat. */
         if (s->state == SEAT_GREETER) {
-            log_info("%s: CanGraphical=false while greeter running — stopping",
-                     seat_id);
-            event_remove(s->credentials_rfd);
-            greeter_stop(s);
-            session_stop(s);
+            log_info("%s: CanGraphical=false while greeter running — killing (pid=%d)",
+                     seat_id, s->compositor_pid);
+            /* Signal cage; SIGCHLD will clean up state and decide whether to
+             * restart (gated on has_display at that time).
+             * SHORTCUT: no SIGTERM→SIGKILL escalation (Phase 12). */
+            kill(s->compositor_pid, SIGTERM);
         } else if (s->state == SEAT_SESSION) {
             /* Leave the running compositor alone — session continues headless.
              * The greeter will not restart until the compositor exits. */
@@ -155,12 +164,17 @@ static void on_can_graphical_changed(const char *seat_id, int can_graphical)
 /*
  * on_drm_change — called by drm.c for every DRM udev event.
  *
- * action == "change": connector plugged or unplugged.  Re-read has_display
- *   and start/stop the greeter accordingly.
- * action == "remove": GPU hot-unplugged.  Treat as unplug — stop greeter if
- *   running.  Leave a compositor alone (session continues headless).
- * action == "add": GPU hot-added.  Same as a plug — start greeter if
- *   has_display and seat is idle.
+ * action == "change": connector plugged or unplugged.  Re-read has_display.
+ *   - Display appeared + SEAT_IDLE: start greeter.
+ *   - Display gone   + SEAT_GREETER: signal cage with SIGTERM; SIGCHLD will
+ *     clean up the session and leave the seat idle (has_display gate ensures
+ *     no immediate restart).  The session cgroup reaps atrium-greeter.
+ * action == "remove": GPU hot-unplugged.  Same SIGTERM approach.
+ *   SEAT_SESSION: leave compositor alone (session continues headless).
+ * action == "add": GPU hot-added.  Start greeter if has_display and idle.
+ *
+ * SHORTCUT: forced stops send SIGTERM only; no SIGTERM→SIGKILL escalation.
+ * Phase 12 adds timerfd-based escalation for compositors that ignore SIGTERM.
  */
 static void on_drm_change(const char *seat_id, const char *action)
 {
@@ -174,13 +188,12 @@ static void on_drm_change(const char *seat_id, const char *action)
     int is_removal = (strcmp(action, "remove") == 0);
 
     if (is_removal) {
-        /* GPU gone: treat like an unplug. */
+        /* GPU gone: signal cage if the greeter is running.  SIGCHLD handles
+         * cleanup; has_display gate there prevents an immediate restart. */
         if (s->state == SEAT_GREETER) {
-            log_info("%s: GPU removed while greeter running — stopping greeter",
-                     seat_id);
-            event_remove(s->credentials_rfd);
-            greeter_stop(s);
-            session_stop(s);
+            log_info("%s: GPU removed while greeter running — killing (pid=%d)",
+                     seat_id, s->compositor_pid);
+            kill(s->compositor_pid, SIGTERM);
         } else if (s->state == SEAT_SESSION) {
             log_info("%s: GPU removed while session running — leaving compositor",
                      seat_id);
@@ -200,10 +213,12 @@ static void on_drm_change(const char *seat_id, const char *action)
         if (event_add(s->credentials_rfd, on_greeter_credentials, s) < 0)
             log_error("%s: event_add(credentials) failed", seat_id);
     } else if (has_display <= 0 && s->state == SEAT_GREETER) {
-        log_info("%s: display disconnected — stopping greeter", seat_id);
-        event_remove(s->credentials_rfd);
-        greeter_stop(s);
-        session_stop(s);
+        /* Display unplugged: signal cage.  SIGCHLD will clean up the session
+         * and leave the seat idle; the has_display gate in the SIGCHLD
+         * handler prevents an immediate restart. */
+        log_info("%s: display disconnected — killing greeter (pid=%d)",
+                 seat_id, s->compositor_pid);
+        kill(s->compositor_pid, SIGTERM);
     }
     /* SEAT_SESSION: leave running compositor alone regardless of cable state.
      * SEAT_IDLE + no display: nothing to do. */
@@ -308,8 +323,10 @@ static void on_greeter_credentials(int fd, void *userdata)
     }
 
     /* Authenticate via PAM. */
+    log_debug("%s: calling auth_begin for '%s'", s->name, s->greeter_username);
     auth_result auth = {0};
     int pam_rc = auth_begin(username, password, &auth);
+    log_debug("%s: auth_begin returned %d", s->name, pam_rc);
 
     /* Wipe credentials from the buffer immediately. */
     memset(buf, 0, sizeof(buf));
@@ -384,6 +401,10 @@ static void on_signal(int fd, void *userdata)
             int was_greeter = (s->state == SEAT_GREETER);
             int exit_ok     = WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0;
 
+            /* Capture credentials_received BEFORE session_stop(), which calls
+             * session_cleanup() and clears greeter_username. */
+            int credentials_received = (s->greeter_username[0] != '\0');
+
             if (was_greeter) {
                 event_remove(s->credentials_rfd);
                 greeter_stop(s);
@@ -393,14 +414,34 @@ static void on_signal(int fd, void *userdata)
             }
             session_stop(s);
 
-            if (was_greeter && exit_ok) {
-                /* Greeter exited cleanly — start compositor session. */
+            /* Determine whether the greeter exited after a successful
+             * credential submission.  Guard on greeter_username: when we
+             * send SIGTERM to cage (e.g. on cable unplug), cage exits with
+             * status 0 too — indistinguishable from a clean greeter exit
+             * by exit code alone.  If no username was stored, no credentials
+             * were submitted and we must not attempt session_start. */
+            int start_compositor = (was_greeter && exit_ok && credentials_received);
+
+            if (start_compositor) {
                 log_info("%s: greeter completed — starting compositor",
                          s->name);
                 if (session_start(s) < 0)
                     log_error("%s: session_start failed", s->name);
             } else {
-                /* Greeter crashed or compositor exited — restart greeter. */
+                /* Greeter crashed, compositor exited, or greeter was
+                 * force-stopped (SIGTERM with no credentials submitted).
+                 * Only restart if a display is still connected; otherwise
+                 * leave idle and let on_drm_change restart on cable replug. */
+                if (was_greeter && exit_ok && !credentials_received)
+                    log_info("%s: greeter exited cleanly without credentials "
+                             "(force-stopped) — checking display", s->name);
+                int has_display = drm_seat_has_display(s->name);
+                if (has_display <= 0) {
+                    log_info("%s: %s exited with no display — staying idle",
+                             s->name,
+                             was_greeter ? "greeter" : "compositor");
+                    continue;
+                }
                 log_info("%s: %s exited — restarting greeter in %d s",
                          s->name,
                          was_greeter ? "greeter" : "compositor",
@@ -495,9 +536,8 @@ int main(void)
     }
 
     /* Start the greeter on every seat that has a connected display.
-     * Seats with no display are left in SEAT_IDLE; Step 4 will start them
-     * when a cable is plugged in.  This replaces the CONFIG_IGNORE_SEATS
-     * and CONFIG_SEAT_ENUM_DELAY shortcuts (removed in Step 5). */
+     * Seats with no display are left in SEAT_IDLE; on_drm_change will start
+     * the greeter once a cable is connected. */
     for (int i = 0; i < seat_count(); i++) {
         struct seat *s = seat_get(i);
         int has_display = drm_seat_has_display(s->name);
