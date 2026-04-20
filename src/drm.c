@@ -10,6 +10,7 @@
 
 static struct udev         *g_udev    = NULL;
 static struct udev_monitor *g_monitor = NULL;
+static on_drm_event_fn      g_callback = NULL;
 
 /*
  * on_drm_event — called by the event loop when the udev monitor fd is
@@ -45,12 +46,16 @@ static void on_drm_event(int fd, void *userdata)
                  seat_id,
                  has_display > 0 ? "true" : (has_display == 0 ? "false" : "error"));
 
+        if (g_callback && action)
+            g_callback(seat_id, action);
+
         udev_device_unref(dev);
     }
 }
 
-int drm_init(void)
+int drm_init(on_drm_event_fn callback)
 {
+    g_callback = callback;
     g_udev = udev_new();
     if (!g_udev) {
         log_error("udev_new failed");

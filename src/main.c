@@ -153,6 +153,63 @@ static void on_can_graphical_changed(const char *seat_id, int can_graphical)
 }
 
 /*
+ * on_drm_change — called by drm.c for every DRM udev event.
+ *
+ * action == "change": connector plugged or unplugged.  Re-read has_display
+ *   and start/stop the greeter accordingly.
+ * action == "remove": GPU hot-unplugged.  Treat as unplug — stop greeter if
+ *   running.  Leave a compositor alone (session continues headless).
+ * action == "add": GPU hot-added.  Same as a plug — start greeter if
+ *   has_display and seat is idle.
+ */
+static void on_drm_change(const char *seat_id, const char *action)
+{
+    struct seat *s = seat_find(seat_id);
+    if (!s) {
+        /* Seat not in our list (ignored, at capacity, or not yet added). */
+        log_debug("on_drm_change: unknown seat %s — ignoring", seat_id);
+        return;
+    }
+
+    int is_removal = (strcmp(action, "remove") == 0);
+
+    if (is_removal) {
+        /* GPU gone: treat like an unplug. */
+        if (s->state == SEAT_GREETER) {
+            log_info("%s: GPU removed while greeter running — stopping greeter",
+                     seat_id);
+            event_remove(s->credentials_rfd);
+            greeter_stop(s);
+            session_stop(s);
+        } else if (s->state == SEAT_SESSION) {
+            log_info("%s: GPU removed while session running — leaving compositor",
+                     seat_id);
+        }
+        return;
+    }
+
+    /* "change" or "add": re-read connector status. */
+    int has_display = drm_seat_has_display(seat_id);
+
+    if (has_display > 0 && s->state == SEAT_IDLE) {
+        log_info("%s: display connected — starting greeter", seat_id);
+        if (greeter_start(s) < 0) {
+            log_error("%s: greeter_start failed", seat_id);
+            return;
+        }
+        if (event_add(s->credentials_rfd, on_greeter_credentials, s) < 0)
+            log_error("%s: event_add(credentials) failed", seat_id);
+    } else if (has_display <= 0 && s->state == SEAT_GREETER) {
+        log_info("%s: display disconnected — stopping greeter", seat_id);
+        event_remove(s->credentials_rfd);
+        greeter_stop(s);
+        session_stop(s);
+    }
+    /* SEAT_SESSION: leave running compositor alone regardless of cable state.
+     * SEAT_IDLE + no display: nothing to do. */
+}
+
+/*
  * on_greeter_credentials — fires when the greeter writes credentials.
  *
  * Wire format: "<username>\0<password>\0" — two consecutive null-terminated
@@ -395,9 +452,8 @@ int main(void)
         return EXIT_FAILURE;
     log_debug("bus connection established");
 
-    /* Start the udev DRM monitor and register it with the event loop.
-     * In Phase 11 Step 2 the callback only logs; Step 4 will act on events. */
-    if (drm_init() < 0)
+    /* Start the udev DRM monitor and register it with the event loop. */
+    if (drm_init(on_drm_change) < 0)
         return EXIT_FAILURE;
 
     /* Subscribe to seat hotplug signals.  In Phase 11 Step 1 the callbacks
