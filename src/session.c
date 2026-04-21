@@ -343,9 +343,9 @@ static int session_start_impl(struct seat *s, int is_greeter)
                            s->session_object, sizeof(s->session_object),
                            s->runtime_path,   sizeof(s->runtime_path),
                            &s->session_fifo_fd) < 0) {
-        close(sync_pipe[1]);
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
+        close(sync_pipe[1]);
         session_cleanup(s);  /* clear any partially-written out params */
         return -1;
     }
@@ -366,9 +366,9 @@ static int session_start_impl(struct seat *s, int is_greeter)
      * compositor can race logind and get ENODEV from TakeDevice. */
     if (wait_session_active(s->session_id) < 0) {
         log_error("%s: session never became active; tearing down", s->name);
-        close(sync_pipe[1]);
         kill(pid, SIGKILL);
         waitpid(pid, NULL, 0);
+        close(sync_pipe[1]);
         session_cleanup(s);  /* close fifo + clear session state */
         return -1;
     }
