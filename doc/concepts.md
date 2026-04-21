@@ -1,6 +1,6 @@
 ---
 Created: April 13, 2026
-Last Updated: April 16, 2026
+Last Updated: April 21, 2026
 ---
 
 # atrium — Concepts
@@ -736,6 +736,17 @@ rules to update device ACLs (e.g. granting the session user access to
 `/dev/dri/card0`), but these rules execute asynchronously. `udevadm settle`
 blocks until the udev event queue is drained, ensuring ACLs are in place before
 the compositor opens devices.
+
+**`CreateSession` and udev are system-wide.** When logind processes a
+`CreateSession` call it re-evaluates ACLs for *all* tagged devices on the
+system — not just the ones belonging to the new session's seat. The resulting
+udev events therefore touch every GPU, input device, and DRM node on the
+machine. On a multiseat system this means that creating (or tearing down and
+recreating) a greeter session on one seat briefly wakes every GPU's kernel
+driver as the kernel processes the sysfs attribute writes from udevd. On
+discrete GPUs this can manifest as a visible frequency spike and briefly
+audible fan ramp-up across all seats, even those that have no involvement in
+the session change.
 
 #### Session fifo
 

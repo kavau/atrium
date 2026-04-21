@@ -46,8 +46,9 @@ static int wait_session_active(const char *session_id)
 }
 
 /* Wait for the udev event queue to drain so device ACLs are applied before
- * the compositor opens DRM/input devices.  Forks udevadm as a subprocess
- * to avoid blocking the daemon's event loop for long. */
+ * the compositor opens DRM/input devices.  Forks udevadm as a subprocess,
+ * then blocks in waitpid() until it exits — up to 5 s.  This stalls the
+ * daemon's event loop.  See issue #47 for a non-blocking alternative. */
 static void wait_udev_settle(void)
 {
     pid_t settle_pid = fork();

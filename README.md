@@ -34,10 +34,7 @@ baggage.
 > experimental software — use at your own risk. See [LICENSE](LICENSE) for
 > warranty and liability terms.
 >
-> Known current limitations:
-> - **No hotplug** — seats added/removed after startup are not detected
-> - **Compile-time config only** — all settings live in `src/config.h`
-> - **No `CanGraphical` gating** — monitorless seats crash-loop the greeter
+> See [Known Limitations](#known-limitations) below.
 
 See [doc/architecture.md](doc/architecture.md) for a detailed design overview.
 For multiseat hardware setup, see [doc/multiseat-setup.md](doc/multiseat-setup.md).
@@ -66,6 +63,18 @@ On CachyOS/Arch (`libsystemd` and `libudev` are both provided by the `systemd` p
 ```sh
 pacman -S systemd pam gtk4 cage meson ninja
 ```
+
+---
+
+## Supported Distros
+
+| Distro | Status |
+|---|---|
+| CachyOS / Arch Linux | Verified — primary development target |
+| Debian / Ubuntu | PAM stack provided; less-tested |
+
+Other systemd-based distros with GTK4 and cage in their package repositories
+should work with minor packaging adjustments.
 
 ---
 
@@ -154,6 +163,81 @@ sudo journalctl -u atrium -b-1 # logs from the previous boot
 
 ---
 
+## Known Limitations
+
+> This reflects the state after all issues labelled
+> [`next`](https://github.com/kavau/atrium/issues?q=is%3Aopen+label%3Anext)
+> have been resolved.
+
+### Hotplug not supported
+
+Seats added or removed after the daemon starts are not detected. atrium
+enumerates seats once at startup and holds a static list for the lifetime of
+the process. Tracked in [#28](https://github.com/kavau/atrium/issues/28).
+
+### Compile-time configuration only
+
+All settings live in `src/config.h` and are baked in at build time. There is
+no runtime config file.
+
+### No `CanGraphical` gating
+
+atrium does not check logind's `CanGraphical` property before spawning a greeter.
+Seats that have no display hardware will crash-loop the cage compositor
+indefinitely. As a workaround, add the offending seat to `CONFIG_IGNORE_SEATS` in
+`src/session.h`.
+
+### Greeter SIGKILL escalation not implemented
+
+When tearing down a session, atrium sends `SIGTERM` to cage and waits a fixed
+delay before assuming it has exited. There is no `SIGKILL` follow-up if cage
+ignores `SIGTERM`. Tracked in [#3](https://github.com/kavau/atrium/issues/3).
+
+### Compositor selection is global, not per-user
+
+`CONFIG_COMPOSITOR` selects a single compositor for every seat and every user.
+Per-user session selection (e.g. from a `.desktop` file) is not supported.
+Tracked in [#24](https://github.com/kavau/atrium/issues/24).
+
+### PAM session opened in child process
+
+`pam_open_session` is called inside the child process that execs the
+compositor, so the PAM session's kernel audit pid does not match the daemon pid
+that ran `pam_authenticate`. Some PAM modules (e.g. `pam_loginuid`) may log a
+warning or behave unexpectedly. Tracked in
+[#42](https://github.com/kavau/atrium/issues/42).
+
+### Passwordless users bypass PAM
+
+Users listed in `CONFIG_PASSWORDLESS_USERS` skip `pam_authenticate` entirely
+and proceed directly to session creation. There is no PAM account/session
+check for these users. Tracked in
+[#23](https://github.com/kavau/atrium/issues/23).
+
+### Long passwords are silently truncated
+
+The daemon reads credentials from the greeter into a fixed-size buffer. Passwords
+longer than `CONFIG_CREDS_BUFFER_MAX` bytes are silently truncated, which will
+cause authentication to fail with no indication to the user. Tracked in
+[#46](https://github.com/kavau/atrium/issues/46).
+
+### GTK portal warnings in greeter logs
+
+The GTK4 greeter runs inside cage, which does not provide an
+`xdg-desktop-portal`. GTK4 emits portal-related warnings on startup; these are
+benign and do not affect functionality. Tracked in
+[#17](https://github.com/kavau/atrium/issues/17).
+
+### Some daemon output may not appear in the journal
+
+The daemon's stderr is not routed through `sd_journal_stream_fd`, so error
+output written directly to stderr (e.g. from child processes) may not appear
+in `journalctl -u atrium`. If you see unexpected behaviour with no journal
+output, check `dmesg` or run atrium under `systemd-run` with `--pty`. Tracked
+in [#54](https://github.com/kavau/atrium/issues/54).
+
+---
+
 ## Development
 
 ### Remote deploy
@@ -214,3 +298,15 @@ data/      installed config files (PAM stack, systemd unit)
 doc/       architecture guide, implementation plan
 build/     Meson build output (git-ignored)
 ```
+
+---
+
+## Reporting Issues
+
+Bug reports and feature requests are welcome. Please open an issue on
+[GitHub](https://github.com/kavau/atrium/issues) and include:
+
+- A description of the problem or request.
+- Relevant journal output (`sudo journalctl -u atrium -b`).
+- Your distro, kernel version, and hardware configuration (especially for
+  multiseat-related issues).
