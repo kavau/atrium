@@ -235,6 +235,11 @@ int main(void)
     log_info("starting");
     log_debug("debug logging is enabled");
 
+    /* Ignore SIGPIPE so a broken result pipe (greeter crashed between sending
+     * credentials and reading the reply) returns EPIPE from write() instead of
+     * terminating the daemon and killing every session on every seat. */
+    signal(SIGPIPE, SIG_IGN);
+
     /* Block SIGTERM and SIGCHLD so they are delivered via signalfd only. */
     sigset_t mask;
     sigemptyset(&mask);
