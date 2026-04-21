@@ -16,7 +16,15 @@ add_project_arguments(
   '-Wnull-dereference',
   '-Wshadow',
   '-Wstrict-prototypes',
+  '-Wunused-parameter',
   language: 'c',
 )
 
-executable('atrium', 'daemon/core/main.c')
+# Dependencies
+libsystemd = dependency('libsystemd')
+
+# Executables
+executable('atrium', 'daemon/core/main.c',
+  dependencies: [
+    libsystemd,
+  ])
