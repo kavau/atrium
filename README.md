@@ -15,6 +15,12 @@ ninja -C build
 
 ## Development
 
+To copy the source to a remote machine and build remotely:
+
+```shell
+./tools/deploy.sh
+```
+
 To test atrium from within a user session:
 
 ```shell
