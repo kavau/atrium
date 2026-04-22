@@ -1,6 +1,6 @@
 ---
 Created: April 12, 2026
-Last Updated: April 12, 2026
+Last Updated: April 22, 2026
 ---
 
 # atrium — Architecture
@@ -34,7 +34,7 @@ gets its own independent greeter and session, and no seat needs special-casing
 except `seat0` (which also owns virtual terminals).
 
 Simplicity is a deliberate constraint. atrium targets Linux with systemd/logind
-and Wayland compositors only. It makes no attempt to support X11, non-systemd
+and Wayland compositors only. It makes no attempt to support X11 natively, non-systemd
 init systems, or exotic configurations. This scope limitation is what allows the
 code to remain readable and the multiseat logic to stay clean.
 

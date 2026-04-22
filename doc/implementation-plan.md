@@ -1,6 +1,6 @@
 ---
 Created: April 12, 2026
-Last Updated: April 15, 2026
+Last Updated: April 22, 2026
 ---
 
 # atrium — Implementation Plan
@@ -272,8 +272,9 @@ particular order or timeline.
   user pick a session type in the greeter instead of hardcoding the compositor.
 - **X11 session support** — launch X11-based desktop environments from the
   greeter. The greeter itself remains Wayland (inside cage), but the user
-  session would run under Xwayland or a standalone X server. Only if feasible
-  without disproportionate effort.
+  session runs under a standalone Xorg instance per seat. Implemented via an
+  external `atrium-x11-session` supervisor shim that manages the Xorg + WM
+  lifecycle; atrium itself requires no changes.
 - **Third-party greeter support** — allow using existing greeters from other
   display managers instead of atrium-greeter, primarily
   [greetd](https://git.sr.ht/~kennylevinsen/greetd) 
