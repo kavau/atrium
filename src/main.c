@@ -9,6 +9,7 @@
 #include "vt.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <pwd.h>
 #include <signal.h>
@@ -18,6 +19,27 @@
 #include <sys/signalfd.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+/* Returns 1 if username is valid for login, 0 otherwise (logs the reason).
+ * Rejects empty, overlong, or non-portable-filename characters to prevent
+ * ANSI escape injection in log output. */
+static int is_valid_username(const char *username, size_t max_len,
+                             const char *ctx)
+{
+    size_t ulen = strlen(username);
+    if (ulen == 0 || ulen >= max_len) {
+        log_error("%s: username %s", ctx, ulen == 0 ? "empty" : "too long");
+        return 0;
+    }
+    for (size_t i = 0; i < ulen; i++) {
+        unsigned char c = (unsigned char)username[i];
+        if (!(isalnum(c) || c == '_' || c == '-' || c == '.')) {
+            log_error("%s: invalid character in username", ctx);
+            return 0;
+        }
+    }
+    return 1;
+}
 
 /*
  * on_greeter_credentials — fires when the greeter writes credentials.
@@ -65,17 +87,14 @@ static void on_greeter_credentials(int fd, void *userdata)
         return;
     }
 
-    log_info("login request on %s: user='%s'", s->name, username);
-
-    /* Validate username length before storing. */
-    size_t ulen = strlen(username);
-    if (ulen >= sizeof(s->greeter_username)) {
-        log_error("credentials(%s): username too long (%zu bytes)",
-                  s->name, ulen);
+    if (!is_valid_username(username, sizeof(s->greeter_username), s->name)) {
         memset(buf, 0, sizeof(buf));
-        greeter_send_result(s, "fail:Username too long\n");
+        greeter_send_result(s, "fail:Invalid username\n");
         return;
     }
+
+    size_t ulen = strlen(username);
+    log_info("login request on %s: user='%s'", s->name, username);
 
     /* Store username before wiping buf (username points into buf). */
     memcpy(s->greeter_username, username, ulen + 1);
