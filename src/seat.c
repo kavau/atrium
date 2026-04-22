@@ -12,10 +12,12 @@ static int         g_num_seats = 0;
 int seat_add(const char *name)
 {
     /* Check CONFIG_IGNORE_SEATS before adding. */
-    if (CONFIG_IGNORE_SEATS && CONFIG_IGNORE_SEATS[0] != '\0' &&
-        strcmp(name, CONFIG_IGNORE_SEATS) == 0) {
-        log_info("seat_add: ignoring %s (CONFIG_IGNORE_SEATS)", name);
-        return -1;
+    static const char *ignored[] = CONFIG_IGNORE_SEATS;
+    for (size_t i = 0; i < sizeof(ignored)/sizeof(ignored[0]); i++) {
+        if (ignored[i] && strcmp(name, ignored[i]) == 0) {
+            log_info("seat_add: ignoring %s (CONFIG_IGNORE_SEATS)", name);
+            return -1;
+        }
     }
     if (g_num_seats >= MAX_SEATS) {
         log_warn("seat_add: limit (%d) reached, ignoring %s",

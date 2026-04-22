@@ -3,9 +3,9 @@
 /*
  * config.h — compile-time configuration
  *
- * SHORTCUT: All values here are hardcoded and will eventually be determined
- * dynamically (compositor by greeter/desktop file, username by PAM
- * authentication, desktop name from session .desktop, delays removed).
+ * SHORTCUT: Several values here are hardcoded and will eventually be
+ * determined dynamically (compositor and desktop name from a session .desktop
+ * file; delays replaced by event-driven alternatives).
  */
 
 /* Compositor to launch on each seat. */
@@ -16,11 +16,12 @@
 
 /* Seconds to wait before enumerating seats at startup.
  * Gives logind time to finish processing udev seat events on early boot.
- * Replaced by SeatNew/SeatRemoved signal monitoring in Phase 6. */
+ * SHORTCUT: replaced by SeatNew/SeatRemoved signal monitoring once Phase 11
+ * (hotplug) is reimplemented. */
 #define CONFIG_SEAT_ENUM_DELAY  2
 
 /* Seconds to wait before restarting a crashed compositor.
- * Replaced by timerfd-based crash-loop detection in Phase 7. */
+ * SHORTCUT: replaced by timerfd-based crash-loop detection in Phase 12. */
 #define CONFIG_RESTART_DELAY    2
 
 /* SHORTCUT: Seconds of idle time before blanking the greeter display.
@@ -30,12 +31,11 @@
  * would require daemon-side DRM control.  Set to 0 to disable blanking. */
 #define CONFIG_BLANK_TIMEOUT    300
 
-/* Seat name to ignore during enumeration (e.g. a monitorless seat that
- * crashes the greeter).  Set to NULL or "" to disable.
- * To ignore multiple seats, extend this to a NULL-terminated array. */
-#define CONFIG_IGNORE_SEATS     ""
+/* Array of seat names to ignore during enumeration (e.g. monitorless seats
+ * that would crash-loop the greeter).  Set to { NULL } to disable. */
+#define CONFIG_IGNORE_SEATS     { NULL }
 
-/* SHORTCUT: Users that can log in without a password.
+/* SHORTCUT: Array of usernames that can log in without a password.
  * For these users the greeter skips the password screen and sends empty
  * credentials; the daemon skips PAM authentication and resolves uid/gid
  * directly via getpwnam().  No PAM session is opened (no loginuid, no

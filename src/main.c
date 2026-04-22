@@ -105,8 +105,8 @@ static void on_greeter_credentials(int fd, void *userdata)
      * will be no-ops for this session. */
     static const char *passwordless[] = CONFIG_PASSWORDLESS_USERS;
     int is_passwordless = 0;
-    for (int i = 0; passwordless[i]; i++) {
-        if (strcmp(s->greeter_username, passwordless[i]) == 0) {
+    for (size_t i = 0; i < sizeof(passwordless)/sizeof(passwordless[0]); i++) {
+        if (passwordless[i] && strcmp(s->greeter_username, passwordless[i]) == 0) {
             is_passwordless = 1;
             break;
         }

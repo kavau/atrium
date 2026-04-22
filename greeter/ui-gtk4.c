@@ -34,9 +34,9 @@
 /* SHORTCUT: check whether a username is in CONFIG_PASSWORDLESS_USERS. */
 static int is_passwordless(const char *username)
 {
-    const char *list[] = CONFIG_PASSWORDLESS_USERS;
-    for (int i = 0; list[i]; i++) {
-        if (strcmp(username, list[i]) == 0)
+    static const char *list[] = CONFIG_PASSWORDLESS_USERS;
+    for (size_t i = 0; i < sizeof(list)/sizeof(list[0]); i++) {
+        if (list[i] && strcmp(username, list[i]) == 0)
             return 1;
     }
     return 0;
