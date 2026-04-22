@@ -52,11 +52,15 @@
 #define CONFIG_PASSWORDLESS_USERS  { NULL }
 
 /* Greeter command — cage kiosk compositor hosting atrium-greeter.
+ * GREETER_USER is a dedicated system account (uid < 1000, no home directory).
+ * Create it with:
+ *   useradd --system --no-create-home --shell /usr/sbin/nologin atrium
  *
- * SHORTCUT: GREETER_UID/GID should be a dedicated system account
- * (e.g. 'atrium').  Using uid 1000 (primary user) for now. */
+ * Note: all greeter instances share the same XDG_RUNTIME_DIR
+ * (/run/user/<uid>), so cage instances on different seats compete for
+ * wayland-0.lock.  The loser falls back to wayland-1, wayland-2, etc.
+ * This is harmless — cage handles the fallback gracefully. */
 #define CONFIG_GREETER_CMD  "/usr/bin/cage"
 #define CONFIG_GREETER_ARGS { "/usr/bin/cage", "-s", \
                               "/usr/local/libexec/atrium-greeter", NULL }
-#define CONFIG_GREETER_UID  1000
-#define CONFIG_GREETER_GID  1000
+#define CONFIG_GREETER_USER "atrium"

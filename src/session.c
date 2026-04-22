@@ -258,11 +258,11 @@ static int session_start_impl(struct seat *s, int is_greeter)
     char pwbuf_data[1024];
 
     if (is_greeter) {
-        int r = getpwuid_r(CONFIG_GREETER_UID, &pwbuf, pwbuf_data,
+        int r = getpwnam_r(CONFIG_GREETER_USER, &pwbuf, pwbuf_data,
                            sizeof(pwbuf_data), &pw);
         if (r != 0 || pw == NULL) {
-            log_error("%s: getpwuid_r(%d): %s", s->name,
-                      CONFIG_GREETER_UID,
+            log_error("%s: getpwnam_r(%s): %s", s->name,
+                      CONFIG_GREETER_USER,
                       r != 0 ? strerror(r) : "user not found");
             return -1;
         }
