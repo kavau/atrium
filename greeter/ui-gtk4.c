@@ -155,6 +155,7 @@ typedef struct {
     GtkWidget      *stack;
     GtkWidget      *users_box;        /* user selection page container */
     GtkWidget      *users_spinner;    /* spinner shown during user selection submit */
+    GtkWidget      *users_error_label; /* error shown on users page after passwordless failure */
     GtkWidget      *login_heading;
     GtkWidget      *password_entry;
     GtkWidget      *button;
@@ -213,26 +214,37 @@ static gboolean on_result_ready(gint fd, GIOCondition condition,
         return G_SOURCE_REMOVE;
     }
 
-    /* "fail:<reason>\n" — strip trailing newline, show error, allow retry.
-     *
-     * KNOWN GAP: this branch always resets the login page widgets.  If the
-     * failure came from the passwordless path (user was still on the users
-     * page), the users page is left with its spinner spinning and buttons
-     * disabled, making the greeter unusable.  Fix: detect which stack page
-     * is active and reset the appropriate widgets accordingly. */
+    /* "fail:<reason>\n" — strip trailing newline, show error, allow retry. */
     const char *msg = "Authentication failed.";
     if (n >= 6 && strncmp(buf, "fail:", 5) == 0) {
         buf[n - 1] = '\0';
         msg = buf + 5;
     }
-    gtk_label_set_text(GTK_LABEL(ctx->error_label), msg);
-    gtk_widget_set_visible(ctx->error_label, TRUE);
-    gtk_spinner_stop(GTK_SPINNER(ctx->spinner));
-    gtk_widget_set_visible(ctx->spinner, FALSE);
-    gtk_widget_set_sensitive(ctx->password_entry, TRUE);
-    gtk_widget_set_sensitive(ctx->button, TRUE);
-    gtk_editable_set_text(GTK_EDITABLE(ctx->password_entry), "");
-    gtk_widget_grab_focus(ctx->password_entry);
+
+    const char *page = gtk_stack_get_visible_child_name(GTK_STACK(ctx->stack));
+    if (page && strcmp(page, "users") == 0) {
+        /* Passwordless path failed — reset users page. */
+        gtk_spinner_stop(GTK_SPINNER(ctx->users_spinner));
+        gtk_widget_set_visible(ctx->users_spinner, FALSE);
+        GtkWidget *child = gtk_widget_get_first_child(ctx->users_box);
+        while (child) {
+            if (GTK_IS_BUTTON(child))
+                gtk_widget_set_sensitive(child, TRUE);
+            child = gtk_widget_get_next_sibling(child);
+        }
+        gtk_label_set_text(GTK_LABEL(ctx->users_error_label), msg);
+        gtk_widget_set_visible(ctx->users_error_label, TRUE);
+    } else {
+        /* Password path failed — reset login page. */
+        gtk_label_set_text(GTK_LABEL(ctx->error_label), msg);
+        gtk_widget_set_visible(ctx->error_label, TRUE);
+        gtk_spinner_stop(GTK_SPINNER(ctx->spinner));
+        gtk_widget_set_visible(ctx->spinner, FALSE);
+        gtk_widget_set_sensitive(ctx->password_entry, TRUE);
+        gtk_widget_set_sensitive(ctx->button, TRUE);
+        gtk_editable_set_text(GTK_EDITABLE(ctx->password_entry), "");
+        gtk_widget_grab_focus(ctx->password_entry);
+    }
     return G_SOURCE_REMOVE;
 }
 
@@ -317,7 +329,9 @@ static void on_user_selected(GtkWidget *widget, gpointer user_data)
      * showing a spinner to indicate the request is in flight. */
     if (ctx->credentials_fd != -1 && is_passwordless(username)) {
         log_debug("passwordless login for '%s'", username);
-        /* Disable buttons and show spinner while waiting for auth result. */
+        /* Disable buttons and show spinner while waiting for auth result.
+         * Hide any error from a previous failed attempt. */
+        gtk_widget_set_visible(ctx->users_error_label, FALSE);
         GtkWidget *child = gtk_widget_get_first_child(ctx->users_box);
         while (child) {
             if (GTK_IS_BUTTON(child))
@@ -504,9 +518,16 @@ static void on_activate(GtkApplication *app, gpointer user_data)
     gtk_widget_set_visible(users_spinner, FALSE);
     ctx->users_spinner = users_spinner;
 
+    GtkWidget *users_error_label = gtk_label_new("");
+    gtk_widget_add_css_class(users_error_label, "error-label");
+    gtk_widget_set_halign(users_error_label, GTK_ALIGN_START);
+    gtk_widget_set_visible(users_error_label, FALSE);
+    ctx->users_error_label = users_error_label;
+
     GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     ctx->users_box = users_box;
     gtk_box_append(GTK_BOX(users_box), users_heading);
+    gtk_box_append(GTK_BOX(users_box), users_error_label);
     gtk_box_append(GTK_BOX(users_box), users_spinner);
 
     for (int i = 0; i < user_count; i++) {
