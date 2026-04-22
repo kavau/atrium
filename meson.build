@@ -24,7 +24,11 @@ add_project_arguments(
 libsystemd = dependency('libsystemd')
 
 # Executables
-executable('atrium', 'daemon/core/main.c',
+executable('atrium',
+  sources: [
+    'daemon/core/main.c',
+    'daemon/core/session.c',
+  ],
   dependencies: [
     libsystemd,
   ])
