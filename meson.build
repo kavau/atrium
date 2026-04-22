@@ -21,14 +21,28 @@ add_project_arguments(
 )
 
 # Dependencies
-libsystemd = dependency('libsystemd')
+
+# libpam = dependency('libpam')
+cc = meson.get_compiler('c')
+libpam = cc.find_library('pam')
 
 # Executables
+
 executable('atrium',
   sources: [
+    'daemon/auth/auth.c',
     'daemon/core/main.c',
     'daemon/core/session.c',
   ],
   dependencies: [
-    libsystemd,
+    libpam,
+  ])
+
+executable('atrium-auth-test',
+  sources: [
+    'tools/auth-test.c',
+    'daemon/auth/auth.c',
+  ],
+  dependencies: [
+    libpam,
   ])
