@@ -322,9 +322,9 @@ int main(void)
             event_remove(s->credentials_rfd);
             greeter_stop(s);
         }
-        if (s->state == SEAT_SESSION && s->auth.pamh)
-            auth_close(&s->auth);
         session_shutdown(s);
+        if (s->auth.pamh)
+            auth_close(&s->auth);
     }
 
     /* Release VT allocations. */

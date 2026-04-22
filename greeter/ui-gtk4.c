@@ -195,7 +195,7 @@ static gboolean on_result_ready(gint fd, GIOCondition condition,
     log_debug("result_fd ready: n=%zd buf='%.*s'",
               n, (int)(n > 0 ? n : 0), buf);
 
-    if (n > 0 && strncmp(buf, "ok", 2) == 0) {
+    if (n >= 3 && memcmp(buf, "ok\n", 3) == 0) {
         /* Clear the password field before destroying the window. */
         gtk_editable_set_text(GTK_EDITABLE(ctx->password_entry), "");
 
@@ -221,7 +221,7 @@ static gboolean on_result_ready(gint fd, GIOCondition condition,
      * disabled, making the greeter unusable.  Fix: detect which stack page
      * is active and reset the appropriate widgets accordingly. */
     const char *msg = "Authentication failed.";
-    if (n > 5 && strncmp(buf, "fail:", 5) == 0) {
+    if (n >= 6 && strncmp(buf, "fail:", 5) == 0) {
         buf[n - 1] = '\0';
         msg = buf + 5;
     }

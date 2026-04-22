@@ -52,7 +52,8 @@ int bus_enumerate_seats(void)
             &reply,
             "");
     if (r < 0) {
-        log_error("ListSeats: %s", error.message);
+        log_error("ListSeats: %s",
+                  error.message ? error.message : strerror(-r));
         goto cleanup;
     }
 
@@ -151,7 +152,7 @@ int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,
     r = sd_bus_call(g_bus, msg, 0, &error, &reply);
     if (r < 0) {
         log_error("CreateSession: %s",
-                error.message ? error.message : strerror(-r));
+                  error.message ? error.message : strerror(-r));
         goto cleanup;
     }
 
@@ -205,7 +206,7 @@ int bus_activate_session(const char *session_object)
             &error, NULL, "");
     if (r < 0)
         log_error("ActivateSession: %s",
-                error.message ? error.message : strerror(-r));
+                  error.message ? error.message : strerror(-r));
     sd_bus_error_free(&error);
     return (r < 0) ? -1 : 0;
 }
