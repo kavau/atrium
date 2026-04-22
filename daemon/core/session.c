@@ -1,148 +1,111 @@
-#include <fcntl.h>
+#include <assert.h>
+#include <pwd.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
+#include <stdlib.h>
 #include <sys/wait.h>
-#include <systemd/sd-bus.h>
+#include <unistd.h>
 
+#include "daemon/auth/auth.h"
 #include "session.h"
 
-int create_session(int uid, const char *seat) {
-    /* Fork the child process for the user session. Must be done before
-    CreateSession so we can pass the child PID to logind as the session leader.
-    */
+int create_session(const char *username, const char *password, const char *seat,
+                   const char *conf_path) {
+    assert(username);
+    assert(password);
+    assert(seat);
+    assert(conf_path);
+
+    /* PAM - SHORTCUT: should be done in a dedicated session-helper process */
+    auth_result pam_result;
+    int r = auth_open_session(username, password, seat, conf_path, &pam_result);
+    if (r != PAM_SUCCESS) {
+        fprintf(stderr, "Failed to open PAM session: %d\n", r);
+        return 1;
+    }
+
+    /* SHORTCUT: Give logind some time to activate the session. */
+    sleep(2);
+
+    /* Fork the child process for the user session. */
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork");
+        auth_close_session(&pam_result);
         return 1;
     }
 
     if (pid == 0) {
-        /* This is the child process -- exec the compositor. */
+        /* This is the child process -- drop privileges and exec the compositor. */
         fprintf(stderr, "Starting child process...\n");
 
-        /* SHORTCUT: wait for the parent process to finish CreateSession.
-        Instead the daemon should signal the child when the session is ready. */
-        sleep(5);
+        if (pam_result.env) {
+            printf("PAM environment variables:\n");
+            for (char **p = pam_result.env; *p; p++) {
+                printf("  %s\n", *p);
+            }
+        }
+
+        /* Build the session environment. */
+        struct passwd *pw = getpwnam(username);
+        if (!pw) {
+            fprintf(stderr, "getpwnam failed for user '%s'\n", username);
+            return 1;
+        }
+
+        /* Count PAM env entries. */
+        int n_pam = 0;
+        for (char **p = pam_result.env; p && *p; p++)
+            n_pam++;
+
+        /* passwd fields + PATH + PAM env entries + NULL terminator */
+        char **env = calloc(5 + n_pam + 1, sizeof(*env));
+        if (!env) {
+            perror("calloc");
+            return 1;
+        }
+
+        int i = 0;
+        /* getenv() finds the first match, so passwd is authoritative */
+        if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
+            goto oom;
+        if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
+            goto oom;
+        if (asprintf(&env[i++], "HOME=%s", pw->pw_dir) < 0)
+            goto oom;
+        if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
+            goto oom;
+        env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
+        for (char **p = pam_result.env; p && *p; p++) {
+            env[i++] = *p;
+        }
+        env[i] = NULL;
 
         /* TODO:
-         * - set environment variables for the session
          * - privilege drop to the user account
          * - chdir to the user home directory
          * - exec the compositor in a login shell
          */
 
         fprintf(stderr, "Exec user session...\n");
-        execlp("sleep", "sleep", "30", NULL);
-        perror("execlp");  /* Error path - a successful exec does not return */
+        /* TODO: use execvpe instead, which searches PATH */
+        execle("/usr/bin/cage", "cage", "foot", NULL, env);
+        perror("execl"); /* Error path - a successful exec does not return */
+        return 1;
+
+    oom:
+        fprintf(stderr, "create_session: out of memory\n");
+        for (int j = 0; j < i - 1; j++) {
+            free(env[j]);
+        }
+        free(env);
         return 1;
     }
 
-    /* This is the parent process -- create the user session. */
-    fprintf(stderr, "Started child process with PID %d\n", pid);
-
-    sd_bus *bus = NULL;
-    sd_bus_message *msg = NULL, *reply = NULL;
-    sd_bus_error error = SD_BUS_ERROR_NULL;
- 
-    /* Connect to the system bus */
-    int ret = sd_bus_open_system(&bus);
-    if (ret < 0) {
-        fprintf(stderr, "Failed to connect to system bus: %s\n", strerror(-ret));
-        goto cleanup;
-    }
-
-    /* Construct the CreateSession message */
-    ret = sd_bus_message_new_method_call(
-        bus, 
-        &msg, 
-        "org.freedesktop.login1",         /* destination */
-        "/org/freedesktop/login1",        /* object path */
-        "org.freedesktop.login1.Manager", /* interface */
-        "CreateSession");                 /* method */
-    if (ret < 0) {
-        fprintf(stderr, "CreateSession - failed to create message: %s\n", strerror(-ret));
-        goto cleanup;
-    }
-
-    /* CreateSession message signature: u u s s s s s u s s b s s a(sv) */
-    /* TODO: use service name "atrium" in prod, "atrium-dev" for testing */
-    ret = sd_bus_message_append(msg, "uusssssussbss",
-        (uint32_t)uid,  /* login user ID */
-        (uint32_t)pid,  /* session leader PID */
-        "atrium-dev",   /* service name */
-        "wayland",      /* session type */
-        "user",         /* session class */
-        "",             /* desktop environment */
-        seat,           /* seat ID */
-        (uint32_t)0,    /* vtnr */
-        "",             /* TTY device path */
-        "",             /* X11 display device */
-        0,              /* indicates remote session */
-        "",             /* remote user */
-        "");            /* remote host */
-    if (ret < 0) {
-        fprintf(stderr, "CreateSession - failed to append args: %s\n", strerror(-ret));
-        goto cleanup;
-    }
-
-    /* Empty session properties array */
-    ret = sd_bus_message_open_container(msg, 'a', "(sv)");
-    if (ret >= 0) {
-        ret = sd_bus_message_close_container(msg);
-    }
-    if (ret < 0) {
-        fprintf(stderr, "CreateSession - failed to append args: %s\n", strerror(-ret));
-        goto cleanup;
-    }
-
-    /* Call the CreateSession method */
-    ret = sd_bus_call(bus, msg, 0, &error, &reply);
-    if (ret < 0) {
-        fprintf(stderr, "CreateSession failed: %s\n",
-             error.message ? error.message : strerror(-ret));
-        goto cleanup;
-    }
-
-    const char *session_id, *obj_path, *runtime_path, *ret_seat;
-    int fifo_fd, existing;
-    uint32_t ret_uid, ret_vtnr;
-    ret = sd_bus_message_read(reply, "soshusub",
-        &session_id,    /* allocated systemd session id */
-        &obj_path,      /* allocated object path for the session */
-        &runtime_path,  /* user runtime directory ($XDG_RUNTIME_DIR) */
-        &fifo_fd,       /* fd for session lifecycle tracking */
-        &ret_uid,       /* confirmed user id */
-        &ret_seat,      /* confirmed seat id */
-        &ret_vtnr,      /* confirmed VT number */
-        &existing);     /* indicates whether session already existed */   
-    if (ret < 0) {
-        fprintf(stderr, "CreateSession - failed to parse reply: %s\n", strerror(-ret));
-        goto cleanup;
-    }
-
-    /* Duplicate the session fd so it survives sd_bus_message_unref */
-    int fifo_fd_out = fcntl(fifo_fd, F_DUPFD_CLOEXEC, 0);
-    if (fifo_fd_out < 0) {
-        perror("Failed to duplicate session fd");
-        ret = -1;
-        goto cleanup;
-    }
-    fprintf(stderr, "Session created: id=%s, obj_path=%s, runtime_path=%s, fifo_fd=%d, uid=%u, seat=%s, vtnr=%u\n",
-        session_id, obj_path, runtime_path, fifo_fd_out, ret_uid, ret_seat, ret_vtnr);
-
-    /* SHORTCUT: Give logind some time to activate the session. */
-    sleep(2);
-
+    /* This is the parent process -- user session lifetime management. */
     /* SHORTCUT: Wait for the child process to exit. We should monitor SIGCHLD instead. */
     waitpid(pid, NULL, 0);
-    fprintf(stderr, "Child process exited, closing session fd to end session...\n");
-    close(fifo_fd_out);
+    fprintf(stderr, "Child process exited, closing PAM handle to end session...\n");
+    auth_close_session(&pam_result);
 
-cleanup:
-    sd_bus_error_free(&error);
-    sd_bus_message_unref(reply);
-    sd_bus_message_unref(msg);
-    sd_bus_unref(bus);
-    return (ret < 0) ? -1 : 0;
+    return 0;
 }
