@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <libgen.h>
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
@@ -206,16 +207,19 @@ static _Noreturn void child_exec(struct seat *s,
         execvp(CONFIG_GREETER_CMD, (char *const *)greeter_argv);
         log_error("execvp(%s): %s", CONFIG_GREETER_CMD, strerror(errno));
     } else {
-        /* Launch the compositor via the user's login shell.  The -l flag
-         * triggers login-shell behaviour, which sources .profile /
-         * .bash_profile and sets up the user's PATH and other environment.
-         * The 'exec' in the -c string replaces the shell with the compositor
-         * so there is no extra process between the daemon and the compositor
-         * (SIGTERM reaches it directly, and waitpid sees the compositor's
-         * exit status). */
-        execlp(pw->pw_shell, pw->pw_shell, "-l", "-c",
-               "exec " CONFIG_COMPOSITOR, (char *)NULL);
-        log_error("exec %s -l -c 'exec %s': %s",
+        /* Launch the compositor via the user's login shell.  Prepending '-'
+         * to argv[0] is the POSIX convention for requesting login-shell
+         * behaviour — it sources .profile/.bash_profile and sets up PATH.
+         * Using -l instead would break dash (/bin/sh on Debian), which rejects
+         * that flag.  The 'exec' in the -c string replaces the shell with the
+         * compositor so there is no extra process between the daemon and the
+         * compositor (SIGTERM reaches it directly, waitpid sees its exit
+         * status).  pw->pw_shell is an absolute path, so execl not execlp. */
+        char argv0[128];
+        snprintf(argv0, sizeof(argv0), "-%s", basename(pw->pw_shell));
+        execl(pw->pw_shell, argv0, "-c",
+              "exec " CONFIG_COMPOSITOR, (char *)NULL);
+        log_error("exec %s -c 'exec %s': %s",
                   pw->pw_shell, CONFIG_COMPOSITOR, strerror(errno));
     }
     _exit(1);
