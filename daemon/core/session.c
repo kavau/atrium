@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <grp.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,10 +39,11 @@ int create_session(const char *username, const char *password, const char *seat,
         /* This is the child process -- drop privileges and exec the compositor. */
         fprintf(stderr, "Starting child process...\n");
 
+        /* Debug output */
         if (pam_result.env) {
-            printf("PAM environment variables:\n");
+            fprintf(stderr, "PAM environment variables:\n");
             for (char **p = pam_result.env; *p; p++) {
-                printf("  %s\n", *p);
+                fprintf(stderr, "  %s\n", *p);
             }
         }
 
@@ -49,7 +51,7 @@ int create_session(const char *username, const char *password, const char *seat,
         struct passwd *pw = getpwnam(username);
         if (!pw) {
             fprintf(stderr, "getpwnam failed for user '%s'\n", username);
-            return 1;
+            _exit(1);
         }
 
         /* Count PAM env entries. */
@@ -61,7 +63,7 @@ int create_session(const char *username, const char *password, const char *seat,
         char **env = calloc(5 + n_pam + 1, sizeof(*env));
         if (!env) {
             perror("calloc");
-            return 1;
+            _exit(1);
         }
 
         int i = 0;
@@ -80,25 +82,43 @@ int create_session(const char *username, const char *password, const char *seat,
         }
         env[i] = NULL;
 
-        /* TODO:
-         * - privilege drop to the user account
-         * - chdir to the user home directory
-         * - exec the compositor in a login shell
-         */
+        /* Privilege drop: supplementary groups, then gid, then uid.
+         * setresgid/setresuid set all three ID slots (real, effective, saved)
+         * atomically. */
+        if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
+            perror("initgroups");
+            _exit(1);
+        }
+        if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
+            perror("setresgid");
+            _exit(1);
+        }
+        if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
+            perror("setresuid");
+            _exit(1);
+        }
+
+        /* Defence-in-depth: verify we cannot re-escalate to root. */
+        if (setresuid(0, 0, 0) == 0) {
+            fprintf(stderr, "CRITICAL: re-escalation to root succeeded after privilege drop\n");
+            _exit(1);
+        }
+
+        /* Set the working directory to the user's home. */
+        if (chdir(pw->pw_dir) < 0) {
+            perror("chdir"); /* not fatal, warn only */
+        }
 
         fprintf(stderr, "Exec user session...\n");
         /* TODO: use execvpe instead, which searches PATH */
+        /* TODO: exec the compositor in a login shell */
         execle("/usr/bin/cage", "cage", "foot", NULL, env);
-        perror("execl"); /* Error path - a successful exec does not return */
-        return 1;
+        perror("execle"); /* Error path - a successful exec does not return */
+        _exit(1);
 
     oom:
         fprintf(stderr, "create_session: out of memory\n");
-        for (int j = 0; j < i - 1; j++) {
-            free(env[j]);
-        }
-        free(env);
-        return 1;
+        _exit(1);
     }
 
     /* This is the parent process -- user session lifetime management. */
