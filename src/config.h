@@ -35,6 +35,14 @@
  * that would crash-loop the greeter).  Set to { NULL } to disable. */
 #define CONFIG_IGNORE_SEATS     { NULL }
 
+/* Credential protocol limits.
+ * MAX_USERNAME_LEN matches POSIX LOGIN_NAME_MAX (255 bytes including NUL).
+ * MAX_PASSWORD_LEN follows common PAM convention (512 bytes including NUL).
+ * These limits are enforced in both the greeter and daemon to prevent
+ * buffer overruns and ensure atomic pipe writes under PIPE_BUF (4096). */
+#define CONFIG_MAX_USERNAME_LEN  255
+#define CONFIG_MAX_PASSWORD_LEN  512
+
 /* SHORTCUT: Array of usernames that can log in without a password.
  * For these users the greeter skips the password screen and sends empty
  * credentials; the daemon skips PAM authentication and resolves uid/gid

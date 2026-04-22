@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auth.h"
+#include "config.h"
 
 #include <stdint.h>
 #include <sys/types.h>
@@ -35,7 +36,7 @@ struct seat {
     /* Greeter IPC state (populated by greeter_start). */
     int   credentials_rfd;   /* read end of greeter→daemon credential pipe; -1 if none */
     int   result_wfd;        /* write end of daemon→greeter result pipe; -1 if none */
-    char  greeter_username[64]; /* username received from greeter credentials */
+    char  greeter_username[CONFIG_MAX_USERNAME_LEN]; /* username received from greeter credentials */
 
     /* PAM session state (populated by auth_begin in on_greeter_credentials). */
     auth_result auth;        /* valid while state == SEAT_SESSION */

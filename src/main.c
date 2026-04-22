@@ -56,7 +56,8 @@ static void on_greeter_credentials(int fd, void *userdata)
 {
     struct seat *s = userdata;
 
-    char buf[1024];
+    /* Wire format: "<username>\0<password>\0" */
+    char buf[CONFIG_MAX_USERNAME_LEN + CONFIG_MAX_PASSWORD_LEN];
     memset(buf, 0, sizeof(buf));
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
 
@@ -87,7 +88,7 @@ static void on_greeter_credentials(int fd, void *userdata)
         return;
     }
 
-    if (!is_valid_username(username, sizeof(s->greeter_username), s->name)) {
+    if (!is_valid_username(username, CONFIG_MAX_USERNAME_LEN, s->name)) {
         memset(buf, 0, sizeof(buf));
         greeter_send_result(s, "fail:Invalid username\n");
         return;

@@ -160,7 +160,7 @@ typedef struct {
     GtkWidget      *button;
     GtkWidget      *spinner;
     GtkWidget      *error_label;
-    char            selected_user[64];
+    char            selected_user[CONFIG_MAX_USERNAME_LEN];
     int             credentials_fd;
     int             result_fd;
 
@@ -261,15 +261,32 @@ static void on_login(GtkWidget *widget, gpointer user_data)
     const char *p = gtk_editable_get_text(GTK_EDITABLE(ctx->password_entry));
     log_debug("submitting credentials for user '%s'", u);
 
+    /* Validate password length before submission. */
+    size_t plen = strlen(p);
+    if (plen >= CONFIG_MAX_PASSWORD_LEN) {
+        log_error("password too long (%zu bytes, max %d)", plen, CONFIG_MAX_PASSWORD_LEN - 1);
+        gtk_label_set_text(GTK_LABEL(ctx->error_label), "Password too long");
+        gtk_widget_set_visible(ctx->error_label, TRUE);
+        return;
+    }
+
+    /* Combine username and password into a single buffer for atomic write.
+     * Wire format: "<username>\0<password>\0"
+     * Single write() under PIPE_BUF (4096 bytes) is guaranteed atomic by POSIX,
+     * preventing the credential-read race where poll() wakes between two writes. */
+    char credentials[CONFIG_MAX_USERNAME_LEN + CONFIG_MAX_PASSWORD_LEN];
+    size_t ulen = strlen(u);
+    memcpy(credentials, u, ulen + 1);           /* username + NUL */
+    memcpy(credentials + ulen + 1, p, plen + 1); /* password + NUL */
+    size_t total_len = ulen + 1 + plen + 1;
+
     /*
-     * MINOR: write() return values are not checked.  These are small writes
-     * (username + NUL, password + NUL) to a pipe, well under PIPE_BUF, so
-     * partial writes cannot occur.  If the pipe is broken (daemon crashed),
-     * SIGPIPE will terminate the greeter, which is the desired behaviour
-     * since the daemon will restart it.
+     * MINOR: write() return value is not checked.  This write is well under
+     * PIPE_BUF (4096 bytes), so partial writes cannot occur.  If the pipe is
+     * broken (daemon crashed), SIGPIPE will terminate the greeter, which is
+     * the desired behaviour since the daemon will restart it.
      */
-    write(ctx->credentials_fd, u, strlen(u) + 1);
-    write(ctx->credentials_fd, p, strlen(p) + 1);
+    write(ctx->credentials_fd, credentials, total_len);
 
     /* Hide any previous error and disable inputs while waiting. */
     gtk_widget_set_visible(ctx->error_label, FALSE);
@@ -309,8 +326,17 @@ static void on_user_selected(GtkWidget *widget, gpointer user_data)
         }
         gtk_widget_set_visible(ctx->users_spinner, TRUE);
         gtk_spinner_start(GTK_SPINNER(ctx->users_spinner));
-        write(ctx->credentials_fd, username, strlen(username) + 1);
-        write(ctx->credentials_fd, "", 1);  /* empty password NUL */
+
+        /* Combine username and empty password into a single buffer for atomic write.
+         * Wire format: "<username>\0<password>\0" where password is empty.
+         * Single write() under PIPE_BUF (4096 bytes) prevents credential-read race. */
+        char credentials[CONFIG_MAX_USERNAME_LEN + CONFIG_MAX_PASSWORD_LEN];
+        size_t ulen = strlen(username);
+        memcpy(credentials, username, ulen + 1);  /* username + NUL */
+        credentials[ulen + 1] = '\0';              /* empty password NUL */
+        size_t total_len = ulen + 1 + 1;
+
+        write(ctx->credentials_fd, credentials, total_len);
         g_unix_fd_add(ctx->result_fd, G_IO_IN, on_result_ready, ctx);
         return;
     }
@@ -510,6 +536,7 @@ static void on_activate(GtkApplication *app, gpointer user_data)
     GtkWidget *password_entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(password_entry), "Password");
     gtk_entry_set_visibility(GTK_ENTRY(password_entry), FALSE);
+    gtk_entry_set_max_length(GTK_ENTRY(password_entry), CONFIG_MAX_PASSWORD_LEN - 1);
     ctx->password_entry = password_entry;
 
     GtkWidget *button = gtk_button_new_with_label("Log In");
