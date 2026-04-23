@@ -91,7 +91,7 @@ All settings are compile-time constants in `src/config.h`. Edit before building:
 |---|---|---|
 | `CONFIG_COMPOSITOR` | `"sway"` | Compositor/session to launch after login |
 | `CONFIG_DESKTOP_NAME` | `"atrium-dev"` | Desktop identifier for logind `CreateSession` |
-| `CONFIG_GREETER_USER` | `"atrium"` | System account that runs the greeter process |
+| `CONFIG_GREETER_USER` | `"atriumdm"` | System account that runs the greeter process |
 | `CONFIG_SEAT_ENUM_DELAY` | `2` | Seconds to wait for logind seat discovery at boot |
 | `CONFIG_RESTART_DELAY` | `2` | Seconds before restarting a crashed compositor |
 
@@ -99,16 +99,7 @@ All settings are compile-time constants in `src/config.h`. Edit before building:
 `/usr/share/wayland-sessions/` (e.g. `sway`, `labwc`, `plasma-wayland`, `gnome-session`).
 X11 sessions (`/usr/share/xsessions/`) are not supported.
 
-### 2. Create the greeter system account
-
-atrium runs the greeter process as a dedicated unprivileged system account.
-Create it once on each machine before starting the service:
-
-```sh
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin atrium
-```
-
-### 3. Build and install
+### 2. Build and install
 
 ```sh
 meson setup build -Dpam_config=arch   # or debian
@@ -125,7 +116,10 @@ This installs:
 - `/usr/lib/systemd/system/atrium.service` — the systemd unit
 - `/etc/pam.d/atrium` — the PAM configuration
 
-### 4. Enable and start
+The install process also creates the `atriumdm` system user (if it doesn't already
+exist), which runs the greeter process as an unprivileged account.
+
+### 3. Enable and start
 
 First, note which display manager is currently active so you can restore it if needed:
 
@@ -217,7 +211,7 @@ warning or behave unexpectedly. Tracked in
 Users listed in `CONFIG_PASSWORDLESS_USERS` skip `pam_authenticate` entirely
 and proceed directly to session creation. There is no PAM account/session
 check for these users. Tracked in
-[#23](https://github.com/kavau/atrium/issues/23).
+[#30](https://github.com/kavau/atrium/issues/30).
 
 ### Long passwords are silently truncated
 
@@ -225,13 +219,6 @@ The daemon reads credentials from the greeter into a fixed-size buffer. Password
 longer than `CONFIG_CREDS_BUFFER_MAX` bytes are silently truncated, which will
 cause authentication to fail with no indication to the user. Tracked in
 [#46](https://github.com/kavau/atrium/issues/46).
-
-### GTK portal warnings in greeter logs
-
-The GTK4 greeter runs inside cage, which does not provide an
-`xdg-desktop-portal`. GTK4 emits portal-related warnings on startup; these are
-benign and do not affect functionality. Tracked in
-[#17](https://github.com/kavau/atrium/issues/17).
 
 ### Some daemon output may not appear in the journal
 

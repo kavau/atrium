@@ -53,8 +53,10 @@
 
 /* Greeter command — cage kiosk compositor hosting atrium-greeter.
  * GREETER_USER is a dedicated system account (uid < 1000, no home directory).
- * Create it with:
- *   useradd --system --no-create-home --shell /usr/sbin/nologin atrium
+ *
+ * To change the username from the default "atriumdm", update both:
+ *   - CONFIG_GREETER_USER below
+ *   - GREETER_USER in tools/create-greeter-user.sh
  *
  * Note: all greeter instances share the same XDG_RUNTIME_DIR
  * (/run/user/<uid>), so cage instances on different seats compete for
@@ -63,4 +65,4 @@
 #define CONFIG_GREETER_CMD  "/usr/bin/cage"
 #define CONFIG_GREETER_ARGS { "/usr/bin/cage", "-s", \
                               "/usr/local/libexec/atrium-greeter", NULL }
-#define CONFIG_GREETER_USER "atrium"
+#define CONFIG_GREETER_USER "atriumdm"

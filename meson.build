@@ -103,3 +103,11 @@ executable('atrium-auth-test',
   c_args: ['-DLOG_PREFIX="auth-test"'],
   install: false,
 )
+
+# ── Install hook: create greeter user ─────────────────────────────────────────
+#
+# Automatically create the atriumdm system user during 'ninja install' if it
+# doesn't already exist.  This removes the manual useradd step from the install
+# instructions.
+
+meson.add_install_script('tools/create-greeter-user.sh')
