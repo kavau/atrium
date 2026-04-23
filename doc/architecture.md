@@ -1,6 +1,6 @@
 ---
 Created: April 12, 2026
-Last Updated: April 22, 2026
+Last Updated: April 23, 2026
 ---
 
 # atrium — Architecture
@@ -46,7 +46,7 @@ code to remain readable and the multiseat logic to stay clean.
 ┌────────────────────────────────────────────────────────────┐
 │ atrium daemon (root)                                       │
 │                                                            │
-│  epoll event loop                                          │
+│  poll event loop                                           │
 │      │                                                     │
 │      ├─ udev events ──> seat discovery / removal           │
 │      ├─ D-Bus (sd-bus) <> logind (seats, sessions, VTs)    │
@@ -66,7 +66,7 @@ code to remain readable and the multiseat logic to stay clean.
     (GTK4 login UI)
 ```
 
-The daemon is a single-threaded event loop built on `epoll`. All I/O —
+The daemon is a single-threaded event loop built on `poll`. All I/O —
 udev hotplug, D-Bus replies, pipe data from greeters, and child-process signals —
 arrives through the same loop. There are no threads.
 
@@ -76,9 +76,9 @@ arrives through the same loop. There are no threads.
 
 ### Event Loop (`src/event.c`)
 
-A thin wrapper around `epoll` that maps file descriptors to callback functions.
+A thin wrapper around `poll` that maps file descriptors to callback functions.
 Every subsystem registers its fds here. The main loop in `src/main.c` calls
-`epoll_wait` and dispatches to the appropriate handler.
+`poll` and dispatches to the appropriate handler.
 
 Signals are delivered as fd events via `signalfd`, avoiding async-signal-safety
 issues entirely.
@@ -121,7 +121,6 @@ All logind interaction goes through `sd-bus`. Key operations:
 | `GetSeat` | Confirm seat exists on startup |
 | `CreateSession` | After successful authentication |
 | `ActivateSession` | Switch VT to the new session (seat0) |
-| `TakeControl` / `ReleaseControl` | Own/release a seat device |
 
 The daemon subscribes to logind signals (e.g. `SessionRemoved`) so it can detect
 when a session ends and restart the greeter.

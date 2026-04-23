@@ -9,6 +9,8 @@ This guide covers how to set up a Linux multiseat system using `loginctl` and
 atrium. It assumes you already have atrium installed (see [README](../README.md)
 for build and installation instructions).
 
+For questions and discussion, see [r/linux_multiseat](https://www.reddit.com/r/linux_multiseat/).
+
 ## Overview
 
 In a multiseat setup, a single machine serves multiple independent users, each

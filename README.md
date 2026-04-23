@@ -90,13 +90,22 @@ All settings are compile-time constants in `src/config.h`. Edit before building:
 | Setting | Default | Purpose |
 |---|---|---|
 | `CONFIG_COMPOSITOR` | `"sway"` | Compositor/session to launch after login |
-| `CONFIG_DESKTOP_NAME` | `"atrium-dev"` | Desktop identifier for logind `CreateSession` |
+| `CONFIG_DESKTOP_NAME` | `"sway"` | Desktop identifier for logind `CreateSession` |
 | `CONFIG_GREETER_USER` | `"atriumdm"` | System account that runs the greeter process |
 | `CONFIG_SEAT_ENUM_DELAY` | `2` | Seconds to wait for logind seat discovery at boot |
 | `CONFIG_RESTART_DELAY` | `2` | Seconds before restarting a crashed compositor |
 
-`CONFIG_COMPOSITOR` can be set to the `Exec` value from any `.desktop` file in
-`/usr/share/wayland-sessions/` (e.g. `sway`, `labwc`, `plasma-wayland`, `gnome-session`).
+The following two values should come from the target session's `.desktop` file in
+`/usr/share/wayland-sessions/`:
+
+- `CONFIG_COMPOSITOR` — the `Exec=` field (e.g. `cosmic-session`, `sway`, `gnome-session`)
+- `CONFIG_DESKTOP_NAME` — the `DesktopNames=` field (e.g. `COSMIC`, `sway`, `GNOME`)
+
+`CONFIG_DESKTOP_NAME` is case-sensitive: it becomes `XDG_CURRENT_DESKTOP` in the
+session environment, and desktop portals and shell components use it for exact-match
+lookups. Using the wrong case (e.g. `"cosmic"` instead of `"COSMIC"`) will break
+portal integration and other desktop-specific features.
+
 X11 sessions (`/usr/share/xsessions/`) are not supported.
 
 ### 2. Build and install
@@ -319,6 +328,11 @@ build/     Meson build output (git-ignored)
 ```
 
 ---
+
+## Community
+
+- **GitHub Discussions** — questions, ideas, and atrium-specific topics: [github.com/kavau/atrium/discussions](https://github.com/kavau/atrium/discussions)
+- **r/linux_multiseat** — general Linux multiseat discussion: [reddit.com/r/linux_multiseat](https://www.reddit.com/r/linux_multiseat/)
 
 ## Reporting Issues
 

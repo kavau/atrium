@@ -12,7 +12,7 @@
 #define CONFIG_COMPOSITOR       "sway"
 
 /* Desktop identifier passed to logind's CreateSession. */
-#define CONFIG_DESKTOP_NAME     "atrium-dev"
+#define CONFIG_DESKTOP_NAME     "sway"
 
 /* Seconds to wait before enumerating seats at startup.
  * Gives logind time to finish processing udev seat events on early boot.
