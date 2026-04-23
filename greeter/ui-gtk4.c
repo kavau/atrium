@@ -44,19 +44,30 @@ static int is_passwordless(const char *username)
 
 /* ── CSS ───────────────────────────────────────────────────────────────────── */
 
-static const char CSS[] =
+/* CSS template for the greeter window.  Sizes are supplied at runtime
+ * from CONFIG_BASE_FONT_SIZE; the nine %d placeholders correspond to:
+ *   1. card padding vertical   (base * 2)
+ *   2. card padding horizontal (base * 12/5)
+ *   3. card min-width          (base * 18)
+ *   4. heading font-size       (base * 3/2)
+ *   5. entry font-size         (base)
+ *   6. login button font-size  (base)
+ *   7. user button font-size   (base * 6/5)
+ *   8. back button font-size   (base)
+ *   9. error label font-size   (base) */
+static const char CSS_TEMPLATE[] =
     "window {"
     "  background-color: #1e1e2e;"
     "}"
     ".card {"
     "  background-color: #313244;"
     "  border-radius: 12px;"
-    "  padding: 40px 48px;"
-    "  min-width: 360px;"
+    "  padding: %dpx %dpx;"
+    "  min-width: %dpx;"
     "}"
     ".card .heading {"
     "  color: #cdd6f4;"
-    "  font-size: 20px;"
+    "  font-size: %dpx;"
     "  font-weight: bold;"
     "  margin-bottom: 24px;"
     "}"
@@ -67,6 +78,7 @@ static const char CSS[] =
     "  border-radius: 6px;"
     "  padding: 8px 12px;"
     "  margin-bottom: 12px;"
+    "  font-size: %dpx;"
     "  caret-color: #cdd6f4;"
     "  outline: none;"
     "}"
@@ -88,6 +100,7 @@ static const char CSS[] =
     "  border-radius: 6px;"
     "  padding: 10px 24px;"
     "  margin-top: 8px;"
+    "  font-size: %dpx;"
     "}"
     ".card button.suggested-action:hover {"
     "  background-image: none;"
@@ -105,7 +118,7 @@ static const char CSS[] =
     "  padding: 12px 20px;"
     "  margin-bottom: 8px;"
     "  color: #cdd6f4;"
-    "  font-size: 16px;"
+    "  font-size: %dpx;"
     "}"
     ".user-button:hover {"
     "  background-image: none;"
@@ -120,7 +133,7 @@ static const char CSS[] =
     "  border: none;"
     "  box-shadow: none;"
     "  color: #a6adc8;"
-    "  font-size: 13px;"
+    "  font-size: %dpx;"
     "  padding: 4px 0;"
     "  margin-top: 4px;"
     "}"
@@ -133,7 +146,7 @@ static const char CSS[] =
     "}"
     ".error-label {"
     "  color: #f38ba8;"
-    "  font-size: 13px;"
+    "  font-size: %dpx;"
     "  margin-bottom: 8px;"
     "}";
 
@@ -483,6 +496,31 @@ static void on_activate(GtkApplication *app, gpointer user_data)
 {
     activate_ctx *actx = user_data;
 
+    /* Set cursor theme and size — atriumdm has no home dir so there is no
+     * user-level GTK config to inherit these from.  Both must be set: GTK4
+     * under cage only takes ownership of cursor rendering when a valid theme
+     * name is provided; the size has no effect without it. */
+    g_object_set(gtk_settings_get_default(),
+                 "gtk-cursor-theme-name", CONFIG_CURSOR_THEME,
+                 "gtk-cursor-theme-size", CONFIG_CURSOR_SIZE,
+                 NULL);
+
+    /* Build CSS from template, filling in sizes derived from
+     * CONFIG_BASE_FONT_SIZE.  Placeholders in order: card padding vertical,
+     * card padding horizontal, card min-width, heading, entry, login button,
+     * user button, back button, error label. */
+    int fs = CONFIG_BASE_FONT_SIZE;
+    char *css = g_strdup_printf(CSS_TEMPLATE,
+                                fs * 2,       /* card padding vertical */
+                                fs * 12 / 5,  /* card padding horizontal */
+                                fs * 18,      /* card min-width */
+                                fs * 3 / 2,   /* heading */
+                                fs,           /* entry */
+                                fs,           /* login button */
+                                fs * 6 / 5,   /* user button */
+                                fs,           /* back button */
+                                fs);          /* error label */
+
     /* Register CSS before creating any widgets. */
     GtkCssProvider *provider = gtk_css_provider_new();
     /*
@@ -491,10 +529,11 @@ static void on_activate(GtkApplication *app, gpointer user_data)
      * so the greeter builds on both the target and the dev machine.
      */
 #if GTK_CHECK_VERSION(4, 12, 0)
-    gtk_css_provider_load_from_string(provider, CSS);
+    gtk_css_provider_load_from_string(provider, css);
 #else
-    gtk_css_provider_load_from_data(provider, CSS, -1);
+    gtk_css_provider_load_from_data(provider, css, -1);
 #endif
+    g_free(css);
     gtk_style_context_add_provider_for_display(
         gdk_display_get_default(),
         GTK_STYLE_PROVIDER(provider),

@@ -66,3 +66,18 @@
 #define CONFIG_GREETER_ARGS { "/usr/bin/cage", "-s", \
                               "/usr/local/libexec/atrium-greeter", NULL }
 #define CONFIG_GREETER_USER "atriumdm"
+
+/* Cursor theme and size used by the greeter.
+ * GTK4 under cage does not inherit cursor settings from the user environment,
+ * so both must be set explicitly via GtkSettings.  Adwaita is available on
+ * all systems that have GTK4 installed (adwaita-icon-theme is a dependency).
+ * The size value is passed to gtk-cursor-theme-size; due to how cage scales
+ * cursor sprites, larger values produce a visually smaller cursor — 32 is a
+ * normal desktop size.  Adjust if the cursor looks too large or too small. */
+#define CONFIG_CURSOR_THEME "Adwaita"
+#define CONFIG_CURSOR_SIZE  36
+
+/* Base font size (in px) for the greeter UI.  All text sizes are derived from
+ * this value: heading = base * 3/2, user buttons = base * 6/5, entry text
+ * and labels = base.  Increase for HiDPI displays. */
+#define CONFIG_BASE_FONT_SIZE 20
