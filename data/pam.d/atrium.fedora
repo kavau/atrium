@@ -1,5 +1,5 @@
 #
-# PAM configuration for atrium — Arch / CachyOS variant.
+# PAM configuration for atrium — Fedora variant.
 #
 # Based on /etc/pam.d/login.  Display-manager-specific adjustments noted below.
 #
@@ -10,14 +10,21 @@ auth       optional   pam_faildelay.so  delay=3000000
 # Disallow logins when /etc/nologin is present (used during system shutdown).
 auth       requisite  pam_nologin.so
 
+# SELinux: clear any lingering context before the session starts.
+# If SELinux is not active the module returns success silently.
+session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux.so close
+
 # Record the loginuid in /proc/self/loginuid for the audit subsystem.
 session    required   pam_loginuid.so
+
+# SELinux: switch to the user's context.
+session [success=ok ignore=ignore module_unknown=ignore default=bad] pam_selinux.so open
 
 # Set up environment variables from /etc/environment.
 session    required   pam_env.so
 
-# Core authentication (password check via pam_unix, etc.).
-# system-auth is the Arch/Fedora equivalent of Debian's common-auth.
+# Core authentication (password check, SSSD, fprintd, faillock, etc. as
+# configured by authselect in /etc/pam.d/system-auth).
 auth       include    system-auth
 
 # Group membership adjustments based on time/tty/service/user.
@@ -30,11 +37,13 @@ session    required   pam_limits.so
 session    optional   pam_keyinit.so force revoke
 
 # Standard account and password management.
-account    include    system-login
+# NOTE: Fedora does not have system-login (an Arch-specific include);
+# system-auth covers account management on Fedora.
+account    include    system-auth
 password   include    system-auth
 
 # Session: utmp/wtmp/lastlog tracking.
 # NOTE: pam_systemd.so is intentionally excluded — atrium manages logind
-# sessions directly via D-Bus CreateSession.  system-login is not included
+# sessions directly via D-Bus CreateSession.  system-auth is not included
 # for the session type because it pulls in pam_systemd.so.
 session    required   pam_unix.so

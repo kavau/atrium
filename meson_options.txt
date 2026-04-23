@@ -1,4 +1,4 @@
 option('pam_config', type: 'combo',
-       choices: ['arch', 'debian'],
+       choices: ['arch', 'debian', 'fedora'],
        value: 'arch',
-       description: 'PAM configuration variant to install (arch or debian)')
+       description: 'PAM configuration variant to install (arch, debian, or fedora)')

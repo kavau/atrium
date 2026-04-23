@@ -37,7 +37,9 @@ baggage.
 > See [Known Limitations](#known-limitations) below.
 
 See [doc/architecture.md](doc/architecture.md) for a detailed design overview.
-For multiseat hardware setup, see [doc/multiseat-setup.md](doc/multiseat-setup.md).
+
+For instructions how to configure your hardware for multiseat,
+see [doc/multiseat-setup.md](doc/multiseat-setup.md).
 
 ---
 
@@ -64,6 +66,12 @@ On CachyOS/Arch (`libsystemd` and `libudev` are both provided by the `systemd` p
 pacman -S systemd pam gtk4 cage meson ninja
 ```
 
+On Fedora (`systemd-devel` covers both `libsystemd` and `libudev`):
+
+```sh
+dnf install systemd-devel pam-devel gtk4-devel cage meson ninja-build
+```
+
 ---
 
 ## Supported Distros
@@ -72,9 +80,11 @@ pacman -S systemd pam gtk4 cage meson ninja
 |---|---|
 | CachyOS / Arch Linux | Verified — primary development target |
 | Debian / Ubuntu | PAM stack provided; less-tested |
+| Fedora | PAM stack provided; untested |
 
-Other systemd-based distros with GTK4 and cage in their package repositories
-should work with minor packaging adjustments.
+Other systemd-based distros should work — the only distro-specific piece is
+the PAM stack. Use whichever of the three provided configs most closely matches
+your distro's PAM layout, or adapt one as needed.
 
 ---
 
@@ -111,13 +121,13 @@ X11 sessions (`/usr/share/xsessions/`) are not supported.
 ### 2. Build and install
 
 ```sh
-meson setup build -Dpam_config=arch   # or debian
+meson setup build -Dpam_config=arch   # or debian, fedora
 ninja -C build
 sudo ninja -C build install
 ```
 
 The `-Dpam_config` option selects which PAM stack to install (default: `arch`).
-Use `debian` on Debian/Ubuntu systems.
+Use `debian` on Debian/Ubuntu systems, `fedora` on Fedora.
 
 This installs:
 - `/usr/local/bin/atrium` — the daemon
@@ -148,6 +158,10 @@ Then reboot. atrium will start on boot and launch a greeter on every seat.
 
 > **Warning:** Using `enable --now` or `disable --now` will immediately
 > start/stop the display manager, killing any active graphical session.
+
+> **Multiseat:** For a multiseat setup, configure your seats with `loginctl`
+> before starting atrium. See [doc/multiseat-setup.md](doc/multiseat-setup.md)
+> for a step-by-step guide.
 
 ### Uninstall
 
@@ -200,27 +214,24 @@ sudo journalctl -u atrium -b-1 # logs from the previous boot
 
 ## Known Limitations
 
-> This reflects the state after all issues labelled
-> [`next`](https://github.com/kavau/atrium/issues?q=is%3Aopen+label%3Anext)
-> have been resolved.
-
 ### Hotplug not supported
 
-Seats added or removed after the daemon starts are not detected. atrium
-enumerates seats once at startup and holds a static list for the lifetime of
-the process. Tracked in [#28](https://github.com/kavau/atrium/issues/28).
+Seats added or removed after the daemon starts are not detected, and neither
+is a monitor being connected to an existing seat. atrium enumerates seats once
+at startup and holds a static list for the lifetime of the process. Tracked in
+[#28](https://github.com/kavau/atrium/issues/28).
 
 ### Compile-time configuration only
 
 All settings live in `src/config.h` and are baked in at build time. There is
 no runtime config file.
 
-### No `CanGraphical` gating
+### No display-connected check
 
-atrium does not check logind's `CanGraphical` property before spawning a greeter.
-Seats that have no display hardware will crash-loop the cage compositor
-indefinitely. As a workaround, add the offending seat to `CONFIG_IGNORE_SEATS` in
-`src/session.h`.
+atrium does not check whether a display is connected before spawning a greeter.
+Seats with a GPU but no monitor will crash-loop the cage compositor
+indefinitely. As a workaround, add the offending seat to `CONFIG_IGNORE_SEATS`
+in `src/session.h`.
 
 ### Greeter SIGKILL escalation not implemented
 
@@ -248,13 +259,6 @@ Users listed in `CONFIG_PASSWORDLESS_USERS` skip `pam_authenticate` entirely
 and proceed directly to session creation. There is no PAM account/session
 check for these users. Tracked in
 [#30](https://github.com/kavau/atrium/issues/30).
-
-### Long passwords are silently truncated
-
-The daemon reads credentials from the greeter into a fixed-size buffer. Passwords
-longer than `CONFIG_CREDS_BUFFER_MAX` bytes are silently truncated, which will
-cause authentication to fail with no indication to the user. Tracked in
-[#46](https://github.com/kavau/atrium/issues/46).
 
 ### Some daemon output may not appear in the journal
 
