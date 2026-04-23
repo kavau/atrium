@@ -1,6 +1,6 @@
 ---
 Created: April 20, 2026
-Last Updated: April 20, 2026
+Last Updated: April 22, 2026
 ---
 
 # Multiseat Setup Guide
@@ -287,6 +287,15 @@ Then reboot. atrium will discover all seats and launch a greeter on each one.
 
 > See the [README](../README.md) for installation and build instructions.
 
+## Known Limitation: Same User on Two Seats
+
+atrium permits the same user to log in on multiple seats — each seat gets an
+independent logind session. However, depending on the compositor, two
+sessions for the same user may share state (e.g. D-Bus session bus,
+`XDG_RUNTIME_DIR`) and interfere with each other. If this causes problems,
+log out of one seat before logging in on the other. Per-user session
+deduplication is not yet implemented.
+
 ## Removing Seat Assignments
 
 To remove all custom seat assignments and return to a single-seat setup:
@@ -300,6 +309,89 @@ To remove a specific device from a non-default seat (returns it to seat0):
 ```console
 $ sudo loginctl attach seat0 /sys/devices/pci0000:00/0000:01:00.0
 ```
+
+## Troubleshooting
+
+### Greeter doesn't appear on a seat
+
+Check whether logind considers the seat graphical-capable:
+
+```console
+$ loginctl show-seat seat1 | grep CanGraphical
+```
+
+If `CanGraphical=no`, the GPU is not correctly assigned to the seat — revisit
+Step 3.
+
+Check the atrium journal for diagnostic messages:
+
+```console
+$ journalctl -u atrium -b
+```
+
+Look for `ignoring seat` (seat is listed in `CONFIG_IGNORE_SEATS` in
+`src/config.h`).
+
+If the seat itself is missing from logind entirely (not just the greeter),
+see **Seat not discovered at startup** below.
+
+If no display is connected to the seat, the greeter will crash-loop instead
+of remaining idle. To list all DRM connectors and their status:
+
+```console
+$ grep -H '' /sys/class/drm/card*-*/status
+```
+
+Each line maps a connector (e.g. `card1-HDMI-A-1`) to either `connected` or
+`disconnected`. A seat with all of its connectors showing `disconnected` has
+no display attached. Correlate the `cardN` prefix with the GPU assigned to
+the seat (see **Seat not discovered at startup** below for how to identify
+which card belongs to which seat).
+
+### Seat not discovered at startup
+
+Symptom: `loginctl list-seats` does not show a seat you expected (e.g. `seat1`
+is absent), and atrium never launches a greeter for it.
+
+```console
+$ loginctl list-seats
+```
+
+If the seat is missing, the GPU may not be tagged. Check all DRM cards:
+
+```console
+$ for d in /sys/class/drm/card[0-9]; do printf '%s  ' "$d"; udevadm info "$d" | grep ID_SEAT || echo '(implicit seat0)'; done
+```
+
+If a card you intended for a non-default seat shows `(implicit seat0)`, it has
+not been assigned yet. Assign it with `loginctl attach` as described in Step 3,
+then reboot (or run `udevadm trigger --subsystem-match=drm` to re-evaluate
+without rebooting).
+
+### atrium fails to start
+
+Check the service status and journal:
+
+```console
+$ systemctl status atrium
+$ journalctl -u atrium -b
+```
+
+Common causes:
+
+- **PAM config missing** — verify `/etc/pam.d/atrium` was installed
+  (`sudo ninja -C build install` installs it).
+- **`atrium` system account missing** — the greeter runs as the `atrium` user.
+  Create it with:
+  ```console
+  $ sudo useradd --system --no-create-home --shell /usr/sbin/nologin atrium
+  ```
+- **VT allocation failure** — another process (e.g. `getty@tty1`) is holding
+  the VT. Confirm `Conflicts=getty@tty1.service` is in the unit file, or
+  disable the getty manually: `sudo systemctl disable getty@tty1`.
+- **D-Bus / logind error** — look for `sd_bus` or `CreateSession` errors in
+  the journal. Ensure `systemd-logind` is running:
+  `systemctl status systemd-logind`.
 
 ## References
 

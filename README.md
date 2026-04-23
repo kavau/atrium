@@ -169,6 +169,12 @@ sudo systemctl enable gdm   # substitute your previous display manager
 sudo reboot
 ```
 
+To reset all seat assignments and return to a single-seat configuration:
+
+```sh
+sudo loginctl flush-devices
+```
+
 To check what went wrong, inspect the journal:
 
 ```sh
