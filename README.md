@@ -140,6 +140,22 @@ Then reboot. atrium will start on boot and launch a greeter on every seat.
 > **Warning:** Using `enable --now` or `disable --now` will immediately
 > start/stop the display manager, killing any active graphical session.
 
+### Uninstall
+
+To fully remove atrium, switch to another display manager first (so the
+next boot still has a graphical login) and then run the provided script.
+Do this from a TTY (`Ctrl+Alt+F2`) to avoid killing your current desktop
+session when the atrium service stops.
+
+```sh
+sudo systemctl disable atrium    # free the display-manager alias
+sudo systemctl enable gdm        # substitute your previous display manager
+sudo ./tools/uninstall.sh        # stop the service, remove files, delete the atriumdm user
+```
+
+The script expects the Meson build directory to be `build/`; pass a different
+path as the second argument if yours lives elsewhere.
+
 ---
 
 ## If Things Go Wrong
