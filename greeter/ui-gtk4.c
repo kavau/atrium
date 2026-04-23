@@ -382,6 +382,9 @@ static void on_back(GtkWidget *widget, gpointer user_data)
     gtk_widget_set_sensitive(ctx->button, TRUE);
     ctx->selected_user[0] = '\0';
 
+    /* Clear any error from a previous passwordless failure on the users page. */
+    gtk_widget_set_visible(ctx->users_error_label, FALSE);
+
     gtk_stack_set_visible_child_name(GTK_STACK(ctx->stack), "users");
 }
 

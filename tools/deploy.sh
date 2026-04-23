@@ -69,13 +69,13 @@ ninja -C build
 EOF
 
 if [[ $INSTALL -eq 1 ]]; then
-    echo "==> Installing on $HOST"
-    ssh -tt "$HOST" "cd $DEST && sudo ninja -C build install"
-fi
-
-if [[ $RESTART -eq 1 ]]; then
-    echo "==> Restarting atrium on $HOST"
-    ssh -t "$HOST" sudo systemctl restart atrium
+    if [[ $RESTART -eq 1 ]]; then
+        echo "==> Installing and restarting on $HOST"
+        ssh -tt "$HOST" "cd $DEST && sudo ninja -C build install && sudo systemctl restart atrium"
+    else
+        echo "==> Installing on $HOST"
+        ssh -tt "$HOST" "cd $DEST && sudo ninja -C build install"
+    fi
 fi
 
 echo "==> Done"

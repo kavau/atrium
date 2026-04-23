@@ -156,6 +156,11 @@ sudo ./tools/uninstall.sh        # stop the service, remove files, delete the at
 The script expects the Meson build directory to be `build/`; pass a different
 path as the second argument if yours lives elsewhere.
 
+If the script reports that it could not remove the `atriumdm` user (lingering
+processes can briefly hold it open after the service stops), simply run it
+again after a short time — the second run will clean up the user once those
+processes have exited.
+
 ---
 
 ## If Things Go Wrong
