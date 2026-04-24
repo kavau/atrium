@@ -1,15 +1,17 @@
 #!/bin/bash
 # deploy.sh — sync source to a remote machine and build atrium there.
 #
-# Usage: ./deploy.sh user@host:/path/to/dest [-i] [-r]
+# Usage: ./deploy.sh user@host:/path/to/dest [-d DISTRO] [-i] [-r]
 #
 #   user@host:/path/to/dest   Remote target in rsync format.
 #                             The path portion defaults to ~/atrium if omitted.
+#   -d DISTRO                 PAM config to install: arch, debian, or fedora (default: arch)
 #   -i                        Install after building (sudo ninja -C build install)
 #   -r                        Restart the atrium systemd unit after installing (implies -i)
 
 set -euo pipefail
 
+DISTRO=arch
 INSTALL=0
 RESTART=0
 
@@ -25,8 +27,9 @@ if [[ -z "$TARGET" || "$TARGET" == -* ]]; then
 fi
 shift
 
-while getopts ":ir" opt; do
+while getopts ":d:ir" opt; do
     case $opt in
+        d) DISTRO="$OPTARG" ;;
         i) INSTALL=1 ;;
         r) INSTALL=1; RESTART=1 ;;
         *) usage ;;
@@ -60,10 +63,10 @@ set -euo pipefail
 cd $DEST
 if [[ ! -d build ]]; then
     echo "--- Running meson setup"
-    meson setup build
+    meson setup build -Dpam_config=$DISTRO
 else
     echo "--- Reconfiguring meson"
-    meson setup build --reconfigure
+    meson setup build --reconfigure -Dpam_config=$DISTRO
 fi
 ninja -C build
 EOF

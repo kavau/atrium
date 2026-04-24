@@ -79,7 +79,7 @@ dnf install systemd-devel pam-devel gtk4-devel cage meson ninja-build
 | Distro | Status |
 |---|---|
 | CachyOS / Arch Linux | Verified — primary development target |
-| Debian / Ubuntu | PAM stack provided; less-tested |
+| Debian / Ubuntu | PAM stack provided and tested |
 | Fedora | PAM stack provided; untested |
 
 Other systemd-based distros should work — the only distro-specific piece is

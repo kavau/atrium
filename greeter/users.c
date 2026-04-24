@@ -26,13 +26,14 @@ int enumerate_users(greeter_user *users, int max)
         snprintf(users[count].name, sizeof(users[count].name),
                  "%s", pw->pw_name);
 
-        /* Use GECOS field as display name if available.
-         * SHORTCUT: GECOS can be comma-separated (name,room,phone,...);
-         * we use the full string for now since real sub-fields are rare
-         * on modern systems.  Split on ',' if this causes issues. */
-        if (pw->pw_gecos && pw->pw_gecos[0] != '\0') {
+        /* Use the first comma-separated field of GECOS as display name.
+         * The GECOS format is "full_name,room,work_phone,home_phone,other";
+         * Ubuntu in particular leaves trailing commas (e.g. "Family,,,"). */
+        const char *gecos = pw->pw_gecos;
+        size_t gecos_len = gecos ? strcspn(gecos, ",") : 0;
+        if (gecos_len > 0) {
             snprintf(users[count].display, sizeof(users[count].display),
-                     "%s", pw->pw_gecos);
+                     "%.*s", (int)gecos_len, gecos);
         } else {
             snprintf(users[count].display, sizeof(users[count].display),
                      "%s", pw->pw_name);

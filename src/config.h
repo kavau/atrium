@@ -18,7 +18,7 @@
  * Gives logind time to finish processing udev seat events on early boot.
  * SHORTCUT: replaced by SeatNew/SeatRemoved signal monitoring once Phase 11
  * (hotplug) is reimplemented. */
-#define CONFIG_SEAT_ENUM_DELAY  2
+#define CONFIG_SEAT_ENUM_DELAY  5
 
 /* Seconds to wait before restarting a crashed compositor.
  * SHORTCUT: replaced by timerfd-based crash-loop detection in Phase 12. */
