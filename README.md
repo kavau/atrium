@@ -93,6 +93,11 @@ your distro's PAM layout, or adapt one as needed.
 atrium runs as a systemd service (as root) and must be the only display manager
 active on the system.
 
+> **Install a tagged release, not `main`:** `main` is the active development
+> branch and may be broken at any time. For production use, download the
+> latest release from
+> [github.com/kavau/atrium/releases/latest](https://github.com/kavau/atrium/releases/latest).
+
 ### 1. Configure
 
 All settings are compile-time constants in `src/config.h`. Edit before building:
