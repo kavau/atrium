@@ -90,6 +90,8 @@ int auth_open_session(const char *username, const char *password, const char *se
     char seat_env[MAX_LEN_SEAT + 1];
     snprintf(seat_env, sizeof(seat_env), "XDG_SEAT=%s", seat);
     pam_putenv(pamh, seat_env);
+    pam_putenv(pamh, "XDG_SESSION_TYPE=wayland");
+    pam_putenv(pamh, "XDG_SESSION_CLASS=user");
 
     r = pam_authenticate(pamh, 0); /* authenticate the user */
     if (r != PAM_SUCCESS) {
