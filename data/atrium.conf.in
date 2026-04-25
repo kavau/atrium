@@ -27,3 +27,15 @@ seat-enum-delay = 5
 #
 # Example:
 #   ignore-seat = seat2
+
+# Users that can log in without a password.  Repeat for multiple users.
+# The greeter skips the password screen; the daemon skips PAM authentication.
+# Omit to require a password for all users.
+#
+# Warning: bypasses PAM entirely — resource limits, account expiry, access
+# restrictions, and audit logging are all skipped.  In a future version, the
+# greeter will check membership of a 'nopasswd' group instead, and a PAM rule
+# (e.g. pam_succeed_if.so) will skip password verification for group members.
+#
+# Example:
+#   passwordless-user = kiosk

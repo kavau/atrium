@@ -16,8 +16,10 @@
 #define DEFAULT_DESKTOP        "sway"
 #define DEFAULT_RESTART_DELAY    2
 #define DEFAULT_SEAT_ENUM_DELAY  5
-#define MAX_IGNORE_SEATS       16
-#define MAX_SEAT_NAME_LENGTH          64
+#define MAX_IGNORE_SEATS         16
+#define MAX_SEAT_NAME_LENGTH     64
+#define MAX_PASSWORDLESS_USERS   16
+#define MAX_USERNAME_LENGTH      255
 
 static struct {
     char greeter[512];
@@ -27,13 +29,16 @@ static struct {
     int  seat_enum_delay;
     char ignore_seats[MAX_IGNORE_SEATS][MAX_SEAT_NAME_LENGTH];
     int  ignore_seat_count;
+    char passwordless_users[MAX_PASSWORDLESS_USERS][MAX_USERNAME_LENGTH];
+    int  passwordless_user_count;
 } g_cfg = {
-    .greeter            = DEFAULT_GREETER,
-    .compositor         = DEFAULT_COMPOSITOR,
-    .desktop            = DEFAULT_DESKTOP,
-    .restart_delay      = DEFAULT_RESTART_DELAY,
-    .seat_enum_delay    = DEFAULT_SEAT_ENUM_DELAY,
-    .ignore_seat_count  = 0,
+    .greeter                 = DEFAULT_GREETER,
+    .compositor              = DEFAULT_COMPOSITOR,
+    .desktop                 = DEFAULT_DESKTOP,
+    .restart_delay           = DEFAULT_RESTART_DELAY,
+    .seat_enum_delay         = DEFAULT_SEAT_ENUM_DELAY,
+    .ignore_seat_count       = 0,
+    .passwordless_user_count = 0,
 };
 
 /* Parse a non-negative integer from val into *out.  Returns 1 on success,
@@ -50,6 +55,21 @@ static int parse_nonneg_int(const char *path, int lineno, const char *key,
     }
     *out = (int)v;
     return 1;
+}
+
+/* Append val to a fixed 2-D char array (list[max][item_size]), logging a
+ * warning and doing nothing if the list is full. */
+static void append_strlist(const char *path, int lineno, const char *key,
+                           const char *val,
+                           char *list, int *count, int max, size_t item_size)
+{
+    if (*count >= max) {
+        log_warn("config: %s:%d: too many %s entries, ignoring '%s'",
+                 path, lineno, key, val);
+        return;
+    }
+    snprintf(list + (size_t)(*count) * item_size, item_size, "%s", val);
+    (*count)++;
 }
 
 static void rtrim(char *s)
@@ -109,14 +129,13 @@ void config_load(const char *path)
         } else if (strcmp(key, "seat-enum-delay") == 0) {
             parse_nonneg_int(path, lineno, key, val, 60, &g_cfg.seat_enum_delay);
         } else if (strcmp(key, "ignore-seat") == 0) {
-            if (g_cfg.ignore_seat_count >= MAX_IGNORE_SEATS) {
-                log_warn("config: %s:%d: too many ignore-seat entries, ignoring '%s'",
-                         path, lineno, val);
-            } else {
-                snprintf(g_cfg.ignore_seats[g_cfg.ignore_seat_count],
-                         MAX_SEAT_NAME_LENGTH, "%s", val);
-                g_cfg.ignore_seat_count++;
-            }
+            append_strlist(path, lineno, key, val,
+                           g_cfg.ignore_seats[0], &g_cfg.ignore_seat_count,
+                           MAX_IGNORE_SEATS, MAX_SEAT_NAME_LENGTH);
+        } else if (strcmp(key, "passwordless-user") == 0) {
+            append_strlist(path, lineno, key, val,
+                           g_cfg.passwordless_users[0], &g_cfg.passwordless_user_count,
+                           MAX_PASSWORDLESS_USERS, MAX_USERNAME_LENGTH);
         } else {
             log_warn("config: %s:%d: unknown key '%s', ignoring", path, lineno, key);
         }
@@ -131,6 +150,8 @@ void config_load(const char *path)
     log_debug("config: seat-enum-delay=%d",  g_cfg.seat_enum_delay);
     for (int i = 0; i < g_cfg.ignore_seat_count; i++)
         log_debug("config: ignore-seat='%s'", g_cfg.ignore_seats[i]);
+    for (int i = 0; i < g_cfg.passwordless_user_count; i++)
+        log_debug("config: passwordless-user='%s'", g_cfg.passwordless_users[i]);
 }
 
 const char *config_greeter(void)       { return g_cfg.greeter; }
@@ -147,5 +168,14 @@ const char **config_ignore_seats(void)
     for (int i = 0; i < g_cfg.ignore_seat_count; i++)
         ptrs[i] = g_cfg.ignore_seats[i];
     ptrs[g_cfg.ignore_seat_count] = NULL;
+    return ptrs;
+}
+
+const char **config_passwordless_users(void)
+{
+    static const char *ptrs[MAX_PASSWORDLESS_USERS + 1];
+    for (int i = 0; i < g_cfg.passwordless_user_count; i++)
+        ptrs[i] = g_cfg.passwordless_users[i];
+    ptrs[g_cfg.passwordless_user_count] = NULL;
     return ptrs;
 }

@@ -129,14 +129,13 @@ static void on_greeter_credentials(int fd, void *userdata)
     /* Store username before wiping buf (username points into buf). */
     memcpy(s->greeter_username, username, ulen + 1);
 
-    /* SHORTCUT: passwordless users bypass PAM entirely.  Resolve uid/gid
-     * via getpwnam() and skip authentication.  No PAM session is opened:
-     * s->auth.pamh stays NULL, so auth_close() and auth_open_session()
-     * will be no-ops for this session. */
-    static const char *passwordless[] = CONFIG_PASSWORDLESS_USERS;
+    /* Passwordless users bypass PAM entirely.  Resolve uid/gid via getpwnam()
+     * and skip authentication.  No PAM session is opened: s->auth.pamh stays
+     * NULL, so auth_close() and auth_open_session() will be no-ops. */
+    const char **passwordless = config_passwordless_users();
     int is_passwordless = 0;
-    for (size_t i = 0; i < sizeof(passwordless)/sizeof(passwordless[0]); i++) {
-        if (passwordless[i] && strcmp(s->greeter_username, passwordless[i]) == 0) {
+    for (size_t i = 0; passwordless[i]; i++) {
+        if (strcmp(s->greeter_username, passwordless[i]) == 0) {
             is_passwordless = 1;
             break;
         }

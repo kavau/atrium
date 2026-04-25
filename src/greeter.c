@@ -1,4 +1,5 @@
 #include "greeter.h"
+#include "config_file.h"
 #include "log.h"
 #include "session.h"
 
@@ -45,8 +46,18 @@ int greeter_start(struct seat *s, const char *message)
     snprintf(cfd_str, sizeof(cfd_str), "%d", cr_pipe[1]); /* greeter writes */
     snprintf(rfd_str, sizeof(rfd_str), "%d", re_pipe[0]); /* greeter reads  */
 
-    setenv("CREDENTIALS_FD", cfd_str, 1);
-    setenv("RESULT_FD",      rfd_str, 1);
+    /* Build colon-separated passwordless-user list for the greeter. */
+    char pwless_str[4096] = "";
+    const char **pwless = config_passwordless_users();
+    for (size_t i = 0; pwless[i]; i++) {
+        if (i > 0)
+            strncat(pwless_str, ":", sizeof(pwless_str) - strlen(pwless_str) - 1);
+        strncat(pwless_str, pwless[i], sizeof(pwless_str) - strlen(pwless_str) - 1);
+    }
+
+    setenv("CREDENTIALS_FD",            cfd_str,    1);
+    setenv("RESULT_FD",                 rfd_str,    1);
+    setenv("ATRIUM_PASSWORDLESS_USERS", pwless_str, 1);
     if (message)
         setenv("ATRIUM_MESSAGE", message, 1);
 
@@ -59,6 +70,7 @@ int greeter_start(struct seat *s, const char *message)
      */
     unsetenv("CREDENTIALS_FD");
     unsetenv("RESULT_FD");
+    unsetenv("ATRIUM_PASSWORDLESS_USERS");
     unsetenv("ATRIUM_MESSAGE");
 
     if (r < 0) {
