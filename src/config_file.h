@@ -14,7 +14,10 @@
  * Unknown keys are warned and skipped. */
 void config_load(const char *path);
 
-const char *config_greeter(void);       /* greeter shell command          */
-const char *config_compositor(void);    /* compositor shell command       */
-const char *config_desktop(void);       /* desktop identifier for logind  */
-int         config_restart_delay(void); /* seconds before greeter restart */
+const char  *config_greeter(void);        /* greeter shell command          */
+const char  *config_compositor(void);     /* compositor shell command       */
+const char  *config_desktop(void);        /* desktop identifier for logind  */
+int          config_restart_delay(void);  /* seconds before greeter restart */
+int          config_blank_timeout(void);    /* greeter idle blank timeout (s)  */
+int          config_seat_enum_delay(void);  /* startup seat enumeration delay  */
+const char **config_ignore_seats(void);     /* NULL-terminated seat name list  */

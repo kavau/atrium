@@ -1,4 +1,5 @@
 #include "greeter.h"
+#include "config_file.h"
 #include "log.h"
 #include "session.h"
 
@@ -41,12 +42,14 @@ int greeter_start(struct seat *s, const char *message)
         return -1;
     }
 
-    char cfd_str[16], rfd_str[16];
-    snprintf(cfd_str, sizeof(cfd_str), "%d", cr_pipe[1]); /* greeter writes */
-    snprintf(rfd_str, sizeof(rfd_str), "%d", re_pipe[0]); /* greeter reads  */
+    char cfd_str[16], rfd_str[16], blank_str[16];
+    snprintf(cfd_str,   sizeof(cfd_str),   "%d", cr_pipe[1]); /* greeter writes */
+    snprintf(rfd_str,   sizeof(rfd_str),   "%d", re_pipe[0]); /* greeter reads  */
+    snprintf(blank_str, sizeof(blank_str), "%d", config_blank_timeout());
 
-    setenv("CREDENTIALS_FD", cfd_str, 1);
-    setenv("RESULT_FD",      rfd_str, 1);
+    setenv("CREDENTIALS_FD",      cfd_str,   1);
+    setenv("RESULT_FD",           rfd_str,   1);
+    setenv("ATRIUM_BLANK_TIMEOUT", blank_str, 1);
     if (message)
         setenv("ATRIUM_MESSAGE", message, 1);
 
@@ -59,6 +62,7 @@ int greeter_start(struct seat *s, const char *message)
      */
     unsetenv("CREDENTIALS_FD");
     unsetenv("RESULT_FD");
+    unsetenv("ATRIUM_BLANK_TIMEOUT");
     unsetenv("ATRIUM_MESSAGE");
 
     if (r < 0) {

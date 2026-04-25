@@ -326,7 +326,7 @@ int main(void)
      * SHORTCUT: sleep briefly to let logind finish processing udev seat
      * events on early boot.  Replaced by SeatNew/SeatRemoved signal
      * monitoring in Phase 6 (hotplug). */
-    sleep(CONFIG_SEAT_ENUM_DELAY);
+    sleep(config_seat_enum_delay());
     log_debug("discovering seats...");
     if (bus_enumerate_seats() < 0)
         return EXIT_FAILURE;

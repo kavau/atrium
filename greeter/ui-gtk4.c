@@ -182,6 +182,7 @@ typedef struct {
     /* SHORTCUT: screen blanking via black overlay window (not true DPMS). */
     GtkWidget      *blank_window;     /* fullscreen black window */
     guint           idle_timeout_id;  /* g_timeout_add_seconds() source ID */
+    int             blank_timeout;    /* seconds; 0 = disabled             */
 } login_ctx;
 
 /* Forward declaration for idle timer reset. */
@@ -407,7 +408,7 @@ static void on_back(GtkWidget *widget, gpointer user_data)
 /*
  * SHORTCUT: idle screen blanking via black overlay window.
  *
- * After CONFIG_BLANK_TIMEOUT seconds of idle time, show a fullscreen black
+ * After ctx->blank_timeout seconds of idle time, show a fullscreen black
  * window over the greeter.  Hide it on any input (keyboard/mouse) event.
  *
  * This does NOT power down the display — LCD backlights stay on, saving only
@@ -423,7 +424,7 @@ static gboolean on_idle_timeout(gpointer user_data)
     login_ctx *ctx = user_data;
     if (ctx->blank_window) {
         gtk_window_present(GTK_WINDOW(ctx->blank_window));
-        log_debug("screen blanked after %d seconds idle", CONFIG_BLANK_TIMEOUT);
+        log_debug("screen blanked after %d seconds idle", ctx->blank_timeout);
     }
     ctx->idle_timeout_id = 0;
     return G_SOURCE_REMOVE;
@@ -432,7 +433,7 @@ static gboolean on_idle_timeout(gpointer user_data)
 /* Reset the idle timer — cancel existing timer and start a new one. */
 static void reset_idle_timer(login_ctx *ctx)
 {
-    if (CONFIG_BLANK_TIMEOUT == 0)
+    if (ctx->blank_timeout == 0)
         return;
 
     if (ctx->idle_timeout_id) {
@@ -440,7 +441,7 @@ static void reset_idle_timer(login_ctx *ctx)
         ctx->idle_timeout_id = 0;
     }
 
-    ctx->idle_timeout_id = g_timeout_add_seconds(CONFIG_BLANK_TIMEOUT,
+    ctx->idle_timeout_id = g_timeout_add_seconds(ctx->blank_timeout,
                                                    on_idle_timeout, ctx);
 }
 
@@ -548,6 +549,8 @@ static void on_activate(GtkApplication *app, gpointer user_data)
     ctx->app          = app;
     ctx->credentials_fd = actx->credentials_fd;
     ctx->result_fd      = actx->result_fd;
+    const char *bt_env = getenv("ATRIUM_BLANK_TIMEOUT");
+    ctx->blank_timeout = bt_env ? atoi(bt_env) : 300;
 
     /* ── Users page ──────────────────────────────────────────────────────── */
 
@@ -682,7 +685,7 @@ static void on_activate(GtkApplication *app, gpointer user_data)
 
     /* ── Screen blanking setup (SHORTCUT) ────────────────────────────────── */
 
-    if (CONFIG_BLANK_TIMEOUT > 0) {
+    if (ctx->blank_timeout > 0) {
         /* Create a separate fullscreen black window for blanking.
          * Use GtkWindow (not GtkApplicationWindow) to avoid lifecycle issues
          * when destroying multiple application windows during shutdown. */
@@ -728,7 +731,7 @@ static void on_activate(GtkApplication *app, gpointer user_data)
         /* Start the idle timer. */
         reset_idle_timer(ctx);
         log_debug("screen blanking enabled: %d second timeout",
-                  CONFIG_BLANK_TIMEOUT);
+                  ctx->blank_timeout);
     }
 }
 

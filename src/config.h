@@ -3,30 +3,13 @@
 /*
  * config.h — compile-time configuration
  *
- * Runtime-configurable values (compositor, desktop, greeter, restart-delay)
- * live in /etc/atrium.conf and are loaded via config_file.h.
+ * Runtime-configurable values (compositor, desktop, greeter, restart-delay,
+ * blank-timeout, seat-enum-delay, ignore-seat) live in /etc/atrium.conf and
+ * are loaded via config_file.h.
  *
- * SHORTCUT: Several values below (ignored seats, passwordless users, cursor
- * settings, font size, blank timeout) are still hardcoded here and should
- * eventually move to /etc/atrium.conf.
+ * SHORTCUT: Several values below (passwordless users, cursor settings, font
+ * size) are still hardcoded here and should eventually move to /etc/atrium.conf.
  */
-
-/* Seconds to wait before enumerating seats at startup.
- * Gives logind time to finish processing udev seat events on early boot.
- * SHORTCUT: replaced by SeatNew/SeatRemoved signal monitoring once Phase 11
- * (hotplug) is reimplemented. */
-#define CONFIG_SEAT_ENUM_DELAY  5
-
-/* SHORTCUT: Seconds of idle time before blanking the greeter display.
- * After this timeout a black fullscreen overlay is shown to prevent screen
- * burn-in.  The overlay is hidden on any input event.  This does NOT power
- * down the display (LCD backlight stays on) — true DPMS blanking via DRM
- * would require daemon-side DRM control.  Set to 0 to disable blanking. */
-#define CONFIG_BLANK_TIMEOUT    300
-
-/* Array of seat names to ignore during enumeration (e.g. monitorless seats
- * that would crash-loop the greeter).  Set to { NULL } to disable. */
-#define CONFIG_IGNORE_SEATS     { NULL }
 
 /* Credential protocol limits.
  * MAX_USERNAME_LEN matches POSIX LOGIN_NAME_MAX (255 bytes including NUL).

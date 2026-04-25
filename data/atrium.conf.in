@@ -16,3 +16,18 @@ restart-delay = 2
 # Greeter command.  Must honour the CREDENTIALS_FD and RESULT_FD environment
 # variables set by the daemon.  Executed via /bin/sh.
 greeter = /usr/bin/cage -- @greeter_bin@
+
+# Seconds to wait after startup before enumerating seats.  Gives logind time
+# to finish processing udev seat events on early boot.  Increase if greeters
+# appear on the wrong seats or seats are missed at startup.
+# seat-enum-delay = 5
+
+# Seconds of greeter idle time before blanking the display with a black
+# overlay window.  Set to 0 to disable blanking.
+blank-timeout = 300
+
+# Seats to ignore during enumeration.  Repeat for multiple seats.
+# Useful for seats with no connected display that would crash-loop the greeter.
+#
+# Example:
+#   ignore-seat = seat2
