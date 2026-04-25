@@ -34,6 +34,7 @@ int main(void)
     if (cfd && *cfd) credentials_fd = atoi(cfd);
     if (rfd && *rfd) result_fd      = atoi(rfd);
 
+    const char *message = getenv("ATRIUM_MESSAGE");
     log_debug("credentials_fd=%d result_fd=%d", credentials_fd, result_fd);
 
     /* Enumerate local users before entering the UI. */
@@ -41,7 +42,7 @@ int main(void)
     int user_count = enumerate_users(users, MAX_USERS);
     log_info("found %d login user(s)", user_count);
 
-    greeter_run_ui(users, user_count, credentials_fd, result_fd);
+    greeter_run_ui(users, user_count, credentials_fd, result_fd, message);
     log_info("exiting");
     return EXIT_SUCCESS;
 }

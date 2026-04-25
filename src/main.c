@@ -20,6 +20,30 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* Formats a human-readable message describing why a compositor exited
+ * abnormally, writing into buf (size len).  Returns buf, or NULL if the
+ * exit was clean (exit 0) or due to a signal we don't want to surface. */
+static const char *compositor_exit_message(int wstatus, char *buf, size_t len)
+{
+    if (WIFEXITED(wstatus)) {
+        int code = WEXITSTATUS(wstatus);
+        if (code == 0)
+            return NULL;
+        if (code == 127)
+            snprintf(buf, len, "Compositor not found (exit 127)");
+        else if (code == 126)
+            snprintf(buf, len, "Compositor permission denied (exit 126)");
+        else
+            snprintf(buf, len, "Compositor exited with status %d", code);
+        return buf;
+    }
+    if (WIFSIGNALED(wstatus)) {
+        snprintf(buf, len, "Compositor crashed (signal %d)", WTERMSIG(wstatus));
+        return buf;
+    }
+    return NULL;
+}
+
 /* Returns 1 if username is valid for login, 0 otherwise (logs the reason).
  * Rejects empty, overlong, or non-portable-filename characters to prevent
  * ANSI escape injection in log output. */
@@ -235,8 +259,13 @@ static void on_signal(int fd, void *userdata)
                          s->name,
                          was_greeter ? "greeter" : "compositor",
                          CONFIG_RESTART_DELAY);
+
+                char msg[128];
+                const char *restart_msg = was_greeter ? NULL
+                    : compositor_exit_message(wstatus, msg, sizeof(msg));
+
                 sleep(CONFIG_RESTART_DELAY); /* SHORTCUT */
-                if (greeter_start(s) < 0)
+                if (greeter_start(s, restart_msg) < 0)
                     log_error("%s: greeter_start failed", s->name);
                 else if (event_add(s->credentials_rfd,
                                    on_greeter_credentials, s) < 0)
@@ -320,7 +349,7 @@ int main(void)
      * on success SIGCHLD triggers session_start for the compositor. */
     for (int i = 0; i < seat_count(); i++) {
         struct seat *s = seat_get(i);
-        if (greeter_start(s) < 0) {
+        if (greeter_start(s, NULL) < 0) {
             log_warn("%s: greeter_start failed, skipping", s->name);
             continue;
         }

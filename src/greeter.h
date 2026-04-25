@@ -13,8 +13,9 @@
 
 /* Launch a greeter session with IPC pipes.
  * On success s->credentials_rfd and s->result_wfd are populated.
+ * message, if non-NULL, is shown as an error banner on the users page.
  * Returns 0 on success, -1 on error. */
-int greeter_start(struct seat *s);
+int greeter_start(struct seat *s, const char *message);
 
 /* Close the daemon-side IPC pipe ends and reset to -1.
  * The caller must remove credentials_rfd from the event loop first. */

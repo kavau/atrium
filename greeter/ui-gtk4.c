@@ -158,6 +158,7 @@ typedef struct {
     int         user_count;
     int         credentials_fd;
     int         result_fd;
+    const char *message;
 } activate_ctx;
 
 /* Shared state between callbacks.  Allocated with g_new0() in on_activate();
@@ -560,10 +561,10 @@ static void on_activate(GtkApplication *app, gpointer user_data)
     gtk_widget_set_visible(users_spinner, FALSE);
     ctx->users_spinner = users_spinner;
 
-    GtkWidget *users_error_label = gtk_label_new("");
+    GtkWidget *users_error_label = gtk_label_new(actx->message ? actx->message : "");
     gtk_widget_add_css_class(users_error_label, "error-label");
     gtk_widget_set_halign(users_error_label, GTK_ALIGN_START);
-    gtk_widget_set_visible(users_error_label, FALSE);
+    gtk_widget_set_visible(users_error_label, actx->message != NULL);
     ctx->users_error_label = users_error_label;
 
     GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -732,7 +733,7 @@ static void on_activate(GtkApplication *app, gpointer user_data)
 }
 
 void greeter_run_ui(const greeter_user *users, int user_count,
-                    int credentials_fd, int result_fd)
+                    int credentials_fd, int result_fd, const char *message)
 {
     log_debug("greeter_run_ui: %d users, cfd=%d rfd=%d",
               user_count, credentials_fd, result_fd);
@@ -742,6 +743,7 @@ void greeter_run_ui(const greeter_user *users, int user_count,
         .user_count     = user_count,
         .credentials_fd = credentials_fd,
         .result_fd      = result_fd,
+        .message        = message,
     };
     GtkApplication *app = gtk_application_new("org.kavau.atrium.greeter",
                                               G_APPLICATION_NON_UNIQUE);

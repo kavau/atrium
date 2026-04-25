@@ -8,7 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
-int greeter_start(struct seat *s)
+int greeter_start(struct seat *s, const char *message)
 {
     /*
      * Two pipes connect the daemon to the greeter:
@@ -47,6 +47,8 @@ int greeter_start(struct seat *s)
 
     setenv("CREDENTIALS_FD", cfd_str, 1);
     setenv("RESULT_FD",      rfd_str, 1);
+    if (message)
+        setenv("ATRIUM_MESSAGE", message, 1);
 
     int r = session_start_greeter(s);
 
@@ -57,6 +59,7 @@ int greeter_start(struct seat *s)
      */
     unsetenv("CREDENTIALS_FD");
     unsetenv("RESULT_FD");
+    unsetenv("ATRIUM_MESSAGE");
 
     if (r < 0) {
         /* session_start_greeter already logged the failure. */

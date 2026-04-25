@@ -27,6 +27,9 @@
  * result_fd       read-end of the result pipe.  The daemon replies "ok\n" on
  *                 success or "fail:<reason>\n" on failure.  Must be -1 when
  *                 credentials_fd is -1.
+ *
+ * message         if non-NULL, shown as an error banner on startup (e.g. to
+ *                 report that the previous compositor launch failed).
  */
 void greeter_run_ui(const greeter_user *users, int user_count,
-                    int credentials_fd, int result_fd);
+                    int credentials_fd, int result_fd, const char *message);
