@@ -1,5 +1,6 @@
 #include "bus.h"
 #include "config.h"
+#include "config_file.h"
 #include "event.h"
 #include "log.h"
 #include "seat.h"
@@ -127,7 +128,7 @@ int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,
             "atrium",       /* service name */
             "wayland",      /* session type */
             "user",         /* session class */
-            CONFIG_DESKTOP_NAME,  /* desktop */
+            config_desktop(),     /* desktop */
             seat_id,        /* seat */
             vtnr,           /* vtnr */
             tty,            /* tty device */

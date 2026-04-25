@@ -8,6 +8,7 @@ executable('atrium',
     'session.c',
     'greeter.c',
     'auth.c',
+    'config_file.c',
   ],
   dependencies: [
     dep_libsystemd,

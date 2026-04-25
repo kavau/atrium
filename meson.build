@@ -4,10 +4,25 @@ project('atrium', 'c',
   default_options: [
     'c_std=c11',
     'warning_level=2',
+    'sysconfdir=/etc',
   ],
 )
 
 add_project_arguments('-D_GNU_SOURCE', language: 'c')
+
+# Compile-time path to the installed atrium-greeter binary.  Used as the
+# default greeter command in config_file.c when /etc/atrium.conf is absent.
+add_project_arguments(
+  '-DATRIUM_GREETER_PATH="' + (get_option('prefix') / get_option('libexecdir') / 'atrium-greeter') + '"',
+  language: 'c',
+)
+
+# Compile-time sysconfdir so the daemon and the installed config file always
+# agree on the path.  Defaults to /etc (set in default_options above).
+add_project_arguments(
+  '-DATRIUM_SYSCONFDIR="' + get_option('sysconfdir') + '"',
+  language: 'c',
+)
 
 # Enable debug logging for debug and debugoptimized builds.
 if get_option('buildtype').startswith('debug')
@@ -71,6 +86,23 @@ executable('atrium-greeter-test',
 # Install the systemd service unit.
 install_data('data/atrium.service',
   install_dir: '/usr/lib/systemd/system',
+)
+
+# ── Configuration file ────────────────────────────────────────────────────────
+#
+# Generate /etc/atrium.conf from the template, substituting the installed path
+# of atrium-greeter so the default greeter command is correct out of the box.
+
+conf_data = configuration_data()
+conf_data.set('greeter_bin',
+  get_option('prefix') / get_option('libexecdir') / 'atrium-greeter')
+
+configure_file(
+  input:         'data/atrium.conf.in',
+  output:        'atrium.conf',
+  configuration: conf_data,
+  install:       true,
+  install_dir:   get_option('sysconfdir'),
 )
 
 # ── PAM configuration ─────────────────────────────────────────────────────────

@@ -63,10 +63,10 @@ set -euo pipefail
 cd $DEST
 if [[ ! -d build ]]; then
     echo "--- Running meson setup"
-    meson setup build -Dpam_config=$DISTRO
+    meson setup build -Dpam_config=$DISTRO -Dsysconfdir=/etc
 else
     echo "--- Reconfiguring meson"
-    meson setup build --reconfigure -Dpam_config=$DISTRO
+    meson setup build --reconfigure -Dpam_config=$DISTRO -Dsysconfdir=/etc
 fi
 ninja -C build
 EOF

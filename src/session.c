@@ -2,6 +2,7 @@
 #include "auth.h"
 #include "bus.h"
 #include "config.h"
+#include "config_file.h"
 #include "log.h"
 
 #include <systemd/sd-journal.h>
@@ -117,9 +118,9 @@ static _Noreturn void child_exec(struct seat *s,
     /* Set session environment. XDG_RUNTIME_DIR is required by the
      * compositor; the rest is informational. These are all values known
      * before fork, so they are valid in the child's address space. */
-    setenv("XDG_SESSION_TYPE",    "wayland",          1);
-    setenv("XDG_SESSION_DESKTOP", CONFIG_DESKTOP_NAME, 1);
-    setenv("XDG_CURRENT_DESKTOP", CONFIG_DESKTOP_NAME, 1);
+    setenv("XDG_SESSION_TYPE",    "wayland",            1);
+    setenv("XDG_SESSION_DESKTOP", config_desktop(),     1);
+    setenv("XDG_CURRENT_DESKTOP", config_desktop(),     1);
     setenv("XDG_SEAT",            s->name,             1);
     setenv("XDG_RUNTIME_DIR",     runtime_dir,         1);
     setenv("HOME",              pw->pw_dir,       1);
@@ -197,30 +198,30 @@ static _Noreturn void child_exec(struct seat *s,
     if (chdir(pw->pw_dir) < 0)
         log_warn("chdir(%s): %s", pw->pw_dir, strerror(errno));
 
+    /* 'exec' in both commands replaces the shell with the target process so
+     * SIGTERM reaches it directly and waitpid() sees its real exit status. */
+    char cmd[640];
     if (is_greeter) {
-        /* cage is a kiosk compositor — exec it directly, no login shell.
-         * ATRIUM_FULLSCREEN tells the greeter to go fullscreen inside cage
-         * rather than using its default windowed mode. */
+        /* Greeter runs via plain /bin/sh (not a login shell — no PATH setup
+         * needed for the atriumdm system account).
+         * ATRIUM_FULLSCREEN tells the greeter to go fullscreen inside cage. */
         setenv("ATRIUM_FULLSCREEN", "1", 1);
-        static const char *const greeter_argv[] = CONFIG_GREETER_ARGS;
-        log_info("exec greeter: %s", CONFIG_GREETER_CMD);
-        execvp(CONFIG_GREETER_CMD, (char *const *)greeter_argv);
-        log_error("execvp(%s): %s", CONFIG_GREETER_CMD, strerror(errno));
+        const char *greeter = config_greeter();
+        log_info("exec greeter: %s", greeter);
+        snprintf(cmd, sizeof(cmd), "exec %s", greeter);
+        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+        log_error("exec sh -c 'exec %s': %s", greeter, strerror(errno));
     } else {
-        /* Launch the compositor via the user's login shell.  Prepending '-'
-         * to argv[0] is the POSIX convention for requesting login-shell
-         * behaviour — it sources .profile/.bash_profile and sets up PATH.
-         * Using -l instead would break dash (/bin/sh on Debian), which rejects
-         * that flag.  The 'exec' in the -c string replaces the shell with the
-         * compositor so there is no extra process between the daemon and the
-         * compositor (SIGTERM reaches it directly, waitpid sees its exit
-         * status).  pw->pw_shell is an absolute path, so execl not execlp. */
+        /* Compositor runs via the user's login shell so .profile is sourced
+         * and PATH is set up.  Prepending '-' to argv[0] requests login-shell
+         * behaviour without -l, which breaks dash on Debian. */
+        const char *compositor = config_compositor();
         char argv0[128];
         snprintf(argv0, sizeof(argv0), "-%s", basename(pw->pw_shell));
-        execl(pw->pw_shell, argv0, "-c",
-              "exec " CONFIG_COMPOSITOR, (char *)NULL);
+        snprintf(cmd, sizeof(cmd), "exec %s", compositor);
+        execl(pw->pw_shell, argv0, "-c", cmd, (char *)NULL);
         log_error("exec %s -c 'exec %s': %s",
-                  pw->pw_shell, CONFIG_COMPOSITOR, strerror(errno));
+                  pw->pw_shell, compositor, strerror(errno));
     }
     _exit(1);
 }

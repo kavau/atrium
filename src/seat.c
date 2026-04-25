@@ -1,6 +1,7 @@
 #include "seat.h"
 
 #include "config.h"
+#include "config_file.h"
 #include "log.h"
 
 #include <stdio.h>
@@ -11,11 +12,10 @@ static int         g_num_seats = 0;
 
 int seat_add(const char *name)
 {
-    /* Check CONFIG_IGNORE_SEATS before adding. */
-    static const char *ignored[] = CONFIG_IGNORE_SEATS;
-    for (size_t i = 0; i < sizeof(ignored)/sizeof(ignored[0]); i++) {
-        if (ignored[i] && strcmp(name, ignored[i]) == 0) {
-            log_info("seat_add: ignoring %s (CONFIG_IGNORE_SEATS)", name);
+    const char **ignored = config_ignore_seats();
+    for (size_t i = 0; ignored[i]; i++) {
+        if (strcmp(name, ignored[i]) == 0) {
+            log_info("seat_add: ignoring seat '%s' (ignore-seat)", name);
             return -1;
         }
     }
