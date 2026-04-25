@@ -1,12 +1,17 @@
 #include "auth.h"
 #include "bus.h"
 #include "config.h"
+#include "config_file.h"
 #include "event.h"
 #include "greeter.h"
 #include "log.h"
 #include "seat.h"
 #include "session.h"
 #include "vt.h"
+
+#ifndef ATRIUM_SYSCONFDIR
+#define ATRIUM_SYSCONFDIR "/etc"
+#endif
 
 #include <assert.h>
 #include <ctype.h>
@@ -258,13 +263,13 @@ static void on_signal(int fd, void *userdata)
                 log_info("%s: %s exited — restarting greeter in %d s",
                          s->name,
                          was_greeter ? "greeter" : "compositor",
-                         CONFIG_RESTART_DELAY);
+                         config_restart_delay());
 
                 char msg[128];
                 const char *restart_msg = was_greeter ? NULL
                     : compositor_exit_message(wstatus, msg, sizeof(msg));
 
-                sleep(CONFIG_RESTART_DELAY); /* SHORTCUT */
+                sleep(config_restart_delay()); /* SHORTCUT */
                 if (greeter_start(s, restart_msg) < 0)
                     log_error("%s: greeter_start failed", s->name);
                 else if (event_add(s->credentials_rfd,
@@ -283,6 +288,7 @@ int main(void)
 {
     log_info("starting");
     log_debug("debug logging is enabled");
+    config_load(ATRIUM_SYSCONFDIR "/atrium.conf");
 
     /* Ignore SIGPIPE so a broken result pipe (greeter crashed between sending
      * credentials and reading the reply) returns EPIPE from write() instead of

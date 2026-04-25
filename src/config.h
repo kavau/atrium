@@ -3,26 +3,19 @@
 /*
  * config.h — compile-time configuration
  *
- * SHORTCUT: Several values here are hardcoded and will eventually be
- * determined dynamically (compositor and desktop name from a session .desktop
- * file; delays replaced by event-driven alternatives).
+ * Runtime-configurable values (compositor, desktop, greeter, restart-delay)
+ * live in /etc/atrium.conf and are loaded via config_file.h.
+ *
+ * SHORTCUT: Several values below (ignored seats, passwordless users, cursor
+ * settings, font size, blank timeout) are still hardcoded here and should
+ * eventually move to /etc/atrium.conf.
  */
-
-/* Compositor to launch on each seat. */
-#define CONFIG_COMPOSITOR       "sway"
-
-/* Desktop identifier passed to logind's CreateSession. */
-#define CONFIG_DESKTOP_NAME     "sway"
 
 /* Seconds to wait before enumerating seats at startup.
  * Gives logind time to finish processing udev seat events on early boot.
  * SHORTCUT: replaced by SeatNew/SeatRemoved signal monitoring once Phase 11
  * (hotplug) is reimplemented. */
 #define CONFIG_SEAT_ENUM_DELAY  5
-
-/* Seconds to wait before restarting a crashed compositor.
- * SHORTCUT: replaced by timerfd-based crash-loop detection in Phase 12. */
-#define CONFIG_RESTART_DELAY    2
 
 /* SHORTCUT: Seconds of idle time before blanking the greeter display.
  * After this timeout a black fullscreen overlay is shown to prevent screen
@@ -51,20 +44,10 @@
  * production feature.  Set to { NULL } to require passwords for all users. */
 #define CONFIG_PASSWORDLESS_USERS  { NULL }
 
-/* Greeter command — cage kiosk compositor hosting atrium-greeter.
- * GREETER_USER is a dedicated system account (uid < 1000, no home directory).
- *
+/* Greeter system account (uid < 1000, no home directory).
  * To change the username from the default "atriumdm", update both:
  *   - CONFIG_GREETER_USER below
- *   - GREETER_USER in tools/create-greeter-user.sh
- *
- * Note: all greeter instances share the same XDG_RUNTIME_DIR
- * (/run/user/<uid>), so cage instances on different seats compete for
- * wayland-0.lock.  The loser falls back to wayland-1, wayland-2, etc.
- * This is harmless — cage handles the fallback gracefully. */
-#define CONFIG_GREETER_CMD  "/usr/bin/cage"
-#define CONFIG_GREETER_ARGS { "/usr/bin/cage", "-s", \
-                              "/usr/local/libexec/atrium-greeter", NULL }
+ *   - GREETER_USER in tools/create-greeter-user.sh */
 #define CONFIG_GREETER_USER "atriumdm"
 
 /* Cursor theme and size used by the greeter.

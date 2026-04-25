@@ -1,0 +1,18 @@
+# /etc/atrium.conf — atrium display manager configuration
+# Lines starting with '#' are comments.  Unknown keys are ignored with a
+# warning in the journal.
+
+# Compositor to launch on each seat after successful authentication.
+# Executed via the user's login shell, so PATH is available.
+compositor = sway
+
+# Desktop environment identifier passed to logind's CreateSession and set as
+# XDG_CURRENT_DESKTOP and XDG_SESSION_DESKTOP in the session environment.
+desktop = sway
+
+# Seconds to wait before restarting the greeter after compositor exit.
+restart-delay = 2
+
+# Greeter command.  Must honour the CREDENTIALS_FD and RESULT_FD environment
+# variables set by the daemon.  Executed via /bin/sh.
+greeter = /usr/bin/cage -- @greeter_bin@
