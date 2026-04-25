@@ -15,7 +15,6 @@
 #define DEFAULT_COMPOSITOR     "sway"
 #define DEFAULT_DESKTOP        "sway"
 #define DEFAULT_RESTART_DELAY    2
-#define DEFAULT_BLANK_TIMEOUT    300
 #define DEFAULT_SEAT_ENUM_DELAY  5
 #define MAX_IGNORE_SEATS       16
 #define MAX_SEAT_NAME_LENGTH          64
@@ -25,7 +24,6 @@ static struct {
     char compositor[512];
     char desktop[64];
     int  restart_delay;
-    int  blank_timeout;
     int  seat_enum_delay;
     char ignore_seats[MAX_IGNORE_SEATS][MAX_SEAT_NAME_LENGTH];
     int  ignore_seat_count;
@@ -34,7 +32,6 @@ static struct {
     .compositor         = DEFAULT_COMPOSITOR,
     .desktop            = DEFAULT_DESKTOP,
     .restart_delay      = DEFAULT_RESTART_DELAY,
-    .blank_timeout      = DEFAULT_BLANK_TIMEOUT,
     .seat_enum_delay    = DEFAULT_SEAT_ENUM_DELAY,
     .ignore_seat_count  = 0,
 };
@@ -109,8 +106,6 @@ void config_load(const char *path)
             snprintf(g_cfg.desktop, sizeof(g_cfg.desktop), "%s", val);
         } else if (strcmp(key, "restart-delay") == 0) {
             parse_nonneg_int(path, lineno, key, val, 3600, &g_cfg.restart_delay);
-        } else if (strcmp(key, "blank-timeout") == 0) {
-            parse_nonneg_int(path, lineno, key, val, 86400, &g_cfg.blank_timeout);
         } else if (strcmp(key, "seat-enum-delay") == 0) {
             parse_nonneg_int(path, lineno, key, val, 60, &g_cfg.seat_enum_delay);
         } else if (strcmp(key, "ignore-seat") == 0) {
@@ -133,7 +128,6 @@ void config_load(const char *path)
     log_debug("config: compositor='%s'",     g_cfg.compositor);
     log_debug("config: desktop='%s'",        g_cfg.desktop);
     log_debug("config: restart-delay=%d",    g_cfg.restart_delay);
-    log_debug("config: blank-timeout=%d",    g_cfg.blank_timeout);
     log_debug("config: seat-enum-delay=%d",  g_cfg.seat_enum_delay);
     for (int i = 0; i < g_cfg.ignore_seat_count; i++)
         log_debug("config: ignore-seat='%s'", g_cfg.ignore_seats[i]);
@@ -142,9 +136,8 @@ void config_load(const char *path)
 const char *config_greeter(void)       { return g_cfg.greeter; }
 const char *config_compositor(void)    { return g_cfg.compositor; }
 const char *config_desktop(void)       { return g_cfg.desktop; }
-int         config_restart_delay(void) { return g_cfg.restart_delay; }
-int         config_blank_timeout(void)    { return g_cfg.blank_timeout; }
-int         config_seat_enum_delay(void)  { return g_cfg.seat_enum_delay; }
+int         config_restart_delay(void)   { return g_cfg.restart_delay; }
+int         config_seat_enum_delay(void) { return g_cfg.seat_enum_delay; }
 
 const char **config_ignore_seats(void)
 {
