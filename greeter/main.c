@@ -11,6 +11,7 @@
  * replacing that file only — this file and the daemon are unaffected.
  */
 
+#include "greeter_config.h"
 #include "ui.h"
 #include "users.h"
 #include "log.h"
@@ -18,9 +19,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#ifndef ATRIUM_SYSCONFDIR
+#define ATRIUM_SYSCONFDIR "/etc"
+#endif
+
 int main(void)
 {
     log_info("starting (pid=%d)", (int)getpid());
+    greeter_config_load(ATRIUM_SYSCONFDIR "/atrium-greeter.conf");
 
     /*
      * CREDENTIALS_FD and RESULT_FD carry the fd numbers of the two IPC pipes

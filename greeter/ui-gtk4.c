@@ -22,8 +22,9 @@
  * When credentials_fd is -1 (standalone dev run), the button quits directly.
  */
 
-#include "ui.h"
 #include "config.h"
+#include "greeter_config.h"
+#include "ui.h"
 #include "log.h"
 
 #include <gtk/gtk.h>
@@ -45,7 +46,7 @@ static int is_passwordless(const char *username)
 /* ── CSS ───────────────────────────────────────────────────────────────────── */
 
 /* CSS template for the greeter window.  Sizes are supplied at runtime
- * from CONFIG_BASE_FONT_SIZE; the nine %d placeholders correspond to:
+ * from greeter_config_base_font_size(); the nine %d placeholders correspond to:
  *   1. card padding vertical   (base * 2)
  *   2. card padding horizontal (base * 12/5)
  *   3. card min-width          (base * 18)
@@ -503,15 +504,15 @@ static void on_activate(GtkApplication *app, gpointer user_data)
      * under cage only takes ownership of cursor rendering when a valid theme
      * name is provided; the size has no effect without it. */
     g_object_set(gtk_settings_get_default(),
-                 "gtk-cursor-theme-name", CONFIG_CURSOR_THEME,
-                 "gtk-cursor-theme-size", CONFIG_CURSOR_SIZE,
+                 "gtk-cursor-theme-name", greeter_config_cursor_theme(),
+                 "gtk-cursor-theme-size", greeter_config_cursor_size(),
                  NULL);
 
-    /* Build CSS from template, filling in sizes derived from
-     * CONFIG_BASE_FONT_SIZE.  Placeholders in order: card padding vertical,
-     * card padding horizontal, card min-width, heading, entry, login button,
-     * user button, back button, error label. */
-    int fs = CONFIG_BASE_FONT_SIZE;
+    /* Build CSS from template, filling in sizes derived from base-font-size.
+     * Placeholders in order: card padding vertical, card padding horizontal,
+     * card min-width, heading, entry, login button, user button, back button,
+     * error label. */
+    int fs = greeter_config_base_font_size();
     char *css = g_strdup_printf(CSS_TEMPLATE,
                                 fs * 2,       /* card padding vertical */
                                 fs * 12 / 5,  /* card padding horizontal */
@@ -549,8 +550,7 @@ static void on_activate(GtkApplication *app, gpointer user_data)
     ctx->app          = app;
     ctx->credentials_fd = actx->credentials_fd;
     ctx->result_fd      = actx->result_fd;
-    const char *bt_env = getenv("ATRIUM_BLANK_TIMEOUT");
-    ctx->blank_timeout = bt_env ? atoi(bt_env) : 300;
+    ctx->blank_timeout = greeter_config_blank_timeout();
 
     /* ── Users page ──────────────────────────────────────────────────────── */
 

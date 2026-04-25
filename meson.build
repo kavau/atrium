@@ -51,13 +51,15 @@ subdir('src')
 # that file and update the sources list here — no other changes required.
 
 # SHORTCUT: src/ is added to the greeter's include path so ui-gtk4.c can
-# read CONFIG_PASSWORDLESS_USERS from config.h.  When passwordless login is
-# handled properly (PAM-level or daemon-communicated), remove this.
+# read CONFIG_PASSWORDLESS_USERS and CONFIG_MAX_*_LEN from config.h.  Remove
+# once passwordless login moves to config and credential limits move to a
+# shared header.
 inc_src = include_directories('src')
 
 executable('atrium-greeter',
   sources: [
     'greeter/main.c',
+    'greeter/greeter_config.c',
     'greeter/users.c',
     'greeter/ui-gtk4.c',
   ],
@@ -103,6 +105,10 @@ configure_file(
   configuration: conf_data,
   install:       true,
   install_dir:   get_option('sysconfdir'),
+)
+
+install_data('data/atrium-greeter.conf',
+  install_dir: get_option('sysconfdir'),
 )
 
 # ── PAM configuration ─────────────────────────────────────────────────────────
