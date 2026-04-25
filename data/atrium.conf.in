@@ -15,7 +15,11 @@ restart-delay = 2
 
 # Greeter command.  Must honour the CREDENTIALS_FD and RESULT_FD environment
 # variables set by the daemon.  Executed via /bin/sh.
-greeter = /usr/bin/cage -- @greeter_bin@
+#
+# The '-s' flag tells cage to allow VT switching (Ctrl+Alt+F1/F2/...) from
+# the greeter, which is useful for reaching a recovery TTY before login.
+# Drop it for a kiosk-style lockdown that traps the user at the greeter.
+greeter = /usr/bin/cage -s -- @greeter_bin@
 
 # Seconds to wait after startup before enumerating seats.  Gives logind time
 # to finish processing udev seat events on early boot.  Increase if greeters
@@ -27,3 +31,15 @@ seat-enum-delay = 5
 #
 # Example:
 #   ignore-seat = seat2
+
+# Users that can log in without a password.  Repeat for multiple users.
+# The greeter skips the password screen; the daemon skips PAM authentication.
+# Omit to require a password for all users.
+#
+# Warning: bypasses PAM entirely — resource limits, account expiry, access
+# restrictions, and audit logging are all skipped.  In a future version, the
+# greeter will check membership of a 'nopasswd' group instead, and a PAM rule
+# (e.g. pam_succeed_if.so) will skip password verification for group members.
+#
+# Example:
+#   passwordless-user = kiosk

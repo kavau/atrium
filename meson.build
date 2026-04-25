@@ -50,10 +50,8 @@ subdir('src')
 # The UI implementation is in greeter/ui-gtk4.c.  To swap toolkits, replace
 # that file and update the sources list here — no other changes required.
 
-# SHORTCUT: src/ is added to the greeter's include path so ui-gtk4.c can
-# read CONFIG_PASSWORDLESS_USERS and CONFIG_MAX_*_LEN from config.h.  Remove
-# once passwordless login moves to config and credential limits move to a
-# shared header.
+# src/ is added to the greeter's include path so ui-gtk4.c can read
+# CONFIG_MAX_*_LEN and CONFIG_GREETER_USER from config.h.
 inc_src = include_directories('src')
 
 executable('atrium-greeter',

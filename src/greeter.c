@@ -1,4 +1,5 @@
 #include "greeter.h"
+#include "config_file.h"
 #include "log.h"
 #include "session.h"
 
@@ -45,8 +46,28 @@ int greeter_start(struct seat *s, const char *message)
     snprintf(cfd_str, sizeof(cfd_str), "%d", cr_pipe[1]); /* greeter writes */
     snprintf(rfd_str, sizeof(rfd_str), "%d", re_pipe[0]); /* greeter reads  */
 
-    setenv("CREDENTIALS_FD", cfd_str, 1);
-    setenv("RESULT_FD",      rfd_str, 1);
+    /* Build colon-separated passwordless-user list for the greeter.
+     *
+     * Buffer size must be at least (MAX_PASSWORDLESS_USERS (16) *
+     * MAX_USERNAME_LENGTH (255) + 15 separators + NUL) = 4096 bytes.
+     * Adding headroom for safety; truncation is benign (a partial username
+     * gets shown the password screen). */
+    char pwless_str[8192] = "";
+    size_t off = 0;
+    const char **pwless = config_passwordless_users();
+    for (size_t i = 0; pwless[i]; i++) {
+        int n = snprintf(pwless_str + off, sizeof(pwless_str) - off,
+                         "%s%s", i > 0 ? ":" : "", pwless[i]);
+        if (n < 0 || (size_t)n >= sizeof(pwless_str) - off) {
+            log_warn("greeter: passwordless-user list truncated to fit env var");
+            break;
+        }
+        off += (size_t)n;
+    }
+
+    setenv("CREDENTIALS_FD",            cfd_str,    1);
+    setenv("RESULT_FD",                 rfd_str,    1);
+    setenv("ATRIUM_PASSWORDLESS_USERS", pwless_str, 1);
     if (message)
         setenv("ATRIUM_MESSAGE", message, 1);
 
@@ -59,6 +80,7 @@ int greeter_start(struct seat *s, const char *message)
      */
     unsetenv("CREDENTIALS_FD");
     unsetenv("RESULT_FD");
+    unsetenv("ATRIUM_PASSWORDLESS_USERS");
     unsetenv("ATRIUM_MESSAGE");
 
     if (r < 0) {

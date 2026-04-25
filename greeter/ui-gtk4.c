@@ -32,13 +32,21 @@
 #include <string.h>
 #include <unistd.h>
 
-/* SHORTCUT: check whether a username is in CONFIG_PASSWORDLESS_USERS. */
+/* Check whether username appears in ATRIUM_PASSWORDLESS_USERS (colon-separated). */
 static int is_passwordless(const char *username)
 {
-    static const char *list[] = CONFIG_PASSWORDLESS_USERS;
-    for (size_t i = 0; i < sizeof(list)/sizeof(list[0]); i++) {
-        if (list[i] && strcmp(username, list[i]) == 0)
+    const char *env = getenv("ATRIUM_PASSWORDLESS_USERS");
+    if (!env || !*env)
+        return 0;
+    /* Scan without modifying the env string. */
+    const char *p = env;
+    size_t ulen = strlen(username);
+    while (*p) {
+        const char *colon = strchr(p, ':');
+        size_t token_len = colon ? (size_t)(colon - p) : strlen(p);
+        if (token_len == ulen && memcmp(p, username, ulen) == 0)
             return 1;
+        p += token_len + (colon ? 1 : 0);
     }
     return 0;
 }
