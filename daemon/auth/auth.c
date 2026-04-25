@@ -5,8 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_LEN_SEAT 64
-
 /* PAM conversation callback */
 static int conv_callback(int num_msg, const struct pam_message **msg, struct pam_response **resp,
                          void *appdata_ptr) {
@@ -63,11 +61,10 @@ err:
     return r;
 }
 
-int auth_open_session(const char *username, const char *password, const char *seat,
+int auth_open_session(const char *username, const char *password, const char **env,
                       const char *conf_path, auth_result *result) {
     assert(username);
     assert(password);
-    assert(seat);
     assert(result);
 
     struct pam_conv conv = {
@@ -87,11 +84,9 @@ int auth_open_session(const char *username, const char *password, const char *se
     }
 
     /* Set up the PAM environment so PAM knows for which seat to open the session */
-    char seat_env[MAX_LEN_SEAT + 1];
-    snprintf(seat_env, sizeof(seat_env), "XDG_SEAT=%s", seat);
-    pam_putenv(pamh, seat_env);
-    pam_putenv(pamh, "XDG_SESSION_TYPE=wayland");
-    pam_putenv(pamh, "XDG_SESSION_CLASS=user");
+    for (const char **p = env; p && *p; p++) {
+        pam_putenv(pamh, *p);
+    }
 
     r = pam_authenticate(pamh, 0); /* authenticate the user */
     if (r != PAM_SUCCESS) {

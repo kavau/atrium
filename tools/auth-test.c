@@ -1,5 +1,5 @@
 /*
- * auth-test.c - test PAM authentication
+ * auth-test.c - test PAM authentication and logind session creation
  *
  * Executes the PAM stack and establishes a session for the given user.  Needs
  * to be run as root with the systemd-run wrapper to escape the existing logind
@@ -14,6 +14,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "daemon/auth/auth.h"
@@ -27,6 +28,8 @@ int main(int argc, char *argv[]) {
     const char *username = argv[1];
     const char *conf_path = argc == 3 ? argv[2] : NULL;
     const char *seat = "seat1";
+    int vtnr = 0;
+
     const char *password = getpass("Password: ");
     if (!password) {
         fprintf(stderr, "getpass failed\n");
@@ -34,7 +37,21 @@ int main(int argc, char *argv[]) {
     }
 
     auth_result result;
-    int r = auth_open_session(username, password, seat, conf_path, &result);
+
+    /* Build PAM environment. Intentionally not freed. */
+    char **env = calloc(5, sizeof(*env));
+    if (!env)
+        abort();
+    int i = 0;
+    if (asprintf(&env[i++], "XDG_SEAT=%s", seat) < 0)
+        abort();
+    if (asprintf(&env[i++], "XDG_VTNR=%d", vtnr) < 0)
+        abort();
+    env[i++] = "XDG_SESSION_TYPE=wayland";
+    env[i++] = "XDG_SESSION_CLASS=user";
+    env[i] = NULL;
+
+    int r = auth_open_session(username, password, (const char **)env, conf_path, &result);
     if (r != PAM_SUCCESS) {
         fprintf(stderr, "auth_open_session failed: %d\n", r);
         return 1;

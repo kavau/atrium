@@ -9,6 +9,91 @@
 #include "daemon/auth/auth.h"
 #include "session.h"
 
+/* Configure the environment, drop privileges, and exec the user session. Called
+from the child side of the fork. This function never returns. */
+static _Noreturn void child_exec(const char *username, const auth_result *pam_result) {
+    /* Debug output */
+    if (pam_result->env) {
+        fprintf(stderr, "PAM environment variables:\n");
+        for (char **p = pam_result->env; *p; p++) {
+            fprintf(stderr, "  %s\n", *p);
+        }
+    }
+
+    /* Build the session environment. */
+    struct passwd *pw = getpwnam(username);
+    if (!pw) {
+        fprintf(stderr, "getpwnam failed for user '%s'\n", username);
+        _exit(1);
+    }
+
+    /* Count PAM env entries. */
+    int n_pam = 0;
+    for (char **p = pam_result->env; p && *p; p++)
+        n_pam++;
+
+    /* passwd fields + PATH + PAM env entries + NULL terminator */
+    char **env = calloc(5 + n_pam + 1, sizeof(*env));
+    if (!env) {
+        perror("calloc");
+        _exit(1);
+    }
+
+    int i = 0;
+    /* getenv() finds the first match, so passwd is authoritative */
+    if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
+        goto oom;
+    if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
+        goto oom;
+    if (asprintf(&env[i++], "HOME=%s", pw->pw_dir) < 0)
+        goto oom;
+    if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
+        goto oom;
+    env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
+    for (char **p = pam_result->env; p && *p; p++) {
+        env[i++] = *p;
+    }
+    env[i] = NULL;
+
+    /* Privilege drop: supplementary groups, then gid, then uid.
+     * setresgid/setresuid set all three ID slots (real, effective, saved)
+     * atomically. */
+    if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
+        perror("initgroups");
+        _exit(1);
+    }
+    if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
+        perror("setresgid");
+        _exit(1);
+    }
+    if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
+        perror("setresuid");
+        _exit(1);
+    }
+
+    /* Defence-in-depth: verify we cannot re-escalate to root. */
+    if (setresuid(0, 0, 0) == 0) {
+        fprintf(stderr, "CRITICAL: re-escalation to root succeeded after privilege drop\n");
+        _exit(1);
+    }
+
+    /* Set the working directory to the user's home. */
+    if (chdir(pw->pw_dir) < 0) {
+        perror("chdir"); /* not fatal, warn only */
+    }
+
+    fprintf(stderr, "Exec user session...\n");
+    /* TODO: use execvpe instead, which searches PATH */
+    /* TODO: exec the compositor in a login shell */
+    execle("/usr/bin/cage", "cage", "foot", NULL, env);
+    perror("execle"); /* Error path - a successful exec does not return */
+    _exit(1);
+
+oom:
+    fprintf(stderr, "child_exec: out of memory\n");
+    _exit(1);
+}
+
 int create_session(const char *username, const char *password, const char *seat,
                    const char *conf_path) {
     assert(username);
@@ -16,9 +101,36 @@ int create_session(const char *username, const char *password, const char *seat,
     assert(seat);
     assert(conf_path);
 
+    int vtnr = 0; /* SHORTCUT */
+
+    /* Build the PAM environment */
+    char **env = calloc(5, sizeof(*env));
+    if (!env) {
+        perror("calloc");
+        return 1;
+    }
+    int i = 0;
+    if (asprintf(&env[i++], "XDG_SEAT=%s", seat) < 0) {
+        fprintf(stderr, "create_session: out of memory\n");
+        free(env);
+        return 1;
+    }
+    if (asprintf(&env[i++], "XDG_VTNR=%d", vtnr) < 0) {
+        fprintf(stderr, "create_session: out of memory\n");
+        free(env[0]);
+        free(env);
+        return 1;
+    }
+    env[i++] = "XDG_SESSION_TYPE=wayland";
+    env[i++] = "XDG_SESSION_CLASS=user";
+    env[i] = NULL;
+
     /* PAM - SHORTCUT: should be done in a dedicated session-helper process */
     auth_result pam_result;
-    int r = auth_open_session(username, password, seat, conf_path, &pam_result);
+    int r = auth_open_session(username, password, (const char **)env, conf_path, &pam_result);
+    free(env[0]);
+    free(env[1]);
+    free(env);
     if (r != PAM_SUCCESS) {
         fprintf(stderr, "Failed to open PAM session: %d\n", r);
         return 1;
@@ -38,87 +150,7 @@ int create_session(const char *username, const char *password, const char *seat,
     if (pid == 0) {
         /* This is the child process -- drop privileges and exec the compositor. */
         fprintf(stderr, "Starting child process...\n");
-
-        /* Debug output */
-        if (pam_result.env) {
-            fprintf(stderr, "PAM environment variables:\n");
-            for (char **p = pam_result.env; *p; p++) {
-                fprintf(stderr, "  %s\n", *p);
-            }
-        }
-
-        /* Build the session environment. */
-        struct passwd *pw = getpwnam(username);
-        if (!pw) {
-            fprintf(stderr, "getpwnam failed for user '%s'\n", username);
-            _exit(1);
-        }
-
-        /* Count PAM env entries. */
-        int n_pam = 0;
-        for (char **p = pam_result.env; p && *p; p++)
-            n_pam++;
-
-        /* passwd fields + PATH + PAM env entries + NULL terminator */
-        char **env = calloc(5 + n_pam + 1, sizeof(*env));
-        if (!env) {
-            perror("calloc");
-            _exit(1);
-        }
-
-        int i = 0;
-        /* getenv() finds the first match, so passwd is authoritative */
-        if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
-            goto oom;
-        if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
-            goto oom;
-        if (asprintf(&env[i++], "HOME=%s", pw->pw_dir) < 0)
-            goto oom;
-        if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
-            goto oom;
-        env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
-        for (char **p = pam_result.env; p && *p; p++) {
-            env[i++] = *p;
-        }
-        env[i] = NULL;
-
-        /* Privilege drop: supplementary groups, then gid, then uid.
-         * setresgid/setresuid set all three ID slots (real, effective, saved)
-         * atomically. */
-        if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
-            perror("initgroups");
-            _exit(1);
-        }
-        if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
-            perror("setresgid");
-            _exit(1);
-        }
-        if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
-            perror("setresuid");
-            _exit(1);
-        }
-
-        /* Defence-in-depth: verify we cannot re-escalate to root. */
-        if (setresuid(0, 0, 0) == 0) {
-            fprintf(stderr, "CRITICAL: re-escalation to root succeeded after privilege drop\n");
-            _exit(1);
-        }
-
-        /* Set the working directory to the user's home. */
-        if (chdir(pw->pw_dir) < 0) {
-            perror("chdir"); /* not fatal, warn only */
-        }
-
-        fprintf(stderr, "Exec user session...\n");
-        /* TODO: use execvpe instead, which searches PATH */
-        /* TODO: exec the compositor in a login shell */
-        execle("/usr/bin/cage", "cage", "foot", NULL, env);
-        perror("execle"); /* Error path - a successful exec does not return */
-        _exit(1);
-
-    oom:
-        fprintf(stderr, "create_session: out of memory\n");
-        _exit(1);
+        child_exec(username, &pam_result);
     }
 
     /* This is the parent process -- user session lifetime management. */
