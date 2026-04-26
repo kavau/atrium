@@ -33,6 +33,7 @@ executable('atrium',
     'daemon/auth/auth.c',
     'daemon/core/main.c',
     'daemon/core/session.c',
+    'daemon/core/vt.c',
   ],
   dependencies: [
     libpam,

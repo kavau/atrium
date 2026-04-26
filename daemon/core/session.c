@@ -94,14 +94,12 @@ oom:
     _exit(1);
 }
 
-int create_session(const char *username, const char *password, const char *seat,
+int create_session(const char *username, const char *password, const char *seat, int vtnr,
                    const char *conf_path) {
     assert(username);
     assert(password);
     assert(seat);
     assert(conf_path);
-
-    int vtnr = 0; /* SHORTCUT */
 
     /* Build the PAM environment */
     char **env = calloc(5, sizeof(*env));
