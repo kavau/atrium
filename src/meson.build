@@ -13,6 +13,7 @@ executable('atrium',
   dependencies: [
     dep_libsystemd,
     dep_libpam,
+    dep_conf_parse,
   ],
   include_directories: inc_lib,
   install: true,

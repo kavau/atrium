@@ -29,8 +29,18 @@ if get_option('buildtype').startswith('debug')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
 
-# Shared include directory for lib/log.h etc.
+# Shared include directory for lib/log.h, lib/conf_parse.h etc.
 inc_lib = include_directories('lib')
+
+# Shared config-file parser used by both the daemon and the greeter.
+lib_conf_parse = static_library('conf_parse',
+  'lib/conf_parse.c',
+  include_directories: inc_lib,
+)
+dep_conf_parse = declare_dependency(
+  link_with: lib_conf_parse,
+  include_directories: inc_lib,
+)
 
 # Dependencies — declared here, consumed by subdirectories.
 dep_libsystemd = dependency('libsystemd')
@@ -63,6 +73,7 @@ executable('atrium-greeter',
   ],
   dependencies: [
     dep_gtk4,
+    dep_conf_parse,
   ],
   include_directories: [inc_lib, inc_src],
   c_args: ['-DLOG_PREFIX="atrium-greeter"'],
