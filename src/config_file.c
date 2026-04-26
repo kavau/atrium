@@ -1,10 +1,7 @@
 #include "config_file.h"
+#include "conf_parse.h"
 #include "log.h"
 
-#include <ctype.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #ifndef ATRIUM_GREETER_PATH
@@ -41,35 +38,6 @@ static struct {
     .passwordless_user_count = 0,
 };
 
-/* Parse a non-negative integer from val into *out.  Returns 1 on success,
- * 0 on failure (logs a warning).  max is inclusive. */
-static int parse_nonneg_int(const char *path, int lineno, const char *key,
-                            const char *val, long max, int *out)
-{
-    char *end;
-    long v = strtol(val, &end, 10);
-    if (*end != '\0' || v < 0 || v > max) {
-        log_warn("config: %s:%d: invalid %s '%s', using default",
-                 path, lineno, key, val);
-        return 0;
-    }
-    *out = (int)v;
-    return 1;
-}
-
-/* Copy val into dst (size dst_size), logging a warning if it had to be
- * truncated. */
-static void copy_str(const char *path, int lineno, const char *key,
-                     const char *val, char *dst, size_t dst_size)
-{
-    size_t vlen = strlen(val);
-    if (vlen >= dst_size) {
-        log_warn("config: %s:%d: %s value too long (%zu bytes, max %zu), truncating",
-                 path, lineno, key, vlen, dst_size - 1);
-    }
-    snprintf(dst, dst_size, "%s", val);
-}
-
 /* Append val to a fixed 2-D char array (list[max][item_size]), logging a
  * warning and doing nothing if the list is full, or truncating with a
  * warning if val is longer than item_size - 1. */
@@ -91,76 +59,43 @@ static void append_strlist(const char *path, int lineno, const char *key,
     (*count)++;
 }
 
-static void rtrim(char *s)
+static void handle_key(const char *path, int lineno,
+                       const char *key, const char *val,
+                       void *userdata)
 {
-    size_t n = strlen(s);
-    while (n > 0 && isspace((unsigned char)s[n - 1]))
-        s[--n] = '\0';
+    (void)userdata;
+
+    if (strcmp(key, "greeter") == 0) {
+        conf_copy_str(path, lineno, "config", key, val,
+                      g_cfg.greeter, sizeof(g_cfg.greeter));
+    } else if (strcmp(key, "compositor") == 0) {
+        conf_copy_str(path, lineno, "config", key, val,
+                      g_cfg.compositor, sizeof(g_cfg.compositor));
+    } else if (strcmp(key, "desktop") == 0) {
+        conf_copy_str(path, lineno, "config", key, val,
+                      g_cfg.desktop, sizeof(g_cfg.desktop));
+    } else if (strcmp(key, "restart-delay") == 0) {
+        conf_parse_nonneg_int(path, lineno, "config", key, val,
+                              3600, &g_cfg.restart_delay);
+    } else if (strcmp(key, "seat-enum-delay") == 0) {
+        conf_parse_nonneg_int(path, lineno, "config", key, val,
+                              60, &g_cfg.seat_enum_delay);
+    } else if (strcmp(key, "ignore-seat") == 0) {
+        append_strlist(path, lineno, key, val,
+                       g_cfg.ignore_seats[0], &g_cfg.ignore_seat_count,
+                       MAX_IGNORE_SEATS, MAX_SEAT_NAME_LENGTH);
+    } else if (strcmp(key, "passwordless-user") == 0) {
+        append_strlist(path, lineno, key, val,
+                       g_cfg.passwordless_users[0], &g_cfg.passwordless_user_count,
+                       MAX_PASSWORDLESS_USERS, MAX_USERNAME_LENGTH);
+    } else {
+        log_warn("config: %s:%d: unknown key '%s', ignoring", path, lineno, key);
+    }
 }
 
 void config_load(const char *path)
 {
-    FILE *f = fopen(path, "r");
-    if (!f) {
-        if (errno == ENOENT)
-            log_info("config: %s not found, using defaults", path);
-        else
-            log_warn("config: cannot open %s: %s", path, strerror(errno));
-        return;
-    }
-    log_info("config: loading %s", path);
-
-    char line[1024];
-    int  lineno = 0;
-    while (fgets(line, sizeof(line), f)) {
-        lineno++;
-        rtrim(line);
-
-        /* Skip leading whitespace, blank lines, and comments. */
-        char *p = line;
-        while (*p && isspace((unsigned char)*p))
-            p++;
-        if (*p == '\0' || *p == '#')
-            continue;
-
-        /* Split on the first '='. */
-        char *eq = strchr(p, '=');
-        if (!eq) {
-            log_warn("config: %s:%d: missing '=', skipping", path, lineno);
-            continue;
-        }
-        *eq = '\0';
-        char *key = p;
-        char *val = eq + 1;
-
-        rtrim(key);
-        while (*val && isspace((unsigned char)*val))
-            val++;
-
-        if (strcmp(key, "greeter") == 0) {
-            copy_str(path, lineno, key, val, g_cfg.greeter, sizeof(g_cfg.greeter));
-        } else if (strcmp(key, "compositor") == 0) {
-            copy_str(path, lineno, key, val, g_cfg.compositor, sizeof(g_cfg.compositor));
-        } else if (strcmp(key, "desktop") == 0) {
-            copy_str(path, lineno, key, val, g_cfg.desktop, sizeof(g_cfg.desktop));
-        } else if (strcmp(key, "restart-delay") == 0) {
-            parse_nonneg_int(path, lineno, key, val, 3600, &g_cfg.restart_delay);
-        } else if (strcmp(key, "seat-enum-delay") == 0) {
-            parse_nonneg_int(path, lineno, key, val, 60, &g_cfg.seat_enum_delay);
-        } else if (strcmp(key, "ignore-seat") == 0) {
-            append_strlist(path, lineno, key, val,
-                           g_cfg.ignore_seats[0], &g_cfg.ignore_seat_count,
-                           MAX_IGNORE_SEATS, MAX_SEAT_NAME_LENGTH);
-        } else if (strcmp(key, "passwordless-user") == 0) {
-            append_strlist(path, lineno, key, val,
-                           g_cfg.passwordless_users[0], &g_cfg.passwordless_user_count,
-                           MAX_PASSWORDLESS_USERS, MAX_USERNAME_LENGTH);
-        } else {
-            log_warn("config: %s:%d: unknown key '%s', ignoring", path, lineno, key);
-        }
-    }
-
-    fclose(f);
+    conf_parse(path, "config", handle_key, NULL);
 
     log_debug("config: greeter='%s'",        g_cfg.greeter);
     log_debug("config: compositor='%s'",     g_cfg.compositor);
@@ -173,9 +108,9 @@ void config_load(const char *path)
         log_debug("config: passwordless-user='%s'", g_cfg.passwordless_users[i]);
 }
 
-const char *config_greeter(void)       { return g_cfg.greeter; }
-const char *config_compositor(void)    { return g_cfg.compositor; }
-const char *config_desktop(void)       { return g_cfg.desktop; }
+const char *config_greeter(void)         { return g_cfg.greeter; }
+const char *config_compositor(void)      { return g_cfg.compositor; }
+const char *config_desktop(void)         { return g_cfg.desktop; }
 int         config_restart_delay(void)   { return g_cfg.restart_delay; }
 int         config_seat_enum_delay(void) { return g_cfg.seat_enum_delay; }
 

@@ -29,8 +29,18 @@ if get_option('buildtype').startswith('debug')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
 
-# Shared include directory for lib/log.h etc.
+# Shared include directory for lib/log.h, lib/conf_parse.h etc.
 inc_lib = include_directories('lib')
+
+# Shared config-file parser used by both the daemon and the greeter.
+lib_conf_parse = static_library('conf_parse',
+  'lib/conf_parse.c',
+  include_directories: inc_lib,
+)
+dep_conf_parse = declare_dependency(
+  link_with: lib_conf_parse,
+  include_directories: inc_lib,
+)
 
 # Dependencies — declared here, consumed by subdirectories.
 dep_libsystemd = dependency('libsystemd')
@@ -63,6 +73,7 @@ executable('atrium-greeter',
   ],
   dependencies: [
     dep_gtk4,
+    dep_conf_parse,
   ],
   include_directories: [inc_lib, inc_src],
   c_args: ['-DLOG_PREFIX="atrium-greeter"'],
@@ -118,6 +129,29 @@ pam_variant = get_option('pam_config')
 install_data('data/pam.d/atrium.' + pam_variant,
   install_dir: '/etc/pam.d',
   rename: 'atrium',
+)
+
+# ── Config file test tool ─────────────────────────────────────────────────────
+#
+# Loads /etc/atrium.conf and /etc/atrium-greeter.conf (or paths passed as
+# arguments) and prints every resolved value.  Exercises conf_parse,
+# config_file.c, and greeter_config.c with no daemon or session involvement.
+#
+#   ./build/atrium-config-test
+#   ./build/atrium-config-test /tmp/test.conf /tmp/test-greeter.conf
+#
+# Not installed; run directly from build/.
+
+executable('atrium-config-test',
+  sources: [
+    'tools/config-test.c',
+    'src/config_file.c',
+    'greeter/greeter_config.c',
+  ],
+  dependencies: [dep_conf_parse],
+  include_directories: [include_directories('src'), include_directories('greeter'), inc_lib],
+  c_args: ['-DLOG_PREFIX="config-test"'],
+  install: false,
 )
 
 # ── PAM auth test tool ────────────────────────────────────────────────────────
