@@ -93,37 +93,19 @@ your distro's PAM layout, or adapt one as needed.
 atrium runs as a systemd service (as root) and must be the only display manager
 active on the system.
 
-> **Install a tagged release, not `main`:** `main` is the active development
-> branch and may be broken at any time. For production use, download the
-> latest release from
+> **We recommend installing a tagged release, not `main`:** `main` is the
+> active development branch and may be broken at any time. For production use,
+> download the latest release from
 > [github.com/kavau/atrium/releases/latest](https://github.com/kavau/atrium/releases/latest).
+>
+> ⚠️ **The instructions below do not apply to the latest tagged release
+> (v0.2.0).** v0.2.0 uses compile-time configuration in `src/config.h`, not
+> the `/etc/atrium.conf` and `/etc/atrium-greeter.conf` runtime files
+> described here. If you are installing v0.2.0, follow the README on that
+> tag instead:
+> [github.com/kavau/atrium/blob/v0.2.0/README.md](https://github.com/kavau/atrium/blob/v0.2.0/README.md).
 
-### 1. Configure
-
-All settings are compile-time constants in `src/config.h`. Edit before building:
-
-| Setting | Default | Purpose |
-|---|---|---|
-| `CONFIG_COMPOSITOR` | `"sway"` | Compositor/session to launch after login |
-| `CONFIG_DESKTOP_NAME` | `"sway"` | Desktop identifier for logind `CreateSession` |
-| `CONFIG_GREETER_USER` | `"atriumdm"` | System account that runs the greeter process |
-| `CONFIG_SEAT_ENUM_DELAY` | `2` | Seconds to wait for logind seat discovery at boot |
-| `CONFIG_RESTART_DELAY` | `2` | Seconds before restarting a crashed compositor |
-
-The following two values should come from the target session's `.desktop` file in
-`/usr/share/wayland-sessions/`:
-
-- `CONFIG_COMPOSITOR` — the `Exec=` field (e.g. `cosmic-session`, `sway`, `gnome-session`)
-- `CONFIG_DESKTOP_NAME` — the `DesktopNames=` field (e.g. `COSMIC`, `sway`, `GNOME`)
-
-`CONFIG_DESKTOP_NAME` is case-sensitive: it becomes `XDG_CURRENT_DESKTOP` in the
-session environment, and desktop portals and shell components use it for exact-match
-lookups. Using the wrong case (e.g. `"cosmic"` instead of `"COSMIC"`) will break
-portal integration and other desktop-specific features.
-
-X11 sessions (`/usr/share/xsessions/`) are not supported.
-
-### 2. Build and install
+### 1. Build and install
 
 ```sh
 meson setup build -Dpam_config=arch   # or debian, fedora
@@ -139,9 +121,66 @@ This installs:
 - `/usr/local/libexec/atrium-greeter` — the GTK4 greeter
 - `/usr/lib/systemd/system/atrium.service` — the systemd unit
 - `/etc/pam.d/atrium` — the PAM configuration
+- `/etc/atrium.conf` — daemon configuration (see step 2)
+- `/etc/atrium-greeter.conf` — greeter UI configuration (see step 2)
 
 The install process also creates the `atriumdm` system user (if it doesn't already
 exist), which runs the greeter process as an unprivileged account.
+
+### 2. Configure
+
+atrium reads two runtime config files under `/etc`, both installed by the
+previous step:
+
+- **`/etc/atrium.conf`** — daemon settings: compositor, desktop identifier,
+  greeter command, restart/enumeration delays, ignored seats, passwordless
+  users.
+- **`/etc/atrium-greeter.conf`** — greeter UI settings: idle blanking timeout,
+  cursor theme and size, base font size.
+
+The two files are independent and either may be missing without breaking the
+other (missing keys fall back to compiled-in defaults).
+
+> ⚠️ **You must edit `/etc/atrium.conf` before starting atrium.** The default
+> `compositor` and `desktop` values are `sway`, which is likely not
+> what you want. atrium will crash-loop if the compositor command is not found.
+> In a future release, atrium will read these values automatically from
+> `.desktop` session files — for now they must be set manually.
+
+The correct values for both keys come from your session's `.desktop` file in
+`/usr/share/wayland-sessions/`. Open the file for your session and look up:
+
+- `Exec=` → use as the `compositor` value
+- `DesktopNames=` → use as the `desktop` value. `DesktopNames` can contain
+  multiple semicolon-separated names (e.g. `ubuntu;GNOME` or `sway;wlroots`);
+  pick the primary one — typically the base desktop name (e.g. `GNOME`, `sway`).
+
+For example, for COSMIC (`/usr/share/wayland-sessions/cosmic.desktop`):
+```ini
+[Desktop Entry]
+Exec=cosmic-session
+DesktopNames=COSMIC
+```
+→ set `compositor = cosmic-session` and `desktop = COSMIC` in `/etc/atrium.conf`.
+
+Note that some sessions require a complex launch command, for example:
+```ini
+[Desktop Entry]
+Exec=/usr/lib/plasma-dbus-run-session-if-needed /usr/bin/startplasma-wayland
+DesktopNames=KDE
+```
+→ set `compositor = /usr/lib/plasma-dbus-run-session-if-needed /usr/bin/startplasma-wayland`
+and `desktop = KDE` (check your distro's packaging for the correct path).
+
+`desktop` is case-sensitive: it becomes `XDG_CURRENT_DESKTOP` in the session
+environment, and desktop portals and shell components use it for exact-match
+lookups. Using the wrong case (e.g. `cosmic` instead of `COSMIC`) will break
+portal integration and other desktop-specific features.
+
+X11 sessions (`/usr/share/xsessions/`) are not supported.
+
+Each shipped config file is heavily commented — open them in an editor for
+the full set of available keys and their semantics.
 
 ### 3. Enable and start
 
@@ -226,17 +265,15 @@ is a monitor being connected to an existing seat. atrium enumerates seats once
 at startup and holds a static list for the lifetime of the process. Tracked in
 [#28](https://github.com/kavau/atrium/issues/28).
 
-### Compile-time configuration only
-
-All settings live in `src/config.h` and are baked in at build time. There is
-no runtime config file.
-
 ### No display-connected check
 
 atrium does not check whether a display is connected before spawning a greeter.
 Seats with a GPU but no monitor will crash-loop the cage compositor
-indefinitely. As a workaround, add the offending seat to `CONFIG_IGNORE_SEATS`
-in `src/session.h`.
+indefinitely. As a workaround, add the offending seat to `/etc/atrium.conf`:
+
+```
+ignore-seat = seat2
+```
 
 ### Greeter SIGKILL escalation not implemented
 
@@ -246,9 +283,10 @@ ignores `SIGTERM`. Tracked in [#3](https://github.com/kavau/atrium/issues/3).
 
 ### Compositor selection is global, not per-user
 
-`CONFIG_COMPOSITOR` selects a single compositor for every seat and every user.
-Per-user session selection (e.g. from a `.desktop` file) is not supported.
-Tracked in [#24](https://github.com/kavau/atrium/issues/24).
+The `compositor` setting in `/etc/atrium.conf` selects a single compositor for
+every seat and every user.  Per-user session selection (e.g. from a `.desktop`
+file) is not supported. Tracked in
+[#24](https://github.com/kavau/atrium/issues/24).
 
 ### PAM session opened in child process
 
@@ -260,9 +298,9 @@ warning or behave unexpectedly. Tracked in
 
 ### Passwordless users bypass PAM
 
-Users listed in `CONFIG_PASSWORDLESS_USERS` skip `pam_authenticate` entirely
-and proceed directly to session creation. There is no PAM account/session
-check for these users. Tracked in
+Users listed under `passwordless-user` in `/etc/atrium.conf` skip
+`pam_authenticate` entirely and proceed directly to session creation. There is
+no PAM account/session check for these users. Tracked in
 [#30](https://github.com/kavau/atrium/issues/30).
 
 ### Some daemon output may not appear in the journal
