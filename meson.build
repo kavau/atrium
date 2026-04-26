@@ -131,6 +131,29 @@ install_data('data/pam.d/atrium.' + pam_variant,
   rename: 'atrium',
 )
 
+# ── Config file test tool ─────────────────────────────────────────────────────
+#
+# Loads /etc/atrium.conf and /etc/atrium-greeter.conf (or paths passed as
+# arguments) and prints every resolved value.  Exercises conf_parse,
+# config_file.c, and greeter_config.c with no daemon or session involvement.
+#
+#   ./build/atrium-config-test
+#   ./build/atrium-config-test /tmp/test.conf /tmp/test-greeter.conf
+#
+# Not installed; run directly from build/.
+
+executable('atrium-config-test',
+  sources: [
+    'tools/config-test.c',
+    'src/config_file.c',
+    'greeter/greeter_config.c',
+  ],
+  dependencies: [dep_conf_parse],
+  include_directories: [include_directories('src'), include_directories('greeter'), inc_lib],
+  c_args: ['-DLOG_PREFIX="config-test"'],
+  install: false,
+)
+
 # ── PAM auth test tool ────────────────────────────────────────────────────────
 #
 # Validates src/auth.c against the real PAM stack with real credentials, in
