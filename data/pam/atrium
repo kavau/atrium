@@ -6,4 +6,5 @@
 auth     sufficient  pam_permit.so
 account  sufficient  pam_permit.so
 password required    pam_deny.so
-session  required    pam_systemd.so type=wayland class=user
+session  required    pam_env.so envfile=/etc/locale.conf
+session  required    pam_systemd.so

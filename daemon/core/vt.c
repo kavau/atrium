@@ -13,16 +13,45 @@ int vt_alloc(void) {
         return -1;
     }
 
-    int vtnr = ioctl(tty0, VT_OPENQRY);
-    if (vtnr < 0) {
+    int vtnr = -1;
+    if (ioctl(tty0, VT_OPENQRY, &vtnr) < 0) {
         perror("ioctl VT_OPENQRY");
         close(tty0);
         return -1;
     }
     close(tty0);
 
+    if (vtnr < 0) {
+        fprintf(stderr, "vt_alloc: no free VTs available\n");
+        return -1;
+    }
+
     fprintf(stderr, "Allocated VT%d\n", vtnr);
     return vtnr;
+}
+
+int vt_activate(int vtnr) {
+    int tty0 = open("/dev/tty0", O_RDWR | O_CLOEXEC | O_NOCTTY);
+    if (tty0 < 0) {
+        perror("open /dev/tty0");
+        return -1;
+    }
+
+    if (ioctl(tty0, VT_ACTIVATE, vtnr) < 0) {
+        perror("ioctl VT_ACTIVATE");
+        close(tty0);
+        return -1;
+    }
+
+    if (ioctl(tty0, VT_WAITACTIVE, vtnr) < 0) {
+        perror("ioctl VT_WAITACTIVE");
+        close(tty0);
+        return -1;
+    }
+
+    close(tty0);
+    fprintf(stderr, "Activated VT%d\n", vtnr);
+    return 0;
 }
 
 void vt_release(int vtnr) {

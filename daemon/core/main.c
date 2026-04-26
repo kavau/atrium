@@ -7,14 +7,14 @@
 #include "vt.h"
 
 int main(int argc, char *argv[]) {
-    if (argc < 2 || argc > 3) {
-        fprintf(stderr, "Usage: %s <username> [conf_path]\n", argv[0]);
+    if (argc < 3 || argc > 4) {
+        fprintf(stderr, "Usage: %s <username> <seat> [conf_path]\n", argv[0]);
         return 1;
     }
 
     const char *username = argv[1];
-    const char *conf_path = argc == 3 ? argv[2] : NULL;
-    const char *seat = "seat1";
+    const char *seat = argv[2];
+    const char *conf_path = argc == 4 ? argv[3] : NULL;
     const char *password = getpass("Password: ");
     if (!password) {
         fprintf(stderr, "getpass failed\n");

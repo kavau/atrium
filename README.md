@@ -26,3 +26,6 @@ To test atrium from within a user session:
 ```shell
 sudo systemd-run --scope build/atrium
 ```
+
+`systemd-run --scope` is needed in order to run atrium in a fresh scope, not in
+the scope of the existing session.

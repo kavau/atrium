@@ -8,6 +8,7 @@
 
 #include "daemon/auth/auth.h"
 #include "session.h"
+#include "vt.h"
 
 /* Configure the environment, drop privileges, and exec the user session. Called
 from the child side of the fork. This function never returns. */
@@ -85,7 +86,8 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     fprintf(stderr, "Exec user session...\n");
     /* TODO: use execvpe instead, which searches PATH */
     /* TODO: exec the compositor in a login shell */
-    execle("/usr/bin/cage", "cage", "foot", NULL, env);
+    execle("/usr/bin/cage", "cage", "-s", "-m", "last", "--", "foot", "-f", "monospace:size=18",
+           "-o", "colors-dark.background=000000", NULL, env);
     perror("execle"); /* Error path - a successful exec does not return */
     _exit(1);
 
@@ -120,7 +122,7 @@ int create_session(const char *username, const char *password, const char *seat,
         return 1;
     }
     env[i++] = "XDG_SESSION_TYPE=wayland";
-    env[i++] = "XDG_SESSION_CLASS=user";
+    env[i++] = "XDG_SESSION_CLASS=user"; /* TODO: must be "greeter" for a greeter session */
     env[i] = NULL;
 
     /* PAM - SHORTCUT: should be done in a dedicated session-helper process */
@@ -134,8 +136,11 @@ int create_session(const char *username, const char *password, const char *seat,
         return 1;
     }
 
-    /* SHORTCUT: Give logind some time to activate the session. */
-    sleep(2);
+    /* Activate the allocated VT (blocks until the VT is active) */
+    if (vtnr > 0 && vt_activate(vtnr) < 0) {
+        fprintf(stderr, "Failed to activate VT%d\n", vtnr);
+        return 1;
+    }
 
     /* Fork the child process for the user session. */
     pid_t pid = fork();
