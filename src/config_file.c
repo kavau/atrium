@@ -11,7 +11,7 @@
 #  define ATRIUM_GREETER_PATH "/usr/libexec/atrium-greeter"
 #endif
 
-#define DEFAULT_GREETER        "/usr/bin/cage -- " ATRIUM_GREETER_PATH
+#define DEFAULT_GREETER        "/usr/bin/cage -s -- " ATRIUM_GREETER_PATH
 #define DEFAULT_COMPOSITOR     "sway"
 #define DEFAULT_DESKTOP        "sway"
 #define DEFAULT_RESTART_DELAY    2
@@ -57,8 +57,22 @@ static int parse_nonneg_int(const char *path, int lineno, const char *key,
     return 1;
 }
 
+/* Copy val into dst (size dst_size), logging a warning if it had to be
+ * truncated. */
+static void copy_str(const char *path, int lineno, const char *key,
+                     const char *val, char *dst, size_t dst_size)
+{
+    size_t vlen = strlen(val);
+    if (vlen >= dst_size) {
+        log_warn("config: %s:%d: %s value too long (%zu bytes, max %zu), truncating",
+                 path, lineno, key, vlen, dst_size - 1);
+    }
+    snprintf(dst, dst_size, "%s", val);
+}
+
 /* Append val to a fixed 2-D char array (list[max][item_size]), logging a
- * warning and doing nothing if the list is full. */
+ * warning and doing nothing if the list is full, or truncating with a
+ * warning if val is longer than item_size - 1. */
 static void append_strlist(const char *path, int lineno, const char *key,
                            const char *val,
                            char *list, int *count, int max, size_t item_size)
@@ -67,6 +81,11 @@ static void append_strlist(const char *path, int lineno, const char *key,
         log_warn("config: %s:%d: too many %s entries, ignoring '%s'",
                  path, lineno, key, val);
         return;
+    }
+    size_t vlen = strlen(val);
+    if (vlen >= item_size) {
+        log_warn("config: %s:%d: %s value too long (%zu bytes, max %zu), truncating",
+                 path, lineno, key, vlen, item_size - 1);
     }
     snprintf(list + (size_t)(*count) * item_size, item_size, "%s", val);
     (*count)++;
@@ -119,11 +138,11 @@ void config_load(const char *path)
             val++;
 
         if (strcmp(key, "greeter") == 0) {
-            snprintf(g_cfg.greeter, sizeof(g_cfg.greeter), "%s", val);
+            copy_str(path, lineno, key, val, g_cfg.greeter, sizeof(g_cfg.greeter));
         } else if (strcmp(key, "compositor") == 0) {
-            snprintf(g_cfg.compositor, sizeof(g_cfg.compositor), "%s", val);
+            copy_str(path, lineno, key, val, g_cfg.compositor, sizeof(g_cfg.compositor));
         } else if (strcmp(key, "desktop") == 0) {
-            snprintf(g_cfg.desktop, sizeof(g_cfg.desktop), "%s", val);
+            copy_str(path, lineno, key, val, g_cfg.desktop, sizeof(g_cfg.desktop));
         } else if (strcmp(key, "restart-delay") == 0) {
             parse_nonneg_int(path, lineno, key, val, 3600, &g_cfg.restart_delay);
         } else if (strcmp(key, "seat-enum-delay") == 0) {

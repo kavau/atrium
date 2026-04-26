@@ -45,6 +45,19 @@ static int parse_nonneg_int(const char *path, int lineno, const char *key,
     return 1;
 }
 
+/* Copy val into dst (size dst_size), logging a warning if it had to be
+ * truncated. */
+static void copy_str(const char *path, int lineno, const char *key,
+                     const char *val, char *dst, size_t dst_size)
+{
+    size_t vlen = strlen(val);
+    if (vlen >= dst_size) {
+        log_warn("greeter config: %s:%d: %s value too long (%zu bytes, max %zu), truncating",
+                 path, lineno, key, vlen, dst_size - 1);
+    }
+    snprintf(dst, dst_size, "%s", val);
+}
+
 void greeter_config_load(const char *path)
 {
     FILE *f = fopen(path, "r");
@@ -85,7 +98,7 @@ void greeter_config_load(const char *path)
         if (strcmp(key, "blank-timeout") == 0) {
             parse_nonneg_int(path, lineno, key, val, 86400, &g_cfg.blank_timeout);
         } else if (strcmp(key, "cursor-theme") == 0) {
-            snprintf(g_cfg.cursor_theme, sizeof(g_cfg.cursor_theme), "%s", val);
+            copy_str(path, lineno, key, val, g_cfg.cursor_theme, sizeof(g_cfg.cursor_theme));
         } else if (strcmp(key, "cursor-size") == 0) {
             parse_nonneg_int(path, lineno, key, val, 512, &g_cfg.cursor_size);
         } else if (strcmp(key, "base-font-size") == 0) {

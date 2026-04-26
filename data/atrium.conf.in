@@ -15,7 +15,11 @@ restart-delay = 2
 
 # Greeter command.  Must honour the CREDENTIALS_FD and RESULT_FD environment
 # variables set by the daemon.  Executed via /bin/sh.
-greeter = /usr/bin/cage -- @greeter_bin@
+#
+# The '-s' flag tells cage to allow VT switching (Ctrl+Alt+F1/F2/...) from
+# the greeter, which is useful for reaching a recovery TTY before login.
+# Drop it for a kiosk-style lockdown that traps the user at the greeter.
+greeter = /usr/bin/cage -s -- @greeter_bin@
 
 # Seconds to wait after startup before enumerating seats.  Gives logind time
 # to finish processing udev seat events on early boot.  Increase if greeters
