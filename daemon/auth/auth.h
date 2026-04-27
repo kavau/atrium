@@ -6,8 +6,10 @@
 
 #include <security/pam_appl.h>
 
+/* Stores the results from PAM authentication and session setup.
+Contents are freed in auth_close_session() */
 typedef struct auth_result {
-    char **env; /* from pam_getenvlist(); freed by auth_close_session() */
+    char **env;
     pam_handle_t *pam_handle;
 } auth_result;
 

@@ -3,27 +3,24 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "seat.h"
 #include "session.h"
 #include "vt.h"
 
-int main(int argc, char *argv[]) {
-    if (argc < 3 || argc > 4) {
-        fprintf(stderr, "Usage: %s <username> <seat> [conf_path]\n", argv[0]);
-        return 1;
-    }
+#define SEAT0_USER "alice"
+#define SEAT0_PASSWORD "password123"
+#define SEAT1_USER "bob"
+#define SEAT1_PASSWORD "password456"
+#define CONF_PATH "data/pam"
 
-    const char *username = argv[1];
-    const char *seat = argv[2];
-    const char *conf_path = argc == 4 ? argv[3] : NULL;
-    const char *password = getpass("Password: ");
-    if (!password) {
-        fprintf(stderr, "getpass failed\n");
-        return 1;
-    }
+int main(int argc, char *argv[]) {
+    (void)argc;
+    (void)argv;
 
     /* Allocate a VT for seat0. */
+    const char *dummy_seat = "seat0"; /* SHORTCUT */
     int vtnr = 0;
-    if (strcmp(seat, "seat0") == 0) {
+    if (strcmp(dummy_seat, "seat0") == 0) {
         vtnr = vt_alloc();
         if (vtnr < 0) {
             fprintf(stderr, "Failed to allocate VT: %d\n", vtnr);
@@ -33,7 +30,52 @@ int main(int argc, char *argv[]) {
         session don't leak into the TTY's input buffer. */
     }
 
-    int r = create_session(username, password, seat, vtnr, conf_path);
+    /* SHORTCUT: create user sessions for seat0 and seat1 with hardcoded
+    parameters, then periodically scan whether the sessions are still running,
+    and tear them down if not. */
+
+    /* Note that this does not work in its current form - PAM must be called in
+    a child process since it pollutes the environment with session-specific
+    variables. We must fork a session helper for each seat, and call
+    session_start() from the helper. It is also the helper's responsibility to
+    call session_stop() after the compositor exits.*/
+
+    fprintf(stderr, "Starting session for %s on seat0...\n", SEAT0_USER);
+    seat seat0 = {
+        .name = "seat0",
+        .vtnr = vtnr,
+    };
+    int r = session_start(SEAT0_USER, SEAT0_PASSWORD, CONF_PATH, &seat0);
+    if (r != 0) {
+        fprintf(stderr, "Failed to create session for %s on %s: %d\n", SEAT0_USER, seat0.name, r);
+        if (vtnr > 0) {
+            vt_release(vtnr);
+        }
+        return EXIT_FAILURE;
+    }
+
+    sleep(5); /* SHORTCUT: wait a bit before starting the next session */
+
+    fprintf(stderr, "Starting session for %s on seat1...\n", SEAT1_USER);
+    seat seat1 = {
+        .name = "seat1",
+        .vtnr = 0,
+    };
+    r = session_start(SEAT1_USER, SEAT1_PASSWORD, CONF_PATH, &seat1);
+    if (r != 0) {
+        fprintf(stderr, "Failed to create session for %s on %s: %d\n", SEAT1_USER, seat1.name, r);
+        session_stop(&seat0);
+        if (vtnr > 0) {
+            vt_release(vtnr);
+        }
+        return EXIT_FAILURE;
+    }
+
+    sleep(300); /* SHORTCUT: keep the sessions alive for 5 minutes for testing */
+
+    session_stop(&seat0);
+    session_stop(&seat1);
+
     if (vtnr > 0) {
         vt_release(vtnr);
     }

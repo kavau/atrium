@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "daemon/core/seat.h"
 #include "daemon/core/session.h"
 #include "daemon/core/vt.h"
 
@@ -21,8 +22,10 @@ int main(int argc, char *argv[]) {
     }
 
     const char *username = argv[1];
-    const char *seat = argv[2];
+    seat s = {.vtnr = 0};
+    snprintf(s.name, sizeof(s.name), "%s", argv[2]);
     const char *conf_path = argc == 4 ? argv[3] : NULL;
+
     const char *password = getpass("Password: ");
     if (!password) {
         fprintf(stderr, "getpass failed\n");
@@ -30,20 +33,33 @@ int main(int argc, char *argv[]) {
     }
 
     /* Allocate a VT for seat0. */
-    int vtnr = 0;
-    if (strcmp(seat, "seat0") == 0) {
-        vtnr = vt_alloc();
-        if (vtnr < 0) {
-            fprintf(stderr, "Failed to allocate VT: %d\n", vtnr);
+    if (strcmp(s.name, "seat0") == 0) {
+        s.vtnr = vt_alloc();
+        if (s.vtnr < 0) {
+            fprintf(stderr, "Failed to allocate VT: %d\n", s.vtnr);
             return EXIT_FAILURE;
         }
         /* TODO: suppress VT keyboard so keystrokes typed into the Wayland
         session don't leak into the TTY's input buffer. */
     }
 
-    int r = create_session(username, password, seat, vtnr, conf_path);
-    if (vtnr > 0) {
-        vt_release(vtnr);
+    int r = session_start(username, password, conf_path, &s);
+    if (r != 0) {
+        fprintf(stderr, "Failed to start session: %d\n", r);
+        if (s.vtnr > 0) {
+            vt_release(s.vtnr);
+        }
+        return EXIT_FAILURE;
+    }
+
+    /* SHORTCUT: Wait for input so we can inspect the session. Instead we should
+    monitor the child PID and call session_stop() when it exits. */
+    printf("Press Enter to close the session...\n");
+    getchar();
+
+    session_stop(&s);
+    if (s.vtnr > 0) {
+        vt_release(s.vtnr);
     }
     return r;
 }

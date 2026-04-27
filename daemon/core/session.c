@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "daemon/auth/auth.h"
+#include "seat.h"
 #include "session.h"
 #include "vt.h"
 
@@ -96,12 +97,10 @@ oom:
     _exit(1);
 }
 
-int create_session(const char *username, const char *password, const char *seat, int vtnr,
-                   const char *conf_path) {
+int session_start(const char *username, const char *password, const char *conf_path, seat *s) {
     assert(username);
     assert(password);
-    assert(seat);
-    assert(conf_path);
+    assert(s);
 
     /* Build the PAM environment */
     char **env = calloc(5, sizeof(*env));
@@ -110,13 +109,13 @@ int create_session(const char *username, const char *password, const char *seat,
         return 1;
     }
     int i = 0;
-    if (asprintf(&env[i++], "XDG_SEAT=%s", seat) < 0) {
-        fprintf(stderr, "create_session: out of memory\n");
+    if (asprintf(&env[i++], "XDG_SEAT=%s", s->name) < 0) {
+        fprintf(stderr, "session_start: out of memory\n");
         free(env);
         return 1;
     }
-    if (asprintf(&env[i++], "XDG_VTNR=%d", vtnr) < 0) {
-        fprintf(stderr, "create_session: out of memory\n");
+    if (asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
+        fprintf(stderr, "session_start: out of memory\n");
         free(env[0]);
         free(env);
         return 1;
@@ -125,9 +124,8 @@ int create_session(const char *username, const char *password, const char *seat,
     env[i++] = "XDG_SESSION_CLASS=user"; /* TODO: must be "greeter" for a greeter session */
     env[i] = NULL;
 
-    /* PAM - SHORTCUT: should be done in a dedicated session-helper process */
-    auth_result pam_result;
-    int r = auth_open_session(username, password, (const char **)env, conf_path, &pam_result);
+    /* Authenticate with PAM - also establishes the logind session */
+    int r = auth_open_session(username, password, (const char **)env, conf_path, &s->pam_result);
     free(env[0]);
     free(env[1]);
     free(env);
@@ -137,8 +135,9 @@ int create_session(const char *username, const char *password, const char *seat,
     }
 
     /* Activate the allocated VT (blocks until the VT is active) */
-    if (vtnr > 0 && vt_activate(vtnr) < 0) {
-        fprintf(stderr, "Failed to activate VT%d\n", vtnr);
+    if (s->vtnr > 0 && vt_activate(s->vtnr) < 0) {
+        fprintf(stderr, "Failed to activate VT%d\n", s->vtnr);
+        auth_close_session(&s->pam_result);
         return 1;
     }
 
@@ -146,21 +145,21 @@ int create_session(const char *username, const char *password, const char *seat,
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork");
-        auth_close_session(&pam_result);
+        auth_close_session(&s->pam_result);
         return 1;
     }
 
     if (pid == 0) {
         /* This is the child process -- drop privileges and exec the compositor. */
         fprintf(stderr, "Starting child process...\n");
-        child_exec(username, &pam_result);
+        child_exec(username, &s->pam_result);
     }
 
-    /* This is the parent process -- user session lifetime management. */
-    /* SHORTCUT: Wait for the child process to exit. We should monitor SIGCHLD instead. */
-    waitpid(pid, NULL, 0);
-    fprintf(stderr, "Child process exited, closing PAM handle to end session...\n");
-    auth_close_session(&pam_result);
-
+    /* This is the parent process -- nothing more to do. */
     return 0;
+}
+
+void session_stop(seat *s) {
+    auth_close_session(&s->pam_result);
+    fprintf(stderr, "Stopped session on %s\n", s->name);
 }
