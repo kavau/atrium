@@ -41,8 +41,19 @@ executable('atrium',
 
 executable('atrium-auth-test',
   sources: [
-    'tools/auth-test.c',
     'daemon/auth/auth.c',
+    'tools/auth-test.c',
+  ],
+  dependencies: [
+    libpam,
+  ])
+
+executable('atrium-start-session',
+  sources: [
+    'daemon/auth/auth.c',
+    'daemon/core/session.c',
+    'daemon/core/vt.c',
+    'tools/start-session.c',
   ],
   dependencies: [
     libpam,
