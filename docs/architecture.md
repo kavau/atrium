@@ -53,3 +53,11 @@ After the logind session is confirmed to be active, we fork a child process that
 Virtual Terminals exist only on `seat0`, the concept does not exist for other seats. Before starting a session on `seat0` we must allocate a Virtual Terminal (VT) via the `VT_OPENQRY` ioctl. atrium allocates the VT when seat0 is first discovered and holds it for the lifetime of the seat. This guarantees that the VT number is stable.
 
 The VT keyboard must be suppressed, so keystrokes from the graphical session don't leak into the TTY's input buffer.
+
+### Session Runner (`daemon/core/session.c`)
+
+As mentioned in *Session Creation*, the PAM authentication flow must not be executed in the daemon process. PAM sets process-specific environment variables that must not pollute the daemon's environment. Furthermore, the process calling `CreateSession` will become the session leader. This should be a session-specific process, not the daemon.
+
+Hence, before creating a new session, we fork a *session runner* process from the daemon, which will become the session leader and manage the session lifecycle.
+
+Once the session compositor exits, the helper tears down the login session and exits as well. This signals the daemon that the session has completed.

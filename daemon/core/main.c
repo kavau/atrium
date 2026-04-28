@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    /* Allocate a VT for seat0. */
+    /* Allocate a VT for seat0. SHORTCUT: needs to be done after seat0 is discovered. */
     const char *dummy_seat = "seat0"; /* SHORTCUT */
     int vtnr = 0;
     if (strcmp(dummy_seat, "seat0") == 0) {
@@ -48,10 +48,7 @@ int main(int argc, char *argv[]) {
     int r = session_start(SEAT0_USER, SEAT0_PASSWORD, CONF_PATH, &seat0);
     if (r != 0) {
         fprintf(stderr, "Failed to create session for %s on %s: %d\n", SEAT0_USER, seat0.name, r);
-        if (vtnr > 0) {
-            vt_release(vtnr);
-        }
-        return EXIT_FAILURE;
+        goto err;
     }
 
     sleep(5); /* SHORTCUT: wait a bit before starting the next session */
@@ -64,18 +61,12 @@ int main(int argc, char *argv[]) {
     r = session_start(SEAT1_USER, SEAT1_PASSWORD, CONF_PATH, &seat1);
     if (r != 0) {
         fprintf(stderr, "Failed to create session for %s on %s: %d\n", SEAT1_USER, seat1.name, r);
-        session_stop(&seat0);
-        if (vtnr > 0) {
-            vt_release(vtnr);
-        }
-        return EXIT_FAILURE;
+        goto err;
     }
 
-    sleep(300); /* SHORTCUT: keep the sessions alive for 5 minutes for testing */
+    sleep(360); /* SHORTCUT: keep the sessions alive for 6 minutes for testing */
 
-    session_stop(&seat0);
-    session_stop(&seat1);
-
+err:
     if (vtnr > 0) {
         vt_release(vtnr);
     }

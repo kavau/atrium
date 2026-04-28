@@ -54,10 +54,9 @@ int main(int argc, char *argv[]) {
 
     /* SHORTCUT: Wait for input so we can inspect the session. Instead we should
     monitor the child PID and call session_stop() when it exits. */
-    printf("Press Enter to close the session...\n");
+    printf("Press Enter to exit the program...\n");
     getchar();
 
-    session_stop(&s);
     if (s.vtnr > 0) {
         vt_release(s.vtnr);
     }

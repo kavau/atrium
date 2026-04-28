@@ -97,28 +97,25 @@ oom:
     _exit(1);
 }
 
-int session_start(const char *username, const char *password, const char *conf_path, seat *s) {
-    assert(username);
-    assert(password);
-    assert(s);
-
+/* Create the logind session and launch the compositor child process. This
+function is itself executed as a child process of the daemon - the session
+runner. It exits when the session has completed. */
+static _Noreturn void session_runner(const char *username, const char *password,
+                                     const char *conf_path, seat *s) {
     /* Build the PAM environment */
     char **env = calloc(5, sizeof(*env));
     if (!env) {
         perror("calloc");
-        return 1;
+        _exit(1);
     }
     int i = 0;
     if (asprintf(&env[i++], "XDG_SEAT=%s", s->name) < 0) {
-        fprintf(stderr, "session_start: out of memory\n");
-        free(env);
-        return 1;
+        fprintf(stderr, "session_runner: out of memory\n");
+        _exit(1);
     }
     if (asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
-        fprintf(stderr, "session_start: out of memory\n");
-        free(env[0]);
-        free(env);
-        return 1;
+        fprintf(stderr, "session_runner: out of memory\n");
+        _exit(1);
     }
     env[i++] = "XDG_SESSION_TYPE=wayland";
     env[i++] = "XDG_SESSION_CLASS=user"; /* TODO: must be "greeter" for a greeter session */
@@ -131,14 +128,14 @@ int session_start(const char *username, const char *password, const char *conf_p
     free(env);
     if (r != PAM_SUCCESS) {
         fprintf(stderr, "Failed to open PAM session: %d\n", r);
-        return 1;
+        _exit(1);
     }
 
-    /* Activate the allocated VT (blocks until the VT is active) */
+    /* Activate the allocated VT (seat0 only; blocks until the VT is active) */
     if (s->vtnr > 0 && vt_activate(s->vtnr) < 0) {
         fprintf(stderr, "Failed to activate VT%d\n", s->vtnr);
         auth_close_session(&s->pam_result);
-        return 1;
+        _exit(1);
     }
 
     /* Fork the child process for the user session. */
@@ -146,7 +143,7 @@ int session_start(const char *username, const char *password, const char *conf_p
     if (pid < 0) {
         perror("fork");
         auth_close_session(&s->pam_result);
-        return 1;
+        _exit(1);
     }
 
     if (pid == 0) {
@@ -155,11 +152,35 @@ int session_start(const char *username, const char *password, const char *conf_p
         child_exec(username, &s->pam_result);
     }
 
-    /* This is the parent process -- nothing more to do. */
-    return 0;
+    /* This is the parent process -- wait for the compositor to exit, then call
+    auth_close_session() and exit. */
+    fprintf(stderr, "Started session child with PID %d for user '%s' on seat '%s'\n", pid, username,
+            s->name);
+    sleep(300); /* SHORTCUT: session lifecycle management is not yet implemented. */
+    auth_close_session(&s->pam_result);
+    _exit(0);
 }
 
-void session_stop(seat *s) {
-    auth_close_session(&s->pam_result);
-    fprintf(stderr, "Stopped session on %s\n", s->name);
+int session_start(const char *username, const char *password, const char *conf_path, seat *s) {
+    assert(username);
+    assert(password);
+    assert(s);
+
+    /* Fork the session runner */
+    pid_t runner_pid = fork();
+    if (runner_pid < 0) {
+        perror("fork");
+        return 1;
+    }
+
+    if (runner_pid == 0) {
+        /* This is the child process -- run the session setup and exec. */
+        fprintf(stderr, "Starting session runner...\n");
+        session_runner(username, password, conf_path, s);
+    }
+
+    /* This is the parent process -- return to the main loop. */
+    fprintf(stderr, "Started session runner with PID %d for user '%s' on seat '%s'\n", runner_pid,
+            username, s->name);
+    return 0;
 }
