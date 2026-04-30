@@ -1,7 +1,7 @@
 # Next steps
 
-- Fork a session runner
 - Session lifetime management: monitor SIGCHLD and restart session/greeter
+- Refactor: move session runner and auth into a "session" subdir
 - Greeter
 - Seat discovery
 - Hotplug monitoring

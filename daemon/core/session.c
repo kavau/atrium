@@ -26,7 +26,7 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     struct passwd *pw = getpwnam(username);
     if (!pw) {
         fprintf(stderr, "getpwnam failed for user '%s'\n", username);
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
 
     /* Count PAM env entries. */
@@ -38,7 +38,7 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     char **env = calloc(5 + n_pam + 1, sizeof(*env));
     if (!env) {
         perror("calloc");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
 
     int i = 0;
@@ -62,21 +62,21 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
      * atomically. */
     if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
         perror("initgroups");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
     if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
         perror("setresgid");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
     if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
         perror("setresuid");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
 
     /* Defence-in-depth: verify we cannot re-escalate to root. */
     if (setresuid(0, 0, 0) == 0) {
         fprintf(stderr, "CRITICAL: re-escalation to root succeeded after privilege drop\n");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
 
     /* Set the working directory to the user's home. */
@@ -90,11 +90,11 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     execle("/usr/bin/cage", "cage", "-s", "-m", "last", "--", "foot", "-f", "monospace:size=18",
            "-o", "colors-dark.background=000000", NULL, env);
     perror("execle"); /* Error path - a successful exec does not return */
-    _exit(1);
+    _exit(EXIT_FAILURE);
 
 oom:
     fprintf(stderr, "child_exec: out of memory\n");
-    _exit(1);
+    _exit(EXIT_FAILURE);
 }
 
 /* Create the logind session and launch the compositor child process. This
@@ -106,16 +106,16 @@ static _Noreturn void session_runner(const char *username, const char *password,
     char **env = calloc(5, sizeof(*env));
     if (!env) {
         perror("calloc");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
     int i = 0;
     if (asprintf(&env[i++], "XDG_SEAT=%s", s->name) < 0) {
         fprintf(stderr, "session_runner: out of memory\n");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
     if (asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
         fprintf(stderr, "session_runner: out of memory\n");
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
     env[i++] = "XDG_SESSION_TYPE=wayland";
     env[i++] = "XDG_SESSION_CLASS=user"; /* TODO: must be "greeter" for a greeter session */
@@ -128,14 +128,14 @@ static _Noreturn void session_runner(const char *username, const char *password,
     free(env);
     if (r != PAM_SUCCESS) {
         fprintf(stderr, "Failed to open PAM session: %d\n", r);
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
 
     /* Activate the allocated VT (seat0 only; blocks until the VT is active) */
     if (s->vtnr > 0 && vt_activate(s->vtnr) < 0) {
         fprintf(stderr, "Failed to activate VT%d\n", s->vtnr);
         auth_close_session(&s->pam_result);
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
 
     /* Fork the child process for the user session. */
@@ -143,7 +143,7 @@ static _Noreturn void session_runner(const char *username, const char *password,
     if (pid < 0) {
         perror("fork");
         auth_close_session(&s->pam_result);
-        _exit(1);
+        _exit(EXIT_FAILURE);
     }
 
     if (pid == 0) {
@@ -158,7 +158,7 @@ static _Noreturn void session_runner(const char *username, const char *password,
             s->name);
     sleep(300); /* SHORTCUT: session lifecycle management is not yet implemented. */
     auth_close_session(&s->pam_result);
-    _exit(0);
+    _exit(EXIT_SUCCESS);
 }
 
 int session_start(const char *username, const char *password, const char *conf_path, seat *s) {

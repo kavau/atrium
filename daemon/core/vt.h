@@ -10,6 +10,6 @@ int vt_alloc(void);
 /* Release a VT previously allocated by vt_alloc(). */
 void vt_release(int vtnr);
 
-/* Activate the given VT. Returns 0 on success, or -1 on error.
-Blocks until the VT is active. */
+/* Activate the given VT. Blocks until the VT is active.
+Returns 0 on success, or -1 on error. */
 int vt_activate(int vtnr);
