@@ -30,10 +30,11 @@ libpam = cc.find_library('pam')
 
 executable('atrium',
   sources: [
-    'daemon/auth/auth.c',
     'daemon/core/main.c',
     'daemon/core/session.c',
     'daemon/core/vt.c',
+    'daemon/session/auth.c',
+    'daemon/session/session_runner.c',
   ],
   dependencies: [
     libpam,
@@ -41,7 +42,7 @@ executable('atrium',
 
 executable('atrium-auth-test',
   sources: [
-    'daemon/auth/auth.c',
+    'daemon/session/auth.c',
     'tools/auth-test.c',
   ],
   dependencies: [
@@ -50,9 +51,10 @@ executable('atrium-auth-test',
 
 executable('atrium-start-session',
   sources: [
-    'daemon/auth/auth.c',
-    'daemon/core/session.c',
     'daemon/core/vt.c',
+    'daemon/core/session.c',
+    'daemon/session/auth.c',
+    'daemon/session/session_runner.c',
     'tools/start-session.c',
   ],
   dependencies: [

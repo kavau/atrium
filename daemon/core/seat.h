@@ -4,7 +4,8 @@
  * seat.h - seat management
  */
 
-#include "daemon/auth/auth.h"
+/* TODO: avoid reaching into session module by storing the pam_handle directly. */
+#include "daemon/session/auth.h"
 
 #define MAX_LEN_SEAT 64
 

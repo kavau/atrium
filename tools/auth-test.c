@@ -13,11 +13,12 @@
  * conf_path is the PAM configuration directory (default: /etc/pam.d).
  */
 
+#include <security/pam_appl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "daemon/auth/auth.h"
+#include "daemon/session/auth.h"
 
 int main(int argc, char *argv[]) {
     if (argc < 2 || argc > 3) {
