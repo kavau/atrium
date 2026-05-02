@@ -20,6 +20,10 @@ add_project_arguments(
   language: 'c',
 )
 
+if get_option('debug_logging')
+  add_project_arguments('-DATRIUM_DEBUG', language: 'c')
+endif
+
 # Dependencies
 
 # libpam = dependency('libpam')

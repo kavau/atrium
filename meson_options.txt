@@ -1,0 +1,2 @@
+# meson_options.txt
+option('debug_logging', type: 'boolean', value: true, description: 'Enable debug logging')
