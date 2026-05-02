@@ -3,6 +3,8 @@
 #include <security/pam_appl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "auth.h"
@@ -151,10 +153,21 @@ _Noreturn void session_runner(const char *username, const char *password, const 
 
     /* This is the parent process -- wait for the compositor to exit, then call
     auth_close_session() and exit. */
-    fprintf(stderr, "Started session child with PID %d for user '%s' on seat '%s'\n", pid, username,
-            s->name);
+    fprintf(stderr, "Started session child with PID %d on seat '%s'\n", pid, s->name);
 
-    sleep(300); /* SHORTCUT: session lifecycle management is not yet implemented. */
+    int status = 0;
+    waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status)) {
+        fprintf(stderr, "Compositor exited with exit status %d on seat '%s'\n", WEXITSTATUS(status),
+                s->name);
+    } else if (WIFSIGNALED(status)) {
+        fprintf(stderr, "Compositor terminated with signal %d (%s) on seat '%s'\n",
+                WTERMSIG(status), strsignal(WTERMSIG(status)), s->name);
+    } else {
+        fprintf(stderr, "Compositor exited with unexpected status %d on seat '%s'\n", status,
+                s->name);
+    }
 
     auth_close_session(&pam_result);
     _exit(EXIT_SUCCESS);
