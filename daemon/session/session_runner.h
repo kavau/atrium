@@ -10,4 +10,4 @@
 function is itself executed as a child process of the daemon - the session
 runner. It exits when the session has completed. */
 _Noreturn void session_runner(const char *username, const char *password, const char *conf_path,
-                              seat *s);
+                              const seat *s);

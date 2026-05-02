@@ -97,7 +97,7 @@ oom:
 }
 
 _Noreturn void session_runner(const char *username, const char *password, const char *conf_path,
-                              seat *s) {
+                              const seat *s) {
     /* Build the PAM environment */
     char **env = calloc(5, sizeof(*env));
     if (!env) {
@@ -118,7 +118,8 @@ _Noreturn void session_runner(const char *username, const char *password, const 
     env[i] = NULL;
 
     /* Authenticate with PAM - also establishes the logind session */
-    int r = auth_open_session(username, password, (const char **)env, conf_path, &s->pam_result);
+    auth_result pam_result;
+    int r = auth_open_session(username, password, (const char **)env, conf_path, &pam_result);
     free(env[0]);
     free(env[1]);
     free(env);
@@ -130,7 +131,7 @@ _Noreturn void session_runner(const char *username, const char *password, const 
     /* Activate the allocated VT (seat0 only; blocks until the VT is active) */
     if (s->vtnr > 0 && vt_activate(s->vtnr) < 0) {
         fprintf(stderr, "Failed to activate VT%d\n", s->vtnr);
-        auth_close_session(&s->pam_result);
+        auth_close_session(&pam_result);
         _exit(EXIT_FAILURE);
     }
 
@@ -138,21 +139,23 @@ _Noreturn void session_runner(const char *username, const char *password, const 
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork");
-        auth_close_session(&s->pam_result);
+        auth_close_session(&pam_result);
         _exit(EXIT_FAILURE);
     }
 
     if (pid == 0) {
         /* This is the child process -- drop privileges and exec the compositor. */
         fprintf(stderr, "Starting child process...\n");
-        child_exec(username, &s->pam_result);
+        child_exec(username, &pam_result);
     }
 
     /* This is the parent process -- wait for the compositor to exit, then call
     auth_close_session() and exit. */
     fprintf(stderr, "Started session child with PID %d for user '%s' on seat '%s'\n", pid, username,
             s->name);
+
     sleep(300); /* SHORTCUT: session lifecycle management is not yet implemented. */
-    auth_close_session(&s->pam_result);
+
+    auth_close_session(&pam_result);
     _exit(EXIT_SUCCESS);
 }
