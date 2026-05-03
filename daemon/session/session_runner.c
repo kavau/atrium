@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <grp.h>
 #include <pwd.h>
 #include <security/pam_appl.h>
@@ -103,7 +104,8 @@ oom:
 _Noreturn void session_runner(const char *username, const char *password, const char *pam_conf_path,
                               const seat *s) {
     /* Build the PAM environment */
-    char **env = calloc(5, sizeof(*env));
+    int n_env = 4 + (s->vtnr > 0 ? 1 : 0);
+    char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("session_runner: calloc");
         _exit(EXIT_FAILURE);
@@ -113,20 +115,26 @@ _Noreturn void session_runner(const char *username, const char *password, const 
         log_error("session_runner: out of memory");
         _exit(EXIT_FAILURE);
     }
-    if (asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
-        log_error("session_runner: out of memory");
-        _exit(EXIT_FAILURE);
+    if (s->vtnr > 0) {
+        if (asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
+            log_error("session_runner: out of memory");
+            _exit(EXIT_FAILURE);
+        }
     }
     env[i++] = "XDG_SESSION_TYPE=wayland";
     env[i++] = "XDG_SESSION_CLASS=user"; /* TODO: must be "greeter" for a greeter session */
-    env[i] = NULL;
+    env[i++] = NULL;
+    assert(i == n_env);
 
     /* Authenticate with PAM - also establishes the logind session */
     auth_result pam_result;
     int r = auth_open_session(username, password, (const char **)env, pam_conf_path, &pam_result);
-    free(env[0]);
-    free(env[1]);
+
+    free(env[0]); /* XDG_SEAT */
+    if (s->vtnr > 0)
+        free(env[1]); /* XDG_VTNR */
     free(env);
+
     if (r != PAM_SUCCESS) {
         log_error("failed to open PAM session: %d", r);
         _exit(EXIT_FAILURE);
