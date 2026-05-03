@@ -12,6 +12,9 @@
 
 /* SHORTCUT: the following parameters should be read from a runtime config file. */
 
+/* Number of seconds to wait at startup before seat discovery. */
+#define SEAT_DISCOVERY_DELAY 2
+
 /* Compositor to launch on each seat. */
 #define COMPOSITOR \
     "/usr/bin/cage -s -m last -- foot -f monospace:size=18 -o colors-dark.background=000000"

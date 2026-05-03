@@ -26,6 +26,7 @@ int session_start(const char *username, const char *password, const char *pam_co
     }
 
     /* This is the parent process -- return to the main loop. */
-    log_debug("started session runner with PID %d on seat '%s'", runner_pid, s->name);
+    s->runner_pid = runner_pid;
+    log_debug("started session runner with PID %d on seat '%s'", s->runner_pid, s->name);
     return 0;
 }

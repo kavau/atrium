@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "lib/defs.h"
@@ -21,6 +22,9 @@ int main(int argc, char *argv[]) {
     (void)argv;
     log_info("starting");
     log_debug("debug logging enabled");
+
+    /* SHORTCUT: allow hardware initialization to complete before seat discovery */
+    sleep(SEAT_DISCOVERY_DELAY);
 
     /* Allocate a VT for seat0. SHORTCUT: needs to be done after seat0 is discovered. */
     int vtnr = vt_alloc();
@@ -53,7 +57,31 @@ int main(int argc, char *argv[]) {
         sleep(2); /* SHORTCUT: wait a bit before starting the next session */
     }
 
-    sleep(360); /* SHORTCUT: keep the sessions alive for 6 minutes for testing */
+    /* Simple event loop  */
+    while (1) {
+        int wstatus;
+        pid_t pid = waitpid(-1, &wstatus, 0);
+        if (pid < 0) {
+            if (errno == EINTR)
+                continue;
+            log_syserr("waitpid");
+            break; /* no children remain */
+        }
+
+        i = 0; /* SHORTCUT: using hardcoded session parameters */
+        for (seat *s = seat_first(); s; s = seat_next(s), ++i) {
+            if (pid == s->runner_pid) {
+                log_info("seat '%s' terminated, restarting session", s->name);
+                sleep(1); /* SHORTCUT: avoid tight crash-loop */
+                int r = session_start(configs[i].username, configs[i].password, PAM_CONF_PATH, s);
+                if (r != 0) {
+                    log_error("failed to create session for %s on %s: %d", configs[i].username,
+                              s->name, r);
+                    /* TODO: try again after a delay */
+                }
+            }
+        }
+    }
 
     /* Cleanup */
     if (vtnr > 0) {

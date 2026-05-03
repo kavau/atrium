@@ -165,17 +165,24 @@ _Noreturn void session_runner(const char *username, const char *password, const 
     auth_close_session() and exit. */
     log_info("started session child with PID %d on seat '%s'", pid, s->name);
 
-    int status = 0;
-    waitpid(pid, &status, 0);
+    int wstatus = 0;
+    do {
+        r = waitpid(pid, &wstatus, 0);
+    } while (r < 0 && errno == EINTR);
+    if (r < 0) {
+        log_syserr("session_runner: waitpid");
+        auth_close_session(&pam_result);
+        _exit(EXIT_FAILURE);
+    }
 
-    if (WIFEXITED(status)) {
-        log_info("compositor exited with exit status %d on seat '%s'", WEXITSTATUS(status),
+    if (WIFEXITED(wstatus)) {
+        log_info("compositor exited with exit status %d on seat '%s'", WEXITSTATUS(wstatus),
                  s->name);
-    } else if (WIFSIGNALED(status)) {
-        log_info("compositor terminated with signal %d (%s) on seat '%s'", WTERMSIG(status),
-                 strsignal(WTERMSIG(status)), s->name);
+    } else if (WIFSIGNALED(wstatus)) {
+        log_info("compositor terminated with signal %d (%s) on seat '%s'", WTERMSIG(wstatus),
+                 strsignal(WTERMSIG(wstatus)), s->name);
     } else {
-        log_warn("compositor exited with unexpected status %d on seat '%s'", status, s->name);
+        log_warn("compositor exited with unexpected status %d on seat '%s'", wstatus, s->name);
     }
 
     auth_close_session(&pam_result);

@@ -6,12 +6,15 @@
  * Keeps a list of currently active seats and their state.
  */
 
+#include <sys/types.h>
+
 #include "lib/defs.h"
 
 /* Holds the current state of a seat */
 typedef struct seat {
     char name[MAX_LEN_SEAT];
-    int vtnr; /* allocated VT number; 0 for non-seat0 seats */
+    int vtnr;         /* allocated VT number; 0 for non-seat0 seats */
+    pid_t runner_pid; /* pid of the session runner or 0 if no active session */
 } seat;
 
 /* Add a seat with the given name and VT number (only relevant for seat0).
