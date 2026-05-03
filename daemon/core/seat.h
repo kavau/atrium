@@ -4,7 +4,7 @@
  * seat.h - seat management
  */
 
-#define MAX_LEN_SEAT 64
+#include "lib/defs.h"
 
 /* Holds the current state of a seat */
 typedef struct seat {

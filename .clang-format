@@ -6,3 +6,4 @@ AlignAfterOpenBracket: Align
 IndentCaseLabels: true
 BreakBeforeBraces: Attach
 SpaceBeforeParens: ControlStatements
+AlignEscapedNewlines: Left

@@ -10,19 +10,21 @@
 #include "auth.h"
 #include "daemon/core/seat.h"
 #include "daemon/core/vt.h"
+#include "lib/defs.h"
 #include "lib/log.h"
 #include "session_runner.h"
 
 /* Configure the environment, drop privileges, and exec the user session. Called
 from the child side of the fork. This function never returns. */
 static _Noreturn void child_exec(const char *username, const auth_result *pam_result) {
-    /* Debug output */
+#ifdef ATRIUM_DEBUG
     if (pam_result->env) {
         log_debug("PAM environment variables:");
         for (char **p = pam_result->env; *p; p++) {
             log_debug("  %s", *p);
         }
     }
+#endif
 
     /* Build the session environment. */
     struct passwd *pw = getpwnam(username);
@@ -89,8 +91,7 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     log_debug("exec user session");
     /* TODO: use execvpe instead, which searches PATH */
     /* TODO: exec the compositor in a login shell */
-    execle("/usr/bin/cage", "cage", "-s", "-m", "last", "--", "foot", "-f", "monospace:size=18",
-           "-o", "colors-dark.background=000000", NULL, env);
+    execle("/bin/sh", "sh", "-c", COMPOSITOR, NULL, env);
     log_syserr("child_exec: execle"); /* Error path - a successful exec does not return */
     _exit(EXIT_FAILURE);
 
@@ -99,7 +100,7 @@ oom:
     _exit(EXIT_FAILURE);
 }
 
-_Noreturn void session_runner(const char *username, const char *password, const char *conf_path,
+_Noreturn void session_runner(const char *username, const char *password, const char *pam_conf_path,
                               const seat *s) {
     /* Build the PAM environment */
     char **env = calloc(5, sizeof(*env));
@@ -122,7 +123,7 @@ _Noreturn void session_runner(const char *username, const char *password, const 
 
     /* Authenticate with PAM - also establishes the logind session */
     auth_result pam_result;
-    int r = auth_open_session(username, password, (const char **)env, conf_path, &pam_result);
+    int r = auth_open_session(username, password, (const char **)env, pam_conf_path, &pam_result);
     free(env[0]);
     free(env[1]);
     free(env);

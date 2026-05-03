@@ -7,7 +7,7 @@
 #include "seat.h"
 #include "session.h"
 
-int session_start(const char *username, const char *password, const char *conf_path, seat *s) {
+int session_start(const char *username, const char *password, const char *pam_conf_path, seat *s) {
     assert(username);
     assert(password);
     assert(s);
@@ -22,7 +22,7 @@ int session_start(const char *username, const char *password, const char *conf_p
     if (runner_pid == 0) {
         /* This is the child process -- run the session setup and exec. */
         log_debug("starting session runner for seat '%s'", s->name);
-        session_runner(username, password, conf_path, s);
+        session_runner(username, password, pam_conf_path, s);
     }
 
     /* This is the parent process -- return to the main loop. */
