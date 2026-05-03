@@ -32,18 +32,23 @@ int main(int argc, char *argv[]) {
     session don't leak into the TTY's input buffer. */
 
     /* SHORTCUT: create user sessions for seat0 and seat1 with hardcoded
-    parameters. */
+    parameters. We add seats in reverse order here because seat_add appends to
+    the front (quite messy, but this code is just temporary). */
     seat_config configs[] = {SEAT_CONFIGS};
     int n_seats = sizeof(configs) / sizeof(configs[0]);
-    for (int i = 0; i < n_seats; i++) {
-        log_info("starting session for %s on seat '%s'", configs[i].username, configs[i].seat_name);
-        seat s = {
-            .vtnr = strcmp(configs[i].seat_name, "seat0") ? 0 : vtnr,
-        };
-        snprintf(s.name, sizeof(s.name), "%s", configs[i].seat_name);
-        int r = session_start(configs[i].username, configs[i].password, PAM_CONF_PATH, &s);
+    for (int i = n_seats - 1; i >= 0; i--) {
+        log_info("adding seat '%s'", configs[i].seat_name);
+        if (!seat_add(configs[i].seat_name, strcmp(configs[i].seat_name, "seat0") ? 0 : vtnr)) {
+            log_error("failed to add seat '%s'", configs[i].seat_name);
+        }
+    }
+
+    int i = 0; /* SHORTCUT: using hardcoded session parameters */
+    for (seat *s = seat_first(); s; s = seat_next(s), ++i) {
+        log_info("starting session for %s on seat '%s'", configs[i].username, s->name);
+        int r = session_start(configs[i].username, configs[i].password, PAM_CONF_PATH, s);
         if (r != 0) {
-            log_error("failed to create session for %s on %s: %d", configs[i].username, s.name, r);
+            log_error("failed to create session for %s on %s: %d", configs[i].username, s->name, r);
         }
         sleep(2); /* SHORTCUT: wait a bit before starting the next session */
     }

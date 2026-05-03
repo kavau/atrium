@@ -47,6 +47,7 @@ endif
 executable('atrium',
   sources: [
     'daemon/core/main.c',
+    'daemon/core/seat.c',
     'daemon/core/session.c',
     'daemon/core/vt.c',
     'daemon/session/auth.c',
