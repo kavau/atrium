@@ -17,14 +17,14 @@
 
 int main(int argc, char *argv[]) {
     if (argc < 3 || argc > 4) {
-        fprintf(stderr, "Usage: %s <username> <seat> [conf_path]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <username> <seat> [pam_conf_path]\n", argv[0]);
         return 1;
     }
 
     const char *username = argv[1];
     seat s = {.vtnr = 0};
     snprintf(s.name, sizeof(s.name), "%s", argv[2]);
-    const char *conf_path = argc == 4 ? argv[3] : NULL;
+    const char *pam_conf_path = argc == 4 ? argv[3] : NULL;
 
     const char *password = getpass("Password: ");
     if (!password) {
@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
         session don't leak into the TTY's input buffer. */
     }
 
-    int r = session_start(username, password, conf_path, &s);
+    int r = session_start(username, password, pam_conf_path, &s);
     if (r != 0) {
         fprintf(stderr, "Failed to start session: %d\n", r);
         if (s.vtnr > 0) {

@@ -20,15 +20,27 @@ add_project_arguments(
   language: 'c',
 )
 
+# Build options
+
 if get_option('debug_logging')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
 
 # Dependencies
 
-# libpam = dependency('libpam')
+# dep_libpam = dependency('libpam')
 cc = meson.get_compiler('c')
-libpam = cc.find_library('pam')
+dep_libpam = cc.find_library('pam')
+
+# Feature detection
+
+have_pam_start_confdir = cc.has_function(
+    'pam_start_confdir',
+    dependencies: dep_libpam,
+)
+if have_pam_start_confdir
+    add_project_arguments('-DHAVE_PAM_START_CONFDIR=1', language: 'c')
+endif
 
 # Executables
 
@@ -41,7 +53,7 @@ executable('atrium',
     'daemon/session/session_runner.c',
   ],
   dependencies: [
-    libpam,
+    dep_libpam,
   ])
 
 executable('atrium-auth-test',
@@ -50,7 +62,7 @@ executable('atrium-auth-test',
     'tools/auth-test.c',
   ],
   dependencies: [
-    libpam,
+    dep_libpam,
   ])
 
 executable('atrium-start-session',
@@ -62,5 +74,5 @@ executable('atrium-start-session',
     'tools/start-session.c',
   ],
   dependencies: [
-    libpam,
+    dep_libpam,
   ])
