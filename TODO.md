@@ -1,6 +1,6 @@
 # Next steps
 
-- Session lifetime management: monitor SIGCHLD and restart session/greeter
+- Simplified PAM for Crostini testing
 - Greeter
 - Seat discovery
 - Hotplug monitoring

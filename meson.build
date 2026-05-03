@@ -77,3 +77,10 @@ executable('atrium-start-session',
   dependencies: [
     dep_libpam,
   ])
+
+executable('atrium-fake-compositor',
+  sources: [
+    'tools/fake-compositor.c',
+  ],
+  dependencies: [
+  ])
