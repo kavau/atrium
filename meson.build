@@ -44,7 +44,7 @@ endif
 
 # Executables
 
-executable('atrium',
+executable('atrium-dev',
   sources: [
     'daemon/core/main.c',
     'daemon/core/seat.c',
@@ -55,7 +55,9 @@ executable('atrium',
   ],
   dependencies: [
     dep_libpam,
-  ])
+  ],
+  install: true,
+)
 
 executable('atrium-auth-test',
   sources: [
@@ -64,7 +66,9 @@ executable('atrium-auth-test',
   ],
   dependencies: [
     dep_libpam,
-  ])
+  ],
+  install: false,
+)
 
 executable('atrium-start-session',
   sources: [
@@ -76,11 +80,15 @@ executable('atrium-start-session',
   ],
   dependencies: [
     dep_libpam,
-  ])
+  ],
+  install: false,
+)
 
 executable('atrium-fake-compositor',
   sources: [
     'tools/fake-compositor.c',
   ],
   dependencies: [
-  ])
+  ],
+  install: true,
+)

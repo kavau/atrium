@@ -15,6 +15,10 @@
 /* Number of seconds to wait at startup before seat discovery. */
 #define SEAT_DISCOVERY_DELAY 2
 
+/* Headless mode - set to 1 to skip VT allocation/activation (for testing with a
+fake greeter/compositor from a graphical session)*/
+#define HEADLESS 0
+
 /* Compositor to launch on each seat. */
 #define COMPOSITOR \
     "/usr/bin/cage -s -m last -- foot -f monospace:size=18 -o colors-dark.background=000000"

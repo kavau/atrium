@@ -27,6 +27,10 @@ int main(int argc, char *argv[]) {
     sleep(SEAT_DISCOVERY_DELAY);
 
     /* Allocate a VT for seat0. SHORTCUT: needs to be done after seat0 is discovered. */
+#if HEADLESS
+    log_info("headless mode enabled, skipping VT allocation");
+    int vtnr = 0;
+#else
     int vtnr = vt_alloc();
     if (vtnr < 0) {
         log_error("failed to allocate VT for seat0: %d", vtnr);
@@ -34,6 +38,7 @@ int main(int argc, char *argv[]) {
     }
     /* TODO: suppress VT keyboard so keystrokes typed into the Wayland
     session don't leak into the TTY's input buffer. */
+#endif
 
     /* SHORTCUT: create user sessions for seat0 and seat1 with hardcoded
     parameters. We add seats in reverse order here because seat_add appends to

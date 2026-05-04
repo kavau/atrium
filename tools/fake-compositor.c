@@ -2,6 +2,10 @@
  * fake-compositor.c - a fake compositor for testing the session runner
  *
  * Currently it just sleeps for a while then exits.
+ * 
+ * Usage: in lib/defs.h,
+ * #define HEADLESS 1
+ * #define COMPOSITOR "/usr/local/bin/atrium-fake-compositor"
  */
 
 #include <stdio.h>

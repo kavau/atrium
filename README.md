@@ -24,7 +24,7 @@ To copy the source to a remote machine and build remotely:
 To test atrium from within a user session:
 
 ```shell
-sudo systemd-run --scope build/atrium
+sudo systemd-run --scope build/atrium-dev
 ```
 
 `systemd-run --scope` is needed in order to run atrium in a fresh scope, not in
