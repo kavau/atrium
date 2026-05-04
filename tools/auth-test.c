@@ -13,6 +13,7 @@
  * pam_conf_path is the PAM configuration directory (default: /etc/pam.d).
  */
 
+#include <assert.h>
 #include <security/pam_appl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,19 +41,24 @@ int main(int argc, char *argv[]) {
     auth_result result;
 
     /* Build PAM environment. Intentionally not freed. */
-    char **env = calloc(5, sizeof(*env));
+    int n_env = 4 + (vtnr > 0 ? 1 : 0);
+    char **env = calloc(n_env, sizeof(*env));
     if (!env)
         abort();
     int i = 0;
     if (asprintf(&env[i++], "XDG_SEAT=%s", seat) < 0)
         abort();
-    if (asprintf(&env[i++], "XDG_VTNR=%d", vtnr) < 0)
-        abort();
+    if (vtnr > 0) {
+        if (asprintf(&env[i++], "XDG_VTNR=%d", vtnr) < 0)
+            abort();
+    }
     env[i++] = "XDG_SESSION_TYPE=wayland";
     env[i++] = "XDG_SESSION_CLASS=user";
-    env[i] = NULL;
+    env[i++] = NULL;
+    assert(i == n_env);
 
-    int r = auth_open_session(username, password, (const char **)env, pam_conf_path, &result);
+    int r =
+        auth_open_session(username, password, (const char **)env, pam_conf_path, "atrium", &result);
     if (r != PAM_SUCCESS) {
         fprintf(stderr, "auth_open_session failed: %d\n", r);
         return 1;

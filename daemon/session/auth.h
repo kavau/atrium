@@ -18,7 +18,7 @@ typedef struct auth_result {
  * session's PAM handle which must be kept alive for the entire user session.
  * Returns PAM_SUCCESS (0) on success, or a nonzero error code on failure. */
 int auth_open_session(const char *username, const char *password, const char **env,
-                      const char *pam_conf_path, auth_result *result);
+                      const char *pam_conf_path, const char *service_name, auth_result *result);
 
 /* Close the PAM session and free all resources. */
 void auth_close_session(auth_result *result);

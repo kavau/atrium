@@ -65,7 +65,7 @@ err:
 }
 
 int auth_open_session(const char *username, const char *password, const char **env,
-                      const char *pam_conf_path, auth_result *result) {
+                      const char *pam_conf_path, const char *service_name, auth_result *result) {
     assert(username);
     assert(password);
     assert(result);
@@ -80,12 +80,13 @@ int auth_open_session(const char *username, const char *password, const char **e
 #ifdef HAVE_PAM_START_CONFDIR
     /* pam_start_confdir() is equivalent to pam_start() but allows setting a
      * configuration directory other than /etc/pam.d - useful for testing. */
-    log_info("starting PAM session with config path %s", pam_conf_path ? pam_conf_path : "(default)");
-    int r = pam_start_confdir("atrium", username, &conv, pam_conf_path, &pamh);
+    log_info("starting PAM session with config path %s",
+             pam_conf_path ? pam_conf_path : "(default)");
+    int r = pam_start_confdir(service_name, username, &conv, pam_conf_path, &pamh);
 #else
     if (pam_conf_path)
         log_warn("auth_open_session: ignoring pam_conf_path %s", pam_conf_path);
-    int r = pam_start("atrium", username, &conv, &pamh);
+    int r = pam_start(service_name, username, &conv, &pamh);
 #endif
     if (r != PAM_SUCCESS) {
         /* pamh is invalid on pam_start failure; pass NULL instead */

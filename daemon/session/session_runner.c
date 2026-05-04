@@ -15,9 +15,14 @@
 #include "lib/log.h"
 #include "session_runner.h"
 
-/* Configure the environment, drop privileges, and exec the user session. Called
-from the child side of the fork. This function never returns. */
-static _Noreturn void child_exec(const char *username, const auth_result *pam_result) {
+/* Configure the environment, drop privileges, and exec the greeter or user
+session. Called from the child side of the fork. This function never returns. */
+static _Noreturn void child_exec(const char *username, const auth_result *pam_result,
+                                 session_type type) {
+    assert(username);
+    assert(pam_result);
+    assert(pam_result->pam_handle);
+
 #ifdef ATRIUM_DEBUG
     if (pam_result->env) {
         log_debug("PAM environment variables:");
@@ -89,10 +94,22 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
         log_syserr("child_exec: chdir"); /* not fatal, warn only */
     }
 
-    log_debug("exec user session");
-    /* TODO: use execvpe instead, which searches PATH */
-    /* TODO: exec the compositor in a login shell */
-    execle("/bin/sh", "sh", "-c", COMPOSITOR, NULL, env);
+    switch (type) {
+        case SESSION_GREETER:
+            log_debug("exec greeter session");
+            execle("/bin/sh", "sh", "-c", GREETER, NULL, env);
+            break;
+        case SESSION_USER:
+            log_debug("exec user session for '%s'", username);
+            /* TODO: use execvpe instead, which searches PATH */
+            /* TODO: exec the compositor in a login shell */
+            execle("/bin/sh", "sh", "-c", COMPOSITOR, NULL, env);
+            break;
+        default:
+            log_error("child_exec: invalid session type %d", type);
+            _exit(EXIT_FAILURE);
+    }
+
     log_syserr("child_exec: execle"); /* Error path - a successful exec does not return */
     _exit(EXIT_FAILURE);
 
@@ -102,7 +119,12 @@ oom:
 }
 
 _Noreturn void session_runner(const char *username, const char *password, const char *pam_conf_path,
-                              const seat *s) {
+                              const seat *s, session_type type) {
+    assert(username);
+    assert(password);
+    assert(s);
+    assert(type == SESSION_GREETER || type == SESSION_USER);
+
     /* Build the PAM environment */
     int n_env = 4 + (s->vtnr > 0 ? 1 : 0);
     char **env = calloc(n_env, sizeof(*env));
@@ -122,13 +144,15 @@ _Noreturn void session_runner(const char *username, const char *password, const 
         }
     }
     env[i++] = "XDG_SESSION_TYPE=wayland";
-    env[i++] = "XDG_SESSION_CLASS=user"; /* TODO: must be "greeter" for a greeter session */
+    env[i++] = type == SESSION_GREETER ? "XDG_SESSION_CLASS=greeter" : "XDG_SESSION_CLASS=user";
     env[i++] = NULL;
     assert(i == n_env);
 
     /* Authenticate with PAM - also establishes the logind session */
+    const char *pam_service_name = type == SESSION_GREETER ? "atrium-greeter" : "atrium";
     auth_result pam_result;
-    int r = auth_open_session(username, password, (const char **)env, pam_conf_path, &pam_result);
+    int r = auth_open_session(username, password, (const char **)env, pam_conf_path,
+                              pam_service_name, &pam_result);
 
     free(env[0]); /* XDG_SEAT */
     if (s->vtnr > 0)
@@ -158,12 +182,13 @@ _Noreturn void session_runner(const char *username, const char *password, const 
     if (pid == 0) {
         /* This is the child process -- drop privileges and exec the compositor. */
         log_debug("session_runner: starting child process");
-        child_exec(username, &pam_result);
+        child_exec(username, &pam_result, type);
     }
 
     /* This is the parent process -- wait for the compositor to exit, then call
     auth_close_session() and exit. */
-    log_info("started session child with PID %d on seat '%s'", pid, s->name);
+    const char *session_desc = type == SESSION_GREETER ? "greeter" : "user";
+    log_info("started %s session child with PID %d on seat '%s'", session_desc, pid, s->name);
 
     int wstatus = 0;
     do {
@@ -175,17 +200,18 @@ _Noreturn void session_runner(const char *username, const char *password, const 
         _exit(EXIT_FAILURE);
     }
 
+    const char *child_desc = type == SESSION_GREETER ? "greeter" : "compositor";
     if (WIFEXITED(wstatus)) {
-        log_info("compositor exited with exit status %d on seat '%s'", WEXITSTATUS(wstatus),
+        log_info("%s exited with exit status %d on seat '%s'", child_desc, WEXITSTATUS(wstatus),
                  s->name);
     } else if (WIFSIGNALED(wstatus)) {
-        log_info("compositor terminated with signal %d (%s) on seat '%s'", WTERMSIG(wstatus),
+        log_info("%s terminated with signal %d (%s) on seat '%s'", child_desc, WTERMSIG(wstatus),
                  strsignal(WTERMSIG(wstatus)), s->name);
     } else {
-        log_warn("compositor exited with unexpected status %d on seat '%s'", wstatus, s->name);
+        log_warn("%s exited with unexpected status %d on seat '%s'", child_desc, wstatus, s->name);
     }
 
     auth_close_session(&pam_result);
-    log_debug("closed login session on seat '%s'", s->name);
+    log_debug("closed %s session on seat '%s'", session_desc, s->name);
     _exit(EXIT_SUCCESS);
 }
