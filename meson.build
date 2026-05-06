@@ -60,6 +60,15 @@ executable('atrium-dev',
   install: true,
 )
 
+executable('atrium-dev-greeter',
+  sources: [
+    'greeter/main.c',
+  ],
+  dependencies: [
+  ],
+  install: true,
+)
+
 executable('atrium-auth-test',
   sources: [
     'daemon/session/auth.c',

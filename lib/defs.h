@@ -20,7 +20,9 @@ fake greeter/compositor from a graphical session)*/
 #define HEADLESS 0
 
 /* Greeter to launch on each seat. */
-#define GREETER "/usr/local/bin/atrium-fake-greeter"
+#define GREETER                                                                             \
+    "/usr/bin/cage -- /usr/bin/foot -f monospace:size=18 -o colors-dark.background=000000 " \
+    "/usr/local/bin/atrium-dev-greeter"
 
 /* User to launch greeter as. */
 #define GREETER_USERNAME "atriumdm"
