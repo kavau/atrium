@@ -96,11 +96,11 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
 
     switch (type) {
         case SESSION_GREETER:
-            log_debug("exec greeter session");
+            log_debug("exec greeter with command: %s", GREETER);
             execle("/bin/sh", "sh", "-c", GREETER, NULL, env);
             break;
         case SESSION_USER:
-            log_debug("exec user session for '%s'", username);
+            log_debug("exec user session for '%s' with command: %s", username, COMPOSITOR);
             /* TODO: use execvpe instead, which searches PATH */
             /* TODO: exec the compositor in a login shell */
             execle("/bin/sh", "sh", "-c", COMPOSITOR, NULL, env);

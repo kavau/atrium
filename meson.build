@@ -46,6 +46,7 @@ endif
 
 executable('atrium-dev',
   sources: [
+    'daemon/core/greeter.c',
     'daemon/core/main.c',
     'daemon/core/seat.c',
     'daemon/core/session.c',

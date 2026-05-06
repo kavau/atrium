@@ -4,13 +4,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "greeter.h"
 #include "lib/defs.h"
 #include "lib/log.h"
 #include "seat.h"
 #include "session.h"
 #include "vt.h"
 
-/* SHORCUT: needed to pass hardcoded seat configs */
+/* SHORTCUT: needed to pass hardcoded seat configs */
 typedef struct {
     const char *seat_name;
     const char *username;
@@ -40,9 +41,10 @@ int main(int argc, char *argv[]) {
     session don't leak into the TTY's input buffer. */
 #endif
 
-    /* SHORTCUT: create user sessions for seat0 and seat1 with hardcoded
-    parameters. We add seats in reverse order here because seat_add appends to
-    the front (quite messy, but this code is just temporary). */
+    /* SHORTCUT: create hardcoded seats. We add seats in reverse order because
+    seat_add appends to the front; this keeps the hardcoded session parameters
+    in sync with the seat list (quite messy, but this code is just temporary).
+    */
     seat_config configs[] = {SEAT_CONFIGS};
     int n_seats = sizeof(configs) / sizeof(configs[0]);
     for (int i = n_seats - 1; i >= 0; i--) {
@@ -52,17 +54,18 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    int i = 0; /* SHORTCUT: using hardcoded session parameters */
-    for (seat *s = seat_first(); s; s = seat_next(s), ++i) {
-        log_info("starting session for %s on seat '%s'", configs[i].username, s->name);
-        int r = session_start(configs[i].username, configs[i].password, PAM_CONF_PATH, s);
+    /* Start a greeter on each seat */
+    for (seat *s = seat_first(); s; s = seat_next(s)) {
+        log_info("starting greeter on seat '%s'", s->name);
+        int r = greeter_start(PAM_CONF_PATH, s);
         if (r != 0) {
-            log_error("failed to create session for %s on %s: %d", configs[i].username, s->name, r);
+            log_error("failed to launch greeter on %s: %d", s->name, r);
+            /* TODO: retry */
         }
-        sleep(2); /* SHORTCUT: wait a bit before starting the next session */
+        sleep(5); /* SHORTCUT: wait a bit before starting the next greeter */
     }
 
-    /* Simple event loop  */
+    /* Simple event loop */
     while (1) {
         int wstatus;
         pid_t pid = waitpid(-1, &wstatus, 0);
@@ -73,16 +76,48 @@ int main(int argc, char *argv[]) {
             break; /* no children remain */
         }
 
-        i = 0; /* SHORTCUT: using hardcoded session parameters */
+        int i = 0; /* SHORTCUT: using hardcoded session parameters */
         for (seat *s = seat_first(); s; s = seat_next(s), ++i) {
             if (pid == s->runner_pid) {
-                log_info("seat '%s' terminated, restarting session", s->name);
-                sleep(1); /* SHORTCUT: avoid tight crash-loop */
-                int r = session_start(configs[i].username, configs[i].password, PAM_CONF_PATH, s);
-                if (r != 0) {
-                    log_error("failed to create session for %s on %s: %d", configs[i].username,
-                              s->name, r);
-                    /* TODO: try again after a delay */
+                log_debug("session runner with PID %d on seat '%s' (state %d) exited", pid, s->name,
+                          s->state);
+                s->runner_pid = 0;
+
+                switch (s->state) {
+                    default:
+                        log_error("invalid seat state %d on seat '%s'", s->state, s->name);
+                        /* falls through - start greeter */
+                    case SEAT_IDLE:
+                        if (s->state == SEAT_IDLE)
+                            log_warn(
+                                "session runner on seat '%s' exited without starting a session",
+                                s->name);
+                        /* falls through - start greeter */
+                    case SEAT_SESSION: {
+                        if (s->state == SEAT_SESSION)
+                            log_info("session on seat '%s' terminated, restarting greeter",
+                                     s->name);
+                        sleep(1); /* SHORTCUT: avoid tight crash-loop */
+                        int r = greeter_start(PAM_CONF_PATH, s);
+                        if (r != 0) {
+                            log_error("failed to restart greeter on %s: %d", s->name, r);
+                            s->state = SEAT_IDLE; /* TODO: retry */
+                        }
+                        break;
+                    }
+                    case SEAT_GREETER: {
+                        /* SHORTCUT: start session only after successful auth */
+                        log_info("greeter on seat '%s' terminated, starting user session", s->name);
+                        sleep(1); /* SHORTCUT: avoid tight crash-loop */
+                        int r = session_start(configs[i].username, configs[i].password,
+                                              PAM_CONF_PATH, s);
+                        if (r != 0) {
+                            log_error("failed to create session for %s on %s: %d",
+                                      configs[i].username, s->name, r);
+                            s->state = SEAT_IDLE; /* TODO: retry */
+                        }
+                        break;
+                    }
                 }
             }
         }

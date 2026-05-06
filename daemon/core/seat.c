@@ -31,7 +31,9 @@ seat *seat_add(const char *name, int vtnr) {
         return NULL;
     }
     strncpy(e->s.name, name, sizeof(e->s.name) - 1); /* null terminator is guaranteed by calloc */
-    e->s.vtnr = vtnr; /* other fields are zero-initialized by calloc */
+    e->s.vtnr = vtnr;
+    e->s.state = SEAT_IDLE;
+    /* other fields are zero-initialized by calloc */
 
     /* Prepend to global list. */
     e->next = g_seats;

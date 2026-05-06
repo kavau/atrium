@@ -10,10 +10,17 @@
 
 #include "lib/defs.h"
 
+typedef enum {
+    SEAT_IDLE = 0, /* no compositor or greeter running */
+    SEAT_GREETER,  /* greeter running; credentials pipe open */
+    SEAT_SESSION,  /* compositor running */
+} seat_state;
+
 /* Holds the current state of a seat */
 typedef struct seat {
     char name[MAX_LEN_SEAT];
     int vtnr;         /* allocated VT number; 0 for non-seat0 seats */
+    seat_state state; /* current state: SEAT_IDLE, SEAT_GREETER, or SEAT_SESSION */
     pid_t runner_pid; /* pid of the session runner or 0 if no active session */
 } seat;
 
