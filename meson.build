@@ -93,3 +93,12 @@ executable('atrium-fake-compositor',
   ],
   install: true,
 )
+
+executable('atrium-fake-greeter',
+  sources: [
+    'tools/fake-greeter.c',
+  ],
+  dependencies: [
+  ],
+  install: true,
+)
