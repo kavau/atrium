@@ -12,13 +12,14 @@
 #include "daemon/core/seat.h"
 #include "daemon/core/vt.h"
 #include "lib/defs.h"
+#include "lib/ipc.h"
 #include "lib/log.h"
 #include "session_runner.h"
 
 /* Configure the environment, drop privileges, and exec the greeter or user
 session. Called from the child side of the fork. This function never returns. */
 static _Noreturn void child_exec(const char *username, const auth_result *pam_result,
-                                 session_type type) {
+                                 session_type type, ipc_channel *ch) {
     assert(username);
     assert(pam_result);
     assert(pam_result->pam_handle);
@@ -95,10 +96,25 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     }
 
     switch (type) {
-        case SESSION_GREETER:
-            log_debug("exec greeter with command: %s", GREETER);
-            execle("/bin/sh", "sh", "-c", GREETER, NULL, env);
+        case SESSION_GREETER: {
+            char cmd[512];
+            if (ch) {
+                /* Pass IPC channel file descriptors to the greeter */
+                if (ipc_prepare_for_exec(ch) < 0) {
+                    log_syserr("child_exec: ipc_prepare_for_exec");
+                    _exit(EXIT_FAILURE);
+                }
+                char fd_args[64];
+                ipc_fmt_args(ch, fd_args, sizeof(fd_args));
+                snprintf(cmd, sizeof(cmd), "%s %s", GREETER, fd_args);
+            } else {
+                snprintf(cmd, sizeof(cmd), "%s", GREETER);
+            }
+            log_debug("exec greeter with command: %s", cmd);
+            /* TODO: running the greeter in a shell is unnecessary */
+            execle("/bin/sh", "sh", "-c", cmd, NULL, env);
             break;
+        }
         case SESSION_USER:
             log_debug("exec user session for '%s' with command: %s", username, COMPOSITOR);
             /* TODO: use execvpe instead, which searches PATH */
@@ -119,7 +135,7 @@ oom:
 }
 
 _Noreturn void session_runner(const char *username, const char *password, const char *pam_conf_path,
-                              const seat *s, session_type type) {
+                              const seat *s, session_type type, ipc_channel *ch) {
     assert(username);
     assert(password);
     assert(s);
@@ -182,13 +198,16 @@ _Noreturn void session_runner(const char *username, const char *password, const 
     if (pid == 0) {
         /* This is the child process -- drop privileges and exec the compositor. */
         log_debug("session_runner: starting child process");
-        child_exec(username, &pam_result, type);
+        child_exec(username, &pam_result, type, ch);
     }
 
     /* This is the parent process -- wait for the compositor to exit, then call
     auth_close_session() and exit. */
     const char *session_desc = type == SESSION_GREETER ? "greeter" : "user";
     log_info("started %s session child with PID %d on seat '%s'", session_desc, pid, s->name);
+    if (ch) {
+        ipc_close(ch); /* only used by child */
+    }
 
     int wstatus = 0;
     do {

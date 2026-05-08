@@ -25,12 +25,12 @@ static _Noreturn void child_process(ipc_channel *ch) {
     }
 
     char buffer[256];
-    ssize_t bytesRead = ipc_recv(ch, buffer, sizeof(buffer) - 1);
-    if (bytesRead < 0) {
+    ssize_t bytes_read = ipc_recv(ch, buffer, sizeof(buffer) - 1);
+    if (bytes_read < 0) {
         perror("child: read");
         _exit(EXIT_FAILURE);
     }
-    buffer[bytesRead] = '\0'; // Null-terminate the string
+    buffer[bytes_read] = '\0'; // Null-terminate the string
     printf("Greeter received: %s\n", buffer);
 
     ipc_close(ch);
@@ -40,12 +40,12 @@ static _Noreturn void child_process(ipc_channel *ch) {
 static int parent_process(ipc_channel *ch) {
     /* Wait for message from greeter */
     char buffer[256];
-    ssize_t bytesRead = ipc_recv(ch, buffer, sizeof(buffer) - 1);
-    if (bytesRead < 0) {
+    ssize_t bytes_read = ipc_recv(ch, buffer, sizeof(buffer) - 1);
+    if (bytes_read < 0) {
         perror("parent: read");
         return EXIT_FAILURE;
     }
-    buffer[bytesRead] = '\0'; // Null-terminate the string
+    buffer[bytes_read] = '\0'; // Null-terminate the string
     printf("Daemon received: %s\n", buffer);
 
     /* Send response to greeter */

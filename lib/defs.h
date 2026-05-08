@@ -4,8 +4,8 @@
 
 #define MAX_LEN_SEAT 64
 
-/* SHORTCUT: hardcoded seats and user credentials */
-#define SEAT_CONFIGS {"seat0", "alice", "password123"}, {"seat1", "bob", "password456"}
+/* SHORTCUT: hardcoded seats */
+#define SEATS "seat0", "seat1"
 
 /* SHORTCUT: pass the PAM config path in the environment instead */
 #define PAM_CONF_PATH "data/pam"

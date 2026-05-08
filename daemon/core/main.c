@@ -1,3 +1,5 @@
+#include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,12 +13,23 @@
 #include "session.h"
 #include "vt.h"
 
-/* SHORTCUT: needed to pass hardcoded seat configs */
-typedef struct {
-    const char *seat_name;
-    const char *username;
-    const char *password;
-} seat_config;
+/* Parses credential string returned by the greeter (format: "username\0password\0") */
+static int parse_credentials(char *buf, ssize_t n, const char **username, const char **password) {
+    if (n <= 0)
+        return -1;
+
+    *username = buf;
+    size_t ulen = strnlen(buf, (size_t)n);
+    if (ulen >= (size_t)n)
+        return -1;
+
+    *password = buf + ulen + 1;
+    size_t remaining = (size_t)n - ulen - 1;
+    if (strnlen(*password, remaining) >= remaining)
+        return -1;
+
+    return 0;
+}
 
 int main(int argc, char *argv[]) {
     (void)argc;
@@ -42,15 +55,13 @@ int main(int argc, char *argv[]) {
 #endif
 
     /* SHORTCUT: create hardcoded seats. We add seats in reverse order because
-    seat_add appends to the front; this keeps the hardcoded session parameters
-    in sync with the seat list (quite messy, but this code is just temporary).
-    */
-    seat_config configs[] = {SEAT_CONFIGS};
-    int n_seats = sizeof(configs) / sizeof(configs[0]);
+    seat_add appends to the front (although order does not matter) */
+    char *seat_names[] = {SEATS};
+    int n_seats = sizeof(seat_names) / sizeof(seat_names[0]);
     for (int i = n_seats - 1; i >= 0; i--) {
-        log_info("adding seat '%s'", configs[i].seat_name);
-        if (!seat_add(configs[i].seat_name, strcmp(configs[i].seat_name, "seat0") ? 0 : vtnr)) {
-            log_error("failed to add seat '%s'", configs[i].seat_name);
+        log_info("adding seat '%s'", seat_names[i]);
+        if (!seat_add(seat_names[i], strcmp(seat_names[i], "seat0") ? 0 : vtnr)) {
+            log_error("failed to add seat '%s'", seat_names[i]);
         }
     }
 
@@ -76,8 +87,7 @@ int main(int argc, char *argv[]) {
             break; /* no children remain */
         }
 
-        int i = 0; /* SHORTCUT: using hardcoded session parameters */
-        for (seat *s = seat_first(); s; s = seat_next(s), ++i) {
+        for (seat *s = seat_first(); s; s = seat_next(s)) {
             if (pid == s->runner_pid) {
                 log_debug("session runner with PID %d on seat '%s' (state %d) exited", pid, s->name,
                           s->state);
@@ -86,34 +96,41 @@ int main(int argc, char *argv[]) {
                 switch (s->state) {
                     default:
                         log_error("invalid seat state %d on seat '%s'", s->state, s->name);
-                        /* falls through - start greeter */
+                        goto restart_greeter;
                     case SEAT_IDLE:
-                        if (s->state == SEAT_IDLE)
-                            log_warn(
-                                "session runner on seat '%s' exited without starting a session",
-                                s->name);
-                        /* falls through - start greeter */
-                    case SEAT_SESSION: {
-                        if (s->state == SEAT_SESSION)
-                            log_info("session on seat '%s' terminated, restarting greeter",
-                                     s->name);
-                        sleep(1); /* SHORTCUT: avoid tight crash-loop */
-                        int r = greeter_start(PAM_CONF_PATH, s);
-                        if (r != 0) {
-                            log_error("failed to restart greeter on %s: %d", s->name, r);
-                            s->state = SEAT_IDLE; /* TODO: retry */
+                        log_warn("seat '%s' is idle but had an active session runner", s->name);
+                        goto restart_greeter;
+                    case SEAT_GREETER: {
+                        log_info("greeter on seat '%s' terminated, starting user session", s->name);
+
+                        assert(s->greeter_ipc);
+                        char buf[256];
+                        ssize_t n = ipc_recv(s->greeter_ipc, buf, sizeof(buf) - 1);
+                        ipc_close(s->greeter_ipc);
+                        s->greeter_ipc = NULL;
+
+                        const char *username, *password;
+                        if (n <= 0 || parse_credentials(buf, n, &username, &password) < 0) {
+                            log_error("failed to read credentials from greeter on %s", s->name);
+                            goto restart_greeter;
                         }
+
+                        sleep(1); /* SHORTCUT: avoid tight crash-loop */
+                        if (session_start(username, password, PAM_CONF_PATH, s) != 0) {
+                            log_error("failed to start session for %s on %s", username, s->name);
+                            goto restart_greeter;
+                        }
+
                         break;
                     }
-                    case SEAT_GREETER: {
-                        /* SHORTCUT: start session only after successful auth */
-                        log_info("greeter on seat '%s' terminated, starting user session", s->name);
+                    case SEAT_SESSION: {
+                        log_info("session on seat '%s' terminated", s->name);
+                        /* falls through to restart_greeter */
+                    restart_greeter:
+                        log_info("restarting greeter on seat '%s'", s->name);
                         sleep(1); /* SHORTCUT: avoid tight crash-loop */
-                        int r = session_start(configs[i].username, configs[i].password,
-                                              PAM_CONF_PATH, s);
-                        if (r != 0) {
-                            log_error("failed to create session for %s on %s: %d",
-                                      configs[i].username, s->name, r);
+                        if (greeter_start(PAM_CONF_PATH, s) != 0) {
+                            log_error("failed to restart greeter on %s", s->name);
                             s->state = SEAT_IDLE; /* TODO: retry */
                         }
                         break;

@@ -53,6 +53,7 @@ executable('atrium-dev',
     'daemon/core/vt.c',
     'daemon/session/auth.c',
     'daemon/session/session_runner.c',
+    'lib/ipc.c',
   ],
   dependencies: [
     dep_libpam,
@@ -63,6 +64,7 @@ executable('atrium-dev',
 executable('atrium-dev-greeter',
   sources: [
     'greeter/main.c',
+    'lib/ipc.c',
   ],
   dependencies: [
   ],
@@ -86,6 +88,7 @@ executable('atrium-start-session',
     'daemon/core/session.c',
     'daemon/session/auth.c',
     'daemon/session/session_runner.c',
+    'lib/ipc.c',
     'tools/start-session.c',
   ],
   dependencies: [
@@ -105,6 +108,7 @@ executable('atrium-fake-compositor',
 
 executable('atrium-fake-greeter',
   sources: [
+    'lib/ipc.c',
     'tools/fake-greeter.c',
   ],
   dependencies: [

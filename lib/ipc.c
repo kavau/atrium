@@ -63,3 +63,44 @@ void ipc_close(ipc_channel *ch) {
     }
     free(ch);
 }
+
+int ipc_prepare_for_exec(ipc_channel *ch) {
+    if (fcntl(ch->read_fd, F_SETFD, fcntl(ch->read_fd, F_GETFD) & ~FD_CLOEXEC) < 0) {
+        log_syserr("ipc_prepare_for_exec_and_format_args: fcntl");
+        return -1;
+    }
+    if (fcntl(ch->write_fd, F_SETFD, fcntl(ch->write_fd, F_GETFD) & ~FD_CLOEXEC) < 0) {
+        log_syserr("ipc_prepare_for_exec_and_format_args: fcntl");
+        return -1;
+    }
+    return 0;
+}
+
+void ipc_fmt_args(ipc_channel *ch, char *buf, size_t len) {
+    snprintf(buf, len, "--read-fd=%d --write-fd=%d", ch->read_fd, ch->write_fd);
+}
+
+static int ipc_from_fds(ipc_channel **ch, int read_fd, int write_fd) {
+    ipc_channel *channel = malloc(sizeof(ipc_channel));
+    if (!channel) {
+        log_syserr("ipc_from_fds: malloc");
+        return -1;
+    }
+    channel->read_fd = read_fd;
+    channel->write_fd = write_fd;
+    *ch = channel;
+    return 0;
+}
+
+int ipc_create_from_args(ipc_channel **ch, int argc, char *argv[]) {
+    int read_fd = -1, write_fd = -1;
+    for (int i = 1; i < argc; i++) {
+        if (sscanf(argv[i], "--read-fd=%d", &read_fd) == 1)
+            continue;
+        if (sscanf(argv[i], "--write-fd=%d", &write_fd) == 1)
+            continue;
+    }
+    if (read_fd < 0 || write_fd < 0)
+        return -1;
+    return ipc_from_fds(ch, read_fd, write_fd);
+}
