@@ -1,7 +1,7 @@
 # Next steps
 
 - Simplified PAM for Crostini testing
-- Greeter
+- Real greeter
 - Seat discovery
 - Hotplug monitoring
 - Write a proper PAM service file

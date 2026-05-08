@@ -22,7 +22,7 @@ int session_start(const char *username, const char *password, const char *pam_co
 
     if (runner_pid == 0) {
         /* This is the child process -- run the session setup and exec. */
-        log_debug("starting session runner for seat '%s'", s->name);
+        log_debug("starting session runner for user '%s' on seat '%s'", username, s->name);
         session_runner(username, password, pam_conf_path, s, SESSION_USER, NULL);
     }
 

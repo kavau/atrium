@@ -165,7 +165,7 @@ _Noreturn void session_runner(const char *username, const char *password, const 
     assert(i == n_env);
 
     /* Authenticate with PAM - also establishes the logind session */
-    const char *pam_service_name = type == SESSION_GREETER ? "atrium-greeter" : "atrium";
+    const char *pam_service_name = type == SESSION_GREETER ? "atrium-greeter-dev" : "atrium-dev";
     auth_result pam_result;
     int r = auth_open_session(username, password, (const char **)env, pam_conf_path,
                               pam_service_name, &pam_result);

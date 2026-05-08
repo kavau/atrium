@@ -125,3 +125,11 @@ executable('atrium-ipc-test',
   ],
   install: false,
 )
+
+# Data
+
+install_data(
+  'data/pam/atrium-dev',
+  'data/pam/atrium-greeter-dev',
+  install_dir: get_option('sysconfdir') / 'pam.d',
+)
