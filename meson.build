@@ -111,3 +111,13 @@ executable('atrium-fake-greeter',
   ],
   install: true,
 )
+
+executable('atrium-ipc-test',
+  sources: [
+    'lib/ipc.c',
+    'tools/ipc-test.c',
+  ],
+  dependencies: [
+  ],
+  install: false,
+)
