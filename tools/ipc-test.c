@@ -18,17 +18,14 @@
 #include "lib/ipc.h"
 
 /* The greeter process */
-static _Noreturn void child_process(ipc_channel *parent_to_child, ipc_channel *child_to_parent) {
-    ipc_set_role(parent_to_child, IPC_ROLE_READER);
-    ipc_set_role(child_to_parent, IPC_ROLE_WRITER);
-
-    if (ipc_send(child_to_parent, "Hello, Daemon!", 14) < 0) {
+static _Noreturn void child_process(ipc_channel *ch) {
+    if (ipc_send(ch, "Hello, Daemon!", 14) < 0) {
         perror("child: write");
         _exit(EXIT_FAILURE);
     }
 
     char buffer[256];
-    ssize_t bytesRead = ipc_recv(parent_to_child, buffer, sizeof(buffer) - 1);
+    ssize_t bytesRead = ipc_recv(ch, buffer, sizeof(buffer) - 1);
     if (bytesRead < 0) {
         perror("child: read");
         _exit(EXIT_FAILURE);
@@ -36,18 +33,14 @@ static _Noreturn void child_process(ipc_channel *parent_to_child, ipc_channel *c
     buffer[bytesRead] = '\0'; // Null-terminate the string
     printf("Greeter received: %s\n", buffer);
 
-    ipc_close(parent_to_child);
-    ipc_close(child_to_parent);
+    ipc_close(ch);
     _exit(EXIT_SUCCESS);
 }
 
-static int parent_process(ipc_channel *parent_to_child, ipc_channel *child_to_parent) {
-    ipc_set_role(parent_to_child, IPC_ROLE_WRITER);
-    ipc_set_role(child_to_parent, IPC_ROLE_READER);
-
+static int parent_process(ipc_channel *ch) {
     /* Wait for message from greeter */
     char buffer[256];
-    ssize_t bytesRead = ipc_recv(child_to_parent, buffer, sizeof(buffer) - 1);
+    ssize_t bytesRead = ipc_recv(ch, buffer, sizeof(buffer) - 1);
     if (bytesRead < 0) {
         perror("parent: read");
         return EXIT_FAILURE;
@@ -56,7 +49,7 @@ static int parent_process(ipc_channel *parent_to_child, ipc_channel *child_to_pa
     printf("Daemon received: %s\n", buffer);
 
     /* Send response to greeter */
-    if (ipc_send(parent_to_child, "Ok bye!", 8) < 0) {
+    if (ipc_send(ch, "Ok bye!", 8) < 0) {
         perror("parent: write");
         return EXIT_FAILURE;
     }
@@ -65,8 +58,7 @@ static int parent_process(ipc_channel *parent_to_child, ipc_channel *child_to_pa
     wait(NULL);
     printf("Daemon: Greeter has exited.\n");
 
-    ipc_close(parent_to_child);
-    ipc_close(child_to_parent);
+    ipc_close(ch);
     return EXIT_SUCCESS;
 }
 
@@ -74,16 +66,10 @@ int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    /* Create IPC channels */
-    ipc_channel *parent_to_child = ipc_create();
-    if (!parent_to_child) {
-        perror("ipc_create parent_to_child");
-        return EXIT_FAILURE;
-    }
-    ipc_channel *child_to_parent = ipc_create();
-    if (!child_to_parent) {
-        perror("ipc_create child_to_parent");
-        ipc_close(parent_to_child);
+    /* Create bidirectional IPC channel */
+    ipc_channel *parent_end, *child_end;
+    if (ipc_create(&parent_end, &child_end) < 0) {
+        perror("ipc_create");
         return EXIT_FAILURE;
     }
 
@@ -96,9 +82,11 @@ int main(int argc, char *argv[]) {
 
     if (pid == 0) {
         /* Child process: act as greeter */
-        child_process(parent_to_child, child_to_parent);
+        ipc_close(parent_end); // Close the parent's end
+        child_process(child_end);
     }
 
     /* Parent process: act as daemon */
-    return parent_process(parent_to_child, child_to_parent);
+    ipc_close(child_end); // Close the child's end
+    return parent_process(parent_end);
 }

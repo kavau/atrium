@@ -12,43 +12,45 @@ typedef struct ipc_channel {
     int write_fd; /* File descriptor for writing */
 } ipc_channel;
 
-ipc_channel *ipc_create(void) {
-    ipc_channel *ch = malloc(sizeof(ipc_channel));
-    if (!ch) {
-        return NULL;
+int ipc_create(ipc_channel **end1, ipc_channel **end2) {
+    ipc_channel *ch1 = malloc(sizeof(ipc_channel));
+    ipc_channel *ch2 = malloc(sizeof(ipc_channel));
+    if (!ch1 || !ch2) {
+        log_syserr("ipc_create: malloc");
+        free(ch1);
+        free(ch2);
+        return -1;
     }
-    int fds[2];
-    if (pipe2(fds, O_CLOEXEC) < 0) {
-        free(ch);
-        return NULL;
-    }
-    ch->read_fd = fds[0];
-    ch->write_fd = fds[1];
-    return ch;
-}
 
-void ipc_set_role(ipc_channel *ch, ipc_role role) {
-    switch (role) {
-        case IPC_ROLE_READER:
-            close(ch->write_fd); // Close the write end if we're a reader
-            ch->write_fd = -1;
-            break;
-        case IPC_ROLE_WRITER:
-            close(ch->read_fd); // Close the read end if we're a writer
-            ch->read_fd = -1;
-            break;
-        default:
-            assert(0 && "invalid ipc role");
+    /* Allocate one pipe for each direction */
+    int fds1[2] = {-1, -1}, fds2[2] = {-1, -1};
+    if (pipe2(fds1, O_CLOEXEC) < 0 || pipe2(fds2, O_CLOEXEC) < 0) {
+        log_syserr("ipc_create: pipe2");
+        if (fds1[0] != -1)
+            close(fds1[0]);
+        if (fds1[1] != -1)
+            close(fds1[1]);
+        free(ch1);
+        free(ch2);
+        return -1;
     }
+    ch1->read_fd = fds1[0];
+    ch1->write_fd = fds2[1];
+    ch2->read_fd = fds2[0];
+    ch2->write_fd = fds1[1];
+
+    *end1 = ch1;
+    *end2 = ch2;
+    return 0;
 }
 
 ssize_t ipc_send(ipc_channel *ch, const void *data, size_t len) {
-    assert(ch->write_fd != -1); // Ensure we're a writer
+    assert(ch->write_fd != -1);
     return write(ch->write_fd, data, len);
 }
 
 ssize_t ipc_recv(ipc_channel *ch, void *data, size_t len) {
-    assert(ch->read_fd != -1); // Ensure we're a reader
+    assert(ch->read_fd != -1);
     return read(ch->read_fd, data, len);
 }
 

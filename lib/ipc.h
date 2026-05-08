@@ -7,19 +7,13 @@
 #include <stddef.h>
 #include <unistd.h>
 
-/* Holds the IPC channel between daemon and greeter. */
+/* A bidirectional IPC channel */
 typedef struct ipc_channel ipc_channel;
 
-typedef enum ipc_role {
-    IPC_ROLE_READER,
-    IPC_ROLE_WRITER,
-} ipc_role;
-
-/* Create a new IPC channel (returns NULL on failure) */
-ipc_channel *ipc_create(void);
-
-/* Sets the role (reader or writer) of this process using the channel */
-void ipc_set_role(ipc_channel *ch, ipc_role role);
+/* Create a new bidirectional IPC channel - keep one end and pass the other one
+to the peer. After fork(), each process should immediately close the end it
+doesn't use. Returns 0 on success, -1 on failure. */
+int ipc_create(ipc_channel **end1, ipc_channel **end2);
 
 /* Low-level IPC functions */
 ssize_t ipc_send(ipc_channel *ch, const void *data, size_t len);
