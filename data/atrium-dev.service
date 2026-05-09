@@ -1,0 +1,17 @@
+[Unit]
+Description=Atrium Display Manager (dev branch)
+After=systemd-logind.service
+Requires=systemd-logind.service
+Conflicts=atrium.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/atrium-dev
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+Alias=display-manager.service
