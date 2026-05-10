@@ -2,6 +2,7 @@
 Description=Atrium Display Manager (dev branch)
 After=systemd-logind.service
 Requires=systemd-logind.service
+# Remove when promoting to non-dev
 Conflicts=atrium.service
 Conflicts=getty@tty1.service
 

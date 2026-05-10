@@ -97,14 +97,14 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
 
     switch (type) {
         case SESSION_GREETER: {
-            char cmd[512];
+            char cmd[MAX_LEN_GREETER_CMD];
             if (ch) {
                 /* Pass IPC channel file descriptors to the greeter */
                 if (ipc_prepare_for_exec(ch) < 0) {
                     log_syserr("child_exec: ipc_prepare_for_exec");
                     _exit(EXIT_FAILURE);
                 }
-                char fd_args[64];
+                char fd_args[MAX_LEN_GREETER_ARGS];
                 ipc_fmt_args(ch, fd_args, sizeof(fd_args));
                 snprintf(cmd, sizeof(cmd), "%s %s", GREETER, fd_args);
             } else {

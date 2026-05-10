@@ -1,4 +1,4 @@
-# /etc/pam.d/atrium-greeter-dev
+#%PAM-1.0
 
 auth     required    pam_permit.so
 account  required    pam_permit.so
