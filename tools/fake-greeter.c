@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
 
     sleep(5);
 
-    const char *message = "family\0password123\0";
+    const char *message = "family\0\0";
     if (ipc_send(ch, message, 19) < 0) {
         log_error("failed to send message over IPC channel");
         ipc_close(ch);
