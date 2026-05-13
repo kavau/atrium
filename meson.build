@@ -31,6 +31,7 @@ endif
 # dep_libpam = dependency('libpam')
 cc = meson.get_compiler('c')
 dep_libpam = cc.find_library('pam')
+dep_libsystemd = dependency('libsystemd')
 
 # Feature detection
 
@@ -52,11 +53,13 @@ executable('atrium-dev',
     'daemon/core/session.c',
     'daemon/core/vt.c',
     'daemon/session/auth.c',
+    'daemon/session/bus.c',
     'daemon/session/session_runner.c',
     'lib/ipc.c',
   ],
   dependencies: [
     dep_libpam,
+    dep_libsystemd,
   ],
   install: true,
 )
@@ -87,12 +90,14 @@ executable('atrium-start-session',
     'daemon/core/vt.c',
     'daemon/core/session.c',
     'daemon/session/auth.c',
+    'daemon/session/bus.c',
     'daemon/session/session_runner.c',
     'lib/ipc.c',
     'tools/start-session.c',
   ],
   dependencies: [
     dep_libpam,
+    dep_libsystemd,
   ],
   install: false,
 )

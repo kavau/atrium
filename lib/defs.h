@@ -11,7 +11,7 @@
 #define SEATS "seat0", "seat1"
 
 /* SHORTCUT: pass the PAM config path in the environment instead */
-#define PAM_CONF_PATH "data/pam"
+#define PAM_CONF_PATH "/etc/pam.d"
 
 /* SHORTCUT: the following parameters should be read from a runtime config file. */
 
