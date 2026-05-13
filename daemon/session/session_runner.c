@@ -117,9 +117,12 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
         }
         case SESSION_USER:
             log_debug("exec user session for '%s' with command: %s", username, COMPOSITOR);
-            /* TODO: use execvpe instead, which searches PATH */
-            /* TODO: exec the compositor in a login shell */
-            execle("/bin/sh", "sh", "-c", COMPOSITOR, NULL, env);
+            /* Prepend '-' to argv[0] to force a login shell, so we get .profile and PATH. */
+            char argv0[MAX_LEN_SHELL_NAME];
+            const char *base = strrchr(pw->pw_shell, '/');
+            snprintf(argv0, sizeof(argv0), "-%s", base ? base + 1 : pw->pw_shell);
+            char *argv[] = {argv0, "-c", COMPOSITOR, NULL};
+            execvpe(pw->pw_shell, argv, env);
             break;
         default:
             log_error("child_exec: invalid session type %d", type);

@@ -5,6 +5,7 @@
 #define MAX_LEN_SEAT 64
 #define MAX_LEN_GREETER_ARGS 64
 #define MAX_LEN_GREETER_CMD 512
+#define MAX_LEN_SHELL_NAME 64
 
 /* SHORTCUT: hardcoded seats */
 #define SEATS "seat0", "seat1"
