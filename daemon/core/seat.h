@@ -9,21 +9,18 @@
 #include <sys/types.h>
 
 #include "lib/defs.h"
-#include "lib/ipc.h"
 
 typedef enum {
-    SEAT_IDLE = 0, /* no compositor or greeter running */
-    SEAT_GREETER,  /* greeter running; credentials pipe open */
-    SEAT_SESSION,  /* compositor running */
+    SEAT_IDLE = 0, /* no session runner active */
+    SEAT_RUNNING,  /* session runner active */
 } seat_state;
 
 /* Holds the current state of a seat */
 typedef struct seat {
     char name[MAX_LEN_SEAT];
-    int vtnr;                 /* allocated VT number; 0 for non-seat0 seats */
-    seat_state state;         /* current state: SEAT_IDLE, SEAT_GREETER, or SEAT_SESSION */
-    pid_t runner_pid;         /* pid of the session runner or 0 if no active session */
-    ipc_channel *greeter_ipc; /* IPC channel for communicating with the greeter, or NULL */
+    int vtnr;          /* allocated VT number; 0 for non-seat0 seats */
+    seat_state state;  /* current state: SEAT_IDLE or SEAT_RUNNING */
+    pid_t runner_pid;  /* PID of the session runner, or 0 if none */
 } seat;
 
 /* Add a seat with the given name and VT number (only relevant for seat0).

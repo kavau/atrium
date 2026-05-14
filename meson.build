@@ -47,10 +47,9 @@ endif
 
 executable('atrium-dev',
   sources: [
-    'daemon/core/greeter.c',
+    'daemon/core/runner.c',
     'daemon/core/main.c',
     'daemon/core/seat.c',
-    'daemon/core/session.c',
     'daemon/core/vt.c',
     'daemon/session/auth.c',
     'daemon/session/bus.c',
@@ -88,7 +87,6 @@ executable('atrium-auth-test',
 executable('atrium-start-session',
   sources: [
     'daemon/core/vt.c',
-    'daemon/core/session.c',
     'daemon/session/auth.c',
     'daemon/session/bus.c',
     'daemon/session/session_runner.c',
@@ -135,7 +133,6 @@ executable('atrium-ipc-test',
 
 install_data(
   'data/pam/atrium-dev',
-  'data/pam/atrium-greeter-dev',
   install_dir: '/etc/pam.d',
 )
 
