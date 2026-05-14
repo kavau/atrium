@@ -20,7 +20,7 @@
 #include "session_runner.h"
 
 /* Parse credentials from greeter IPC message (format: "username\0password\0").
- * On success, *username and *password point into buf. Returns 0 or -1. */
+On success, *username and *password point into buf. Returns 0 or -1. */
 static int parse_credentials(char *buf, ssize_t n, const char **username, const char **password) {
     if (n <= 0)
         return -1;
@@ -35,16 +35,69 @@ static int parse_credentials(char *buf, ssize_t n, const char **username, const 
     return 0;
 }
 
-/* Configure the environment, drop privileges, and exec the greeter. Blocks on
- * sync_read_fd until the parent writes the session_id after CreateSession
- * completes.
- * Called from the child side of the fork. This function never returns.
- * TODO: replace sync pipe with IPC channel. */
+/* Wait for a child process to exit and log the result. Retries on EINTR. Logs
+an error if waitpid fails. */
+static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
+    int wstatus = 0;
+    pid_t r;
+    do {
+        r = waitpid(pid, &wstatus, 0);
+    } while (r < 0 && errno == EINTR);
+
+    if (r < 0)
+        log_syserr("wait_child: waitpid (%s)", desc);
+    else if (WIFEXITED(wstatus))
+        log_info("%s exited with status %d on seat '%s'", desc, WEXITSTATUS(wstatus), seat_name);
+    else if (WIFSIGNALED(wstatus))
+        log_info("%s terminated by signal %d (%s) on seat '%s'", desc, WTERMSIG(wstatus),
+                 strsignal(WTERMSIG(wstatus)), seat_name);
+    else
+        log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
+}
+
+/* Drop privileges to the given user and exec the program. Must be called after
+fork(). Never returns. */
+static _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *const argv[],
+                                          char *const env[]) {
+    /* Privilege drop order: supplementary groups -> gid -> uid.
+    setresgid/setresuid set all three ID slots (real, effective, saved)
+    atomically. */
+    if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
+        log_syserr("drop_privs_and_exec: initgroups");
+        _exit(EXIT_FAILURE);
+    }
+    if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
+        log_syserr("drop_privs_and_exec: setresgid");
+        _exit(EXIT_FAILURE);
+    }
+    if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
+        log_syserr("drop_privs_and_exec: setresuid");
+        _exit(EXIT_FAILURE);
+    }
+
+    /* Defence-in-depth: verify we cannot re-escalate to root. */
+    if (setresuid(0, 0, 0) == 0) {
+        log_error("CRITICAL: re-escalation to root succeeded after privilege drop");
+        _exit(EXIT_FAILURE);
+    }
+
+    if (chdir(pw->pw_dir) < 0)
+        log_syserr("drop_privs_and_exec: chdir"); /* not fatal */
+
+    execvpe(exe, argv, env);
+    log_syserr("drop_privs_and_exec: execvpe");
+    _exit(EXIT_FAILURE);
+}
+
+/* Build the greeter environment, prepare the IPC channel, and exec the greeter.
+Blocks on sync_read_fd until the parent writes the session_id after CreateSession
+completes. Called from the child side of the fork. Never returns.
+TODO: replace sync pipe with IPC channel (ipc_recv from ch before exec). */
 static _Noreturn void child_exec_greeter(const char *username, const seat *s,
                                          const char *runtime_dir, int sync_read_fd,
                                          ipc_channel *ch) {
     /* Block until parent signals us by writing the session_id. EOF means the
-     * parent failed (e.g. CreateSession error). */
+    parent failed (e.g. CreateSession error). */
     char session_id[32] = {0};
     ssize_t n = read(sync_read_fd, session_id, sizeof(session_id) - 1);
     close(sync_read_fd);
@@ -91,32 +144,8 @@ static _Noreturn void child_exec_greeter(const char *username, const seat *s,
     env[i++] = NULL;
     assert(i == n_env);
 
-    /* Privilege drop: supplementary groups, then gid, then uid.
-     * setresgid/setresuid set all three ID slots (real, effective, saved)
-     * atomically. */
-    if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
-        log_syserr("child_exec_greeter: initgroups");
-        _exit(EXIT_FAILURE);
-    }
-    if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
-        log_syserr("child_exec_greeter: setresgid");
-        _exit(EXIT_FAILURE);
-    }
-    if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
-        log_syserr("child_exec_greeter: setresuid");
-        _exit(EXIT_FAILURE);
-    }
-
-    /* Defence-in-depth: verify we cannot re-escalate to root. */
-    if (setresuid(0, 0, 0) == 0) {
-        log_error("CRITICAL: re-escalation to root succeeded after privilege drop");
-        _exit(EXIT_FAILURE);
-    }
-
-    if (chdir(pw->pw_dir) < 0)
-        log_syserr("child_exec_greeter: chdir"); /* not fatal */
-
-    /* Pass the IPC channel to the greeter via the command line. */
+    /* Build the command to exec. ipc_prepare_for_exec clears FD_CLOEXEC so
+    the channel fds survive exec and the greeter binary can reconstruct them. */
     char cmd[512];
     if (ch) {
         if (ipc_prepare_for_exec(ch) < 0) {
@@ -129,21 +158,20 @@ static _Noreturn void child_exec_greeter(const char *username, const seat *s,
     } else {
         snprintf(cmd, sizeof(cmd), "%s", GREETER);
     }
+    /* TODO: running the greeter via a shell is unnecessary overhead. */
+    char *argv[] = {"sh", "-c", cmd, NULL};
 
     log_debug("child_exec_greeter: exec: %s", cmd);
-    /* TODO: running the greeter in a shell is unnecessary overhead. */
-    execle("/bin/sh", "sh", "-c", cmd, NULL, env);
-    log_syserr("child_exec_greeter: execle");
-    _exit(EXIT_FAILURE);
+    drop_privs_and_exec(pw, "/bin/sh", argv, env);
 
 oom:
     log_error("child_exec_greeter: out of memory");
     _exit(EXIT_FAILURE);
 }
 
-/* Configure the environment, drop privileges, and exec the user compositor.
- * Called from the child side of the fork. This function never returns. */
-static _Noreturn void child_exec(const char *username, const auth_result *pam_result) {
+/* Build the compositor environment and exec the compositor as a login shell.
+Called from the child side of the fork. Never returns. */
+static _Noreturn void child_exec_compositor(const char *username, const auth_result *pam_result) {
     assert(username);
     assert(pam_result);
     assert(pam_result->pam_handle);
@@ -151,15 +179,14 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
 #ifdef ATRIUM_DEBUG
     if (pam_result->env) {
         log_debug("PAM environment variables:");
-        for (char **p = pam_result->env; *p; p++) {
+        for (char **p = pam_result->env; *p; p++)
             log_debug("  %s", *p);
-        }
     }
 #endif
 
     struct passwd *pw = getpwnam(username);
     if (!pw) {
-        log_error("child_exec: getpwnam failed for user '%s'", username);
+        log_error("child_exec_compositor: getpwnam failed for user '%s'", username);
         _exit(EXIT_FAILURE);
     }
 
@@ -171,12 +198,12 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     /* passwd fields + PATH + PAM env entries + NULL terminator */
     char **env = calloc(5 + n_pam + 1, sizeof(*env));
     if (!env) {
-        log_syserr("child_exec: calloc");
+        log_syserr("child_exec_compositor: calloc");
         _exit(EXIT_FAILURE);
     }
 
     int i = 0;
-    /* getenv() finds the first match, so passwd is authoritative */
+    /* Passwd fields come first so they are authoritative over PAM duplicates. */
     if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
         goto oom;
     if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
@@ -186,48 +213,21 @@ static _Noreturn void child_exec(const char *username, const auth_result *pam_re
     if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
         goto oom;
     env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
-    for (char **p = pam_result->env; p && *p; p++) {
+    for (char **p = pam_result->env; p && *p; p++)
         env[i++] = *p;
-    }
     env[i] = NULL;
 
-    /* Privilege drop: supplementary groups, then gid, then uid.
-     * setresgid/setresuid set all three ID slots (real, effective, saved)
-     * atomically. */
-    if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
-        log_syserr("child_exec: initgroups");
-        _exit(EXIT_FAILURE);
-    }
-    if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
-        log_syserr("child_exec: setresgid");
-        _exit(EXIT_FAILURE);
-    }
-    if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
-        log_syserr("child_exec: setresuid");
-        _exit(EXIT_FAILURE);
-    }
-
-    /* Defence-in-depth: verify we cannot re-escalate to root. */
-    if (setresuid(0, 0, 0) == 0) {
-        log_error("CRITICAL: re-escalation to root succeeded after privilege drop");
-        _exit(EXIT_FAILURE);
-    }
-
-    if (chdir(pw->pw_dir) < 0)
-        log_syserr("child_exec: chdir"); /* not fatal, warn only */
-
-    log_debug("exec user session for '%s' with command: %s", username, COMPOSITOR);
-    /* Prepend '-' to argv[0] to force a login shell, so we get .profile and PATH. */
+    /* Prepend '-' to argv[0] to force a login shell (reads .profile, sets PATH). */
     char argv0[64];
     const char *base = strrchr(pw->pw_shell, '/');
     snprintf(argv0, sizeof(argv0), "-%s", base ? base + 1 : pw->pw_shell);
     char *argv[] = {argv0, "-c", COMPOSITOR, NULL};
-    execvpe(pw->pw_shell, argv, env);
-    log_syserr("child_exec: execvpe");
-    _exit(EXIT_FAILURE);
+
+    log_debug("child_exec_compositor: exec '%s' for user '%s'", COMPOSITOR, username);
+    drop_privs_and_exec(pw, pw->pw_shell, argv, env);
 
 oom:
-    log_error("child_exec: out of memory");
+    log_error("child_exec_compositor: out of memory");
     _exit(EXIT_FAILURE);
 }
 
@@ -331,20 +331,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         log_syserr("session_runner: greeter sync pipe write");
     close(sync_pipe[1]);
 
-    /* Wait for greeter to exit. */
-    int wstatus = 0;
-    pid_t r;
-    do {
-        r = waitpid(greeter_pid, &wstatus, 0);
-    } while (r < 0 && errno == EINTR);
-
-    if (r < 0)
-        log_syserr("session_runner: waitpid (greeter)");
-    else if (WIFEXITED(wstatus))
-        log_info("greeter exited with status %d on seat '%s'", WEXITSTATUS(wstatus), s->name);
-    else if (WIFSIGNALED(wstatus))
-        log_info("greeter terminated by signal %d (%s) on seat '%s'", WTERMSIG(wstatus),
-                 strsignal(WTERMSIG(wstatus)), s->name);
+    wait_child(greeter_pid, "greeter", s->name);
 
     /* Close fifo_fd to signal logind that the greeter session has ended. */
     close(fifo_fd);
@@ -417,25 +404,14 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     }
 
     if (comp_pid == 0) {
-        child_exec(username, &pam_result);
+        child_exec_compositor(username, &pam_result);
         /* unreachable */
     }
 
     log_info("started user session for '%s' (PID %d) on seat '%s'", username, (int)comp_pid,
              s->name);
 
-    /* Wait for compositor to exit. */
-    do {
-        r = waitpid(comp_pid, &wstatus, 0);
-    } while (r < 0 && errno == EINTR);
-
-    if (r < 0)
-        log_syserr("session_runner: waitpid (compositor)");
-    else if (WIFEXITED(wstatus))
-        log_info("compositor exited with status %d on seat '%s'", WEXITSTATUS(wstatus), s->name);
-    else if (WIFSIGNALED(wstatus))
-        log_info("compositor terminated by signal %d (%s) on seat '%s'", WTERMSIG(wstatus),
-                 strsignal(WTERMSIG(wstatus)), s->name);
+    wait_child(comp_pid, "compositor", s->name);
 
     auth_close_session(&pam_result);
     log_debug("session lifecycle complete on seat '%s'", s->name);
