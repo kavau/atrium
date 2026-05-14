@@ -55,6 +55,31 @@ static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
         log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
 }
 
+/* Look up username in the passwd database and append USER, LOGNAME, HOME,
+SHELL, and PATH entries to env[i..]. Sets *pw_out on success. Returns the
+updated index, or -1 on error (getpwnam failure or OOM). */
+static int env_append_passwd(const char *username, char **env, int i, struct passwd **pw_out) {
+    struct passwd *pw = getpwnam(username);
+    if (!pw) {
+        log_error("env_append_passwd: getpwnam failed for '%s'", username);
+        return -1;
+    }
+    if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
+        goto oom;
+    if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
+        goto oom;
+    if (asprintf(&env[i++], "HOME=%s", pw->pw_dir) < 0)
+        goto oom;
+    if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
+        goto oom;
+    env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
+    *pw_out = pw;
+    return i;
+oom:
+    log_error("env_append_passwd: out of memory");
+    return -1;
+}
+
 /* Drop privileges to the given user and exec the program. Must be called after
 fork(). Never returns. */
 static _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *const argv[],
@@ -96,6 +121,10 @@ TODO: replace sync pipe with IPC channel (ipc_recv from ch before exec). */
 static _Noreturn void child_exec_greeter(const char *username, const seat *s,
                                          const char *runtime_dir, int sync_read_fd,
                                          ipc_channel *ch) {
+    assert(username);
+    assert(s);
+    assert(runtime_dir);
+
     /* Block until parent signals us by writing the session_id. EOF means the
     parent failed (e.g. CreateSession error). */
     char session_id[32] = {0};
@@ -106,28 +135,21 @@ static _Noreturn void child_exec_greeter(const char *username, const seat *s,
         _exit(EXIT_FAILURE);
     }
 
-    struct passwd *pw = getpwnam(username);
-    if (!pw) {
-        log_error("child_exec_greeter: getpwnam failed for '%s'", username);
-        _exit(EXIT_FAILURE);
-    }
-
-    /* Build the session environment:
-    USER LOGNAME PATH XDG_SEAT [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS
-    XDG_RUNTIME_DIR XDG_SESSION_ID WLR_LIBINPUT_NO_DEVICES NULL */
-    int n_env = 10 + (s->vtnr > 0 ? 1 : 0);
+    /* Build the session environment: USER LOGNAME HOME SHELL PATH XDG_SEAT
+    [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_RUNTIME_DIR XDG_SESSION_ID
+    WLR_LIBINPUT_NO_DEVICES NULL */
+    int n_env = 12 + (s->vtnr > 0 ? 1 : 0);
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("child_exec_greeter: calloc");
         _exit(EXIT_FAILURE);
     }
 
+    struct passwd *pw;
     int i = 0;
-    if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
-        goto oom;
-    env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
+    i = env_append_passwd(username, env, i, &pw);
+    if (i < 0)
+        _exit(EXIT_FAILURE); /* logged by helper */
     if (asprintf(&env[i++], "XDG_SEAT=%s", s->name) < 0)
         goto oom;
     if (s->vtnr > 0) {
@@ -184,38 +206,29 @@ static _Noreturn void child_exec_compositor(const char *username, const auth_res
     }
 #endif
 
-    struct passwd *pw = getpwnam(username);
-    if (!pw) {
-        log_error("child_exec_compositor: getpwnam failed for user '%s'", username);
-        _exit(EXIT_FAILURE);
-    }
-
     /* Build the session environment: count PAM env entries. */
     int n_pam = 0;
     for (char **p = pam_result->env; p && *p; p++)
         n_pam++;
 
     /* passwd fields + PATH + PAM env entries + NULL terminator */
-    char **env = calloc(5 + n_pam + 1, sizeof(*env));
+    int n_env = 5 + n_pam + 1;
+    char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("child_exec_compositor: calloc");
         _exit(EXIT_FAILURE);
     }
 
+    struct passwd *pw;
     int i = 0;
     /* Passwd fields come first so they are authoritative over PAM duplicates. */
-    if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "HOME=%s", pw->pw_dir) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
-        goto oom;
-    env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
+    i = env_append_passwd(username, env, i, &pw);
+    if (i < 0)
+        _exit(EXIT_FAILURE); /* logged by helper */
     for (char **p = pam_result->env; p && *p; p++)
         env[i++] = *p;
-    env[i] = NULL;
+    env[i++] = NULL;
+    assert(i == n_env);
 
     /* Prepend '-' to argv[0] to force a login shell (reads .profile, sets PATH). */
     char argv0[64];
@@ -225,10 +238,6 @@ static _Noreturn void child_exec_compositor(const char *username, const auth_res
 
     log_debug("child_exec_compositor: exec '%s' for user '%s'", COMPOSITOR, username);
     drop_privs_and_exec(pw, pw->pw_shell, argv, env);
-
-oom:
-    log_error("child_exec_compositor: out of memory");
-    _exit(EXIT_FAILURE);
 }
 
 _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
