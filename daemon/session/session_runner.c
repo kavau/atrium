@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
 #include <security/pam_appl.h>
@@ -115,23 +114,18 @@ static _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, ch
 }
 
 /* Build the greeter environment, prepare the IPC channel, and exec the greeter.
-Blocks on sync_read_fd until the parent writes the session_id after CreateSession
-completes. Called from the child side of the fork. Never returns.
-TODO: replace sync pipe with IPC channel (ipc_recv from ch before exec). */
-static _Noreturn void child_exec_greeter(const char *username, const seat *s,
-                                         const char *runtime_dir, int sync_read_fd,
-                                         ipc_channel *ch) {
+Blocks on ipc_recv until the parent sends the session_id after CreateSession
+completes. Called from the child side of the fork. Never returns. */
+static _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_channel *ch) {
     assert(username);
     assert(s);
-    assert(runtime_dir);
 
-    /* Block until parent signals us by writing the session_id. EOF means the
-    parent failed (e.g. CreateSession error). */
+    /* Block until parent signals us by sending the session_id. EOF (n <= 0)
+    means parent failed (e.g. CreateSession error). */
     char session_id[32] = {0};
-    ssize_t n = read(sync_read_fd, session_id, sizeof(session_id) - 1);
-    close(sync_read_fd);
+    ssize_t n = ipc_recv(ch, session_id, sizeof(session_id) - 1);
     if (n <= 0) {
-        log_error("child_exec_greeter: sync pipe: parent failed");
+        log_error("child_exec_greeter: failed to receive session_id from parent");
         _exit(EXIT_FAILURE);
     }
 
@@ -150,15 +144,14 @@ static _Noreturn void child_exec_greeter(const char *username, const seat *s,
     i = env_append_passwd(username, env, i, &pw);
     if (i < 0)
         _exit(EXIT_FAILURE); /* logged by helper */
+
     if (asprintf(&env[i++], "XDG_SEAT=%s", s->name) < 0)
         goto oom;
-    if (s->vtnr > 0) {
-        if (asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0)
-            goto oom;
-    }
+    if (s->vtnr > 0 && asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0)
+        goto oom;
     env[i++] = "XDG_SESSION_TYPE=wayland";
     env[i++] = "XDG_SESSION_CLASS=greeter";
-    if (asprintf(&env[i++], "XDG_RUNTIME_DIR=%s", runtime_dir) < 0)
+    if (asprintf(&env[i++], "XDG_RUNTIME_DIR=/run/user/%u", (unsigned)pw->pw_uid) < 0)
         goto oom;
     if (asprintf(&env[i++], "XDG_SESSION_ID=%s", session_id) < 0)
         goto oom;
@@ -260,40 +253,23 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         ipc_close(child_end);
         _exit(EXIT_FAILURE);
     }
-    uid_t greeter_uid = pw->pw_uid;
-
-    char runtime_dir[64];
-    snprintf(runtime_dir, sizeof(runtime_dir), "/run/user/%u", (unsigned)greeter_uid);
-
-    /* Sync pipe: child blocks reading until parent writes session_id.
-     * TODO: replace with IPC channel (ipc_send via parent_end / ipc_recv via child_end). */
-    int sync_pipe[2];
-    if (pipe2(sync_pipe, O_CLOEXEC) < 0) {
-        log_syserr("session_runner: pipe2");
-        ipc_close(parent_end);
-        ipc_close(child_end);
-        _exit(EXIT_FAILURE);
-    }
 
     pid_t greeter_pid = fork();
     if (greeter_pid < 0) {
         log_syserr("session_runner: fork (greeter)");
-        close(sync_pipe[0]);
-        close(sync_pipe[1]);
         ipc_close(parent_end);
         ipc_close(child_end);
         _exit(EXIT_FAILURE);
     }
 
     if (greeter_pid == 0) {
-        close(sync_pipe[1]);
+        /* Child process - execute greeter */
         ipc_close(parent_end);
-        child_exec_greeter(GREETER_USERNAME, s, runtime_dir, sync_pipe[0], child_end);
+        child_exec_greeter(GREETER_USERNAME, s, child_end);
         /* unreachable */
     }
 
-    /* Parent: close read end of sync pipe; greeter owns child_end. */
-    close(sync_pipe[0]);
+    /* Parent process - greeter owns child_end. */
     ipc_close(child_end);
 
     /* CreateSession for greeter, using greeter_pid as the session leader. */
@@ -303,18 +279,16 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     int fifo_fd = -1;
 
     if (bus_open() < 0) {
-        close(sync_pipe[1]);
-        waitpid(greeter_pid, NULL, 0);
         ipc_close(parent_end);
+        waitpid(greeter_pid, NULL, 0);
         _exit(EXIT_FAILURE);
     }
 
-    if (bus_create_session(s->name, (uint32_t)s->vtnr, greeter_uid, greeter_pid, "", "greeter",
+    if (bus_create_session(s->name, (uint32_t)s->vtnr, pw->pw_uid, greeter_pid, "", "greeter",
                            session_id, sizeof(session_id), session_obj, sizeof(session_obj),
                            runtime_path, sizeof(runtime_path), &fifo_fd) < 0) {
-        close(sync_pipe[1]);
-        waitpid(greeter_pid, NULL, 0);
         ipc_close(parent_end);
+        waitpid(greeter_pid, NULL, 0);
         bus_close();
         _exit(EXIT_FAILURE);
     }
@@ -323,10 +297,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
              (int)greeter_pid, s->name);
 
     if (s->vtnr > 0 && bus_activate_session(session_obj) < 0) {
-        close(sync_pipe[1]);
+        ipc_close(parent_end);
         waitpid(greeter_pid, NULL, 0);
         close(fifo_fd);
-        ipc_close(parent_end);
         bus_close();
         _exit(EXIT_FAILURE);
     }
@@ -334,11 +307,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     /* SHORTCUT: wait to make sure session is active. */
     sleep(1);
 
-    /* Signal greeter child to proceed by writing the session_id. */
-    ssize_t nw = write(sync_pipe[1], session_id, strlen(session_id));
-    if (nw < 0)
-        log_syserr("session_runner: greeter sync pipe write");
-    close(sync_pipe[1]);
+    /* Signal greeter to proceed by sending the session_id. */
+    if (ipc_send(parent_end, session_id, strlen(session_id)) < 0)
+        log_syserr("session_runner: ipc_send session_id");
 
     wait_child(greeter_pid, "greeter", s->name);
 
@@ -413,10 +384,12 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     }
 
     if (comp_pid == 0) {
+        /* Child process - execute compositor */
         child_exec_compositor(username, &pam_result);
         /* unreachable */
     }
 
+    /* Parent process - wait for compositor exit */
     log_info("started user session for '%s' (PID %d) on seat '%s'", username, (int)comp_pid,
              s->name);
 
