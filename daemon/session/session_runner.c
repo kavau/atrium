@@ -1,9 +1,8 @@
+#include "session_runner.h"
+
 #include <assert.h>
 #include <errno.h>
-#include <grp.h>
 #include <pwd.h>
-#include <security/pam_appl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
@@ -16,7 +15,8 @@
 #include "lib/defs.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
-#include "session_runner.h"
+#include "session_compositor.h"
+#include "session_greeter.h"
 
 /* Parse credentials from greeter IPC message (format: "username\0password\0").
 On success, *username and *password point into buf. Returns 0 or -1. */
@@ -54,185 +54,6 @@ static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
         log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
 }
 
-/* Look up username in the passwd database and append USER, LOGNAME, HOME,
-SHELL, and PATH entries to env[i..]. Sets *pw_out on success. Returns the
-updated index, or -1 on error (getpwnam failure or OOM). */
-static int env_append_passwd(const char *username, char **env, int i, struct passwd **pw_out) {
-    struct passwd *pw = getpwnam(username);
-    if (!pw) {
-        log_error("env_append_passwd: getpwnam failed for '%s'", username);
-        return -1;
-    }
-    if (asprintf(&env[i++], "USER=%s", pw->pw_name) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "LOGNAME=%s", pw->pw_name) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "HOME=%s", pw->pw_dir) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
-        goto oom;
-    env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
-    *pw_out = pw;
-    return i;
-oom:
-    log_error("env_append_passwd: out of memory");
-    return -1;
-}
-
-/* Drop privileges to the given user and exec the program. Must be called after
-fork(). Never returns. */
-static _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *const argv[],
-                                          char *const env[]) {
-    /* Privilege drop order: supplementary groups -> gid -> uid.
-    setresgid/setresuid set all three ID slots (real, effective, saved)
-    atomically. */
-    if (initgroups(pw->pw_name, pw->pw_gid) < 0) {
-        log_syserr("drop_privs_and_exec: initgroups");
-        _exit(EXIT_FAILURE);
-    }
-    if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) {
-        log_syserr("drop_privs_and_exec: setresgid");
-        _exit(EXIT_FAILURE);
-    }
-    if (setresuid(pw->pw_uid, pw->pw_uid, pw->pw_uid) < 0) {
-        log_syserr("drop_privs_and_exec: setresuid");
-        _exit(EXIT_FAILURE);
-    }
-
-    /* Defence-in-depth: verify we cannot re-escalate to root. */
-    if (setresuid(0, 0, 0) == 0) {
-        log_error("CRITICAL: re-escalation to root succeeded after privilege drop");
-        _exit(EXIT_FAILURE);
-    }
-
-    if (chdir(pw->pw_dir) < 0)
-        log_syserr("drop_privs_and_exec: chdir"); /* not fatal */
-
-    execvpe(exe, argv, env);
-    log_syserr("drop_privs_and_exec: execvpe");
-    _exit(EXIT_FAILURE);
-}
-
-/* Build the greeter environment, prepare the IPC channel, and exec the greeter.
-Blocks on ipc_recv until the parent sends the session_id after CreateSession
-completes. Called from the child side of the fork. Never returns. */
-static _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_channel *ch) {
-    assert(username);
-    assert(s);
-
-    /* Block until parent signals us by sending the session_id. EOF (n <= 0)
-    means parent failed (e.g. CreateSession error). */
-    char session_id[32] = {0};
-    ssize_t n = ipc_recv(ch, session_id, sizeof(session_id) - 1);
-    if (n <= 0) {
-        log_error("child_exec_greeter: failed to receive session_id from parent");
-        _exit(EXIT_FAILURE);
-    }
-
-    /* Build the session environment: USER LOGNAME HOME SHELL PATH XDG_SEAT
-    [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_RUNTIME_DIR XDG_SESSION_ID
-    WLR_LIBINPUT_NO_DEVICES NULL */
-    int n_env = 12 + (s->vtnr > 0 ? 1 : 0);
-    char **env = calloc(n_env, sizeof(*env));
-    if (!env) {
-        log_syserr("child_exec_greeter: calloc");
-        _exit(EXIT_FAILURE);
-    }
-
-    struct passwd *pw;
-    int i = 0;
-    i = env_append_passwd(username, env, i, &pw);
-    if (i < 0)
-        _exit(EXIT_FAILURE); /* logged by helper */
-
-    if (asprintf(&env[i++], "XDG_SEAT=%s", s->name) < 0)
-        goto oom;
-    if (s->vtnr > 0 && asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0)
-        goto oom;
-    env[i++] = "XDG_SESSION_TYPE=wayland";
-    env[i++] = "XDG_SESSION_CLASS=greeter";
-    if (asprintf(&env[i++], "XDG_RUNTIME_DIR=/run/user/%u", (unsigned)pw->pw_uid) < 0)
-        goto oom;
-    if (asprintf(&env[i++], "XDG_SESSION_ID=%s", session_id) < 0)
-        goto oom;
-    env[i++] = "WLR_LIBINPUT_NO_DEVICES=1";
-    env[i++] = NULL;
-    assert(i == n_env);
-
-    /* Build the command to exec. ipc_prepare_for_exec clears FD_CLOEXEC so
-    the channel fds survive exec and the greeter binary can reconstruct them. */
-    char cmd[512];
-    if (ch) {
-        if (ipc_prepare_for_exec(ch) < 0) {
-            log_syserr("child_exec_greeter: ipc_prepare_for_exec");
-            _exit(EXIT_FAILURE);
-        }
-        char fd_args[64];
-        ipc_fmt_args(ch, fd_args, sizeof(fd_args));
-        snprintf(cmd, sizeof(cmd), "%s %s", GREETER, fd_args);
-    } else {
-        snprintf(cmd, sizeof(cmd), "%s", GREETER);
-    }
-    /* TODO: running the greeter via a shell is unnecessary overhead. */
-    char *argv[] = {"sh", "-c", cmd, NULL};
-
-    log_debug("child_exec_greeter: exec: %s", cmd);
-    drop_privs_and_exec(pw, "/bin/sh", argv, env);
-
-oom:
-    log_error("child_exec_greeter: out of memory");
-    _exit(EXIT_FAILURE);
-}
-
-/* Build the compositor environment and exec the compositor as a login shell.
-Called from the child side of the fork. Never returns. */
-static _Noreturn void child_exec_compositor(const char *username, const auth_result *pam_result) {
-    assert(username);
-    assert(pam_result);
-    assert(pam_result->pam_handle);
-
-#ifdef ATRIUM_DEBUG
-    if (pam_result->env) {
-        log_debug("PAM environment variables:");
-        for (char **p = pam_result->env; *p; p++)
-            log_debug("  %s", *p);
-    }
-#endif
-
-    /* Build the session environment: count PAM env entries. */
-    int n_pam = 0;
-    for (char **p = pam_result->env; p && *p; p++)
-        n_pam++;
-
-    /* passwd fields + PATH + PAM env entries + NULL terminator */
-    int n_env = 5 + n_pam + 1;
-    char **env = calloc(n_env, sizeof(*env));
-    if (!env) {
-        log_syserr("child_exec_compositor: calloc");
-        _exit(EXIT_FAILURE);
-    }
-
-    struct passwd *pw;
-    int i = 0;
-    /* Passwd fields come first so they are authoritative over PAM duplicates. */
-    i = env_append_passwd(username, env, i, &pw);
-    if (i < 0)
-        _exit(EXIT_FAILURE); /* logged by helper */
-    for (char **p = pam_result->env; p && *p; p++)
-        env[i++] = *p;
-    env[i++] = NULL;
-    assert(i == n_env);
-
-    /* Prepend '-' to argv[0] to force a login shell (reads .profile, sets PATH). */
-    char argv0[64];
-    const char *base = strrchr(pw->pw_shell, '/');
-    snprintf(argv0, sizeof(argv0), "-%s", base ? base + 1 : pw->pw_shell);
-    char *argv[] = {argv0, "-c", COMPOSITOR, NULL};
-
-    log_debug("child_exec_compositor: exec '%s' for user '%s'", COMPOSITOR, username);
-    drop_privs_and_exec(pw, pw->pw_shell, argv, env);
-}
-
 _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     assert(pam_conf_path);
     assert(s);
@@ -263,13 +84,13 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     }
 
     if (greeter_pid == 0) {
-        /* Child process - execute greeter */
+        /* Child process: execute greeter. */
         ipc_close(parent_end);
         child_exec_greeter(GREETER_USERNAME, s, child_end);
         /* unreachable */
     }
 
-    /* Parent process - greeter owns child_end. */
+    /* Parent process: greeter owns child_end. */
     ipc_close(child_end);
 
     /* CreateSession for greeter, using greeter_pid as the session leader. */
@@ -343,11 +164,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         log_error("session_runner: out of memory");
         _exit(EXIT_FAILURE);
     }
-    if (s->vtnr > 0) {
-        if (asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
-            log_error("session_runner: out of memory");
-            _exit(EXIT_FAILURE);
-        }
+    if (s->vtnr > 0 && asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
+        log_error("session_runner: out of memory");
+        _exit(EXIT_FAILURE);
     }
     env[i++] = "XDG_SESSION_TYPE=wayland";
     env[i++] = "XDG_SESSION_CLASS=user";
