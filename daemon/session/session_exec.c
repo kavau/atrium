@@ -3,6 +3,8 @@
 #include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <syslog.h>
+#include <systemd/sd-journal.h>
 #include <unistd.h>
 
 #include "lib/log.h"
@@ -27,6 +29,16 @@ int env_append_passwd(const char *username, char **env, int i, struct passwd **p
 oom:
     log_error("env_append_passwd: out of memory");
     return -1;
+}
+
+/* Redirect stderr to the systemd journal under "atrium" so that child process
+output (cage, greeter, compositor) appears alongside daemon log lines. */
+static void redirect_stderr_to_journal(void) {
+    int jfd = sd_journal_stream_fd("atrium", LOG_DEBUG, 0);
+    if (jfd >= 0) {
+        dup2(jfd, STDERR_FILENO);
+        close(jfd);
+    }
 }
 
 _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *const argv[],
@@ -55,6 +67,8 @@ _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *con
 
     if (chdir(pw->pw_dir) < 0)
         log_syserr("drop_privs_and_exec: chdir"); /* not fatal */
+
+    redirect_stderr_to_journal();
 
     execvpe(exe, argv, env);
     log_syserr("drop_privs_and_exec: execvpe");
