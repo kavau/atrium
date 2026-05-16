@@ -28,8 +28,8 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     for (char **p = pam_result->env; p && *p; p++)
         n_pam++;
 
-    /* passwd fields + PATH + PAM env entries + NULL terminator */
-    int n_env = 5 + n_pam + 1;
+    /* passwd fields + PATH + PAM env entries + DBUS + XDG desktop (x2) + NULL */
+    int n_env = 5 + n_pam + 4;
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("child_exec_compositor: calloc");
@@ -44,6 +44,11 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
         _exit(EXIT_FAILURE); /* logged by helper */
     for (char **p = pam_result->env; p && *p; p++)
         env[i++] = *p;
+    if (asprintf(&env[i++], "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%u/bus",
+                 (unsigned)pw->pw_uid) < 0)
+        goto oom;
+    env[i++] = "XDG_SESSION_DESKTOP=" DESKTOP_NAME;
+    env[i++] = "XDG_CURRENT_DESKTOP=" DESKTOP_NAME;
     env[i++] = NULL;
     assert(i == n_env);
 
@@ -55,4 +60,8 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
 
     log_debug("child_exec_compositor: exec '%s' for user '%s'", COMPOSITOR, username);
     drop_privs_and_exec(pw, pw->pw_shell, argv, env);
+
+oom:
+    log_error("child_exec_compositor: out of memory");
+    _exit(EXIT_FAILURE);
 }
