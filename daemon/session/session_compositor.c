@@ -56,7 +56,7 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     char argv0[64];
     const char *base = strrchr(pw->pw_shell, '/');
     snprintf(argv0, sizeof(argv0), "-%s", base ? base + 1 : pw->pw_shell);
-    char *argv[] = {argv0, "-c", COMPOSITOR, NULL};
+    char *argv[] = {argv0, "-c", "exec " COMPOSITOR, NULL};
 
     log_debug("child_exec_compositor: exec '%s' for user '%s'", COMPOSITOR, username);
     drop_privs_and_exec(pw, pw->pw_shell, argv, env);
