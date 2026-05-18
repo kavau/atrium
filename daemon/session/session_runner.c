@@ -67,6 +67,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         _exit(EXIT_FAILURE);
     }
 
+    /* Do as much as possible before the fork so error cleanup is easier. */
     struct passwd *pw = getpwnam(GREETER_USERNAME);
     if (!pw) {
         log_error("session_runner: getpwnam failed for '%s'", GREETER_USERNAME);
@@ -132,60 +133,83 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     if (ipc_send(parent_end, session_id, strlen(session_id)) < 0)
         log_syserr("session_runner: ipc_send session_id");
 
-    wait_child(greeter_pid, "greeter", s->name);
+    /* ---- CREDENTIAL / AUTH LOOP ---- */
 
-    /* Close fifo_fd to signal logind that the greeter session has ended. */
-    close(fifo_fd);
-    bus_close();
-
-    /* ---- READ CREDENTIALS ---- */
-
-    char cred_buf[256];
-    ssize_t n = ipc_recv(parent_end, cred_buf, sizeof(cred_buf) - 1);
-    ipc_close(parent_end);
-
-    const char *username, *password;
-    if (n <= 0 || parse_credentials(cred_buf, n, &username, &password) < 0) {
-        log_error("session_runner: failed to read credentials from greeter on seat '%s'", s->name);
-        _exit(EXIT_FAILURE);
-    }
-
-    /* ---- USER SESSION PHASE ---- */
-
-    /* Build PAM environment. */
+    /* Build PAM environment once; reused across credential attempts.
+    XDG_SEAT [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS */
     int n_env = 4 + (s->vtnr > 0 ? 1 : 0);
-    char **env = calloc(n_env, sizeof(*env));
-    if (!env) {
+    char **pam_env = calloc(n_env, sizeof(*pam_env));
+    if (!pam_env) {
         log_syserr("session_runner: calloc");
+        ipc_close(parent_end);
+        wait_child(greeter_pid, "greeter", s->name);
+        close(fifo_fd);
+        bus_close();
         _exit(EXIT_FAILURE);
     }
     int i = 0;
-    if (asprintf(&env[i++], "XDG_SEAT=%s", s->name) < 0) {
+    if (asprintf(&pam_env[i++], "XDG_SEAT=%s", s->name) < 0) {
         log_error("session_runner: out of memory");
         _exit(EXIT_FAILURE);
     }
-    if (s->vtnr > 0 && asprintf(&env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
+    if (s->vtnr > 0 && asprintf(&pam_env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
         log_error("session_runner: out of memory");
         _exit(EXIT_FAILURE);
     }
-    env[i++] = "XDG_SESSION_TYPE=wayland";
-    env[i++] = "XDG_SESSION_CLASS=user";
-    env[i++] = NULL;
+    pam_env[i++] = "XDG_SESSION_TYPE=wayland";
+    pam_env[i++] = "XDG_SESSION_CLASS=user";
+    pam_env[i++] = NULL;
     assert(i == n_env);
 
+    char cred_buf[256]; /* must remain valid outside the loop */
     auth_result pam_result;
-    int auth_r = auth_open_session(username, password, (const char **)env, pam_conf_path,
-                                   "atrium-dev", &pam_result);
+    const char *username = NULL;
+    while (1) {
+        ssize_t n = ipc_recv(parent_end, cred_buf, sizeof(cred_buf) - 1);
+        if (n <= 0) {
+            log_error("session_runner: greeter disconnected before auth on seat '%s'", s->name);
+            wait_child(greeter_pid, "greeter", s->name);
+            /* No further cleanup necessary: _exit closes all fds and reclaims memory. */
+            _exit(EXIT_FAILURE);
+        }
 
-    free(env[0]); /* XDG_SEAT */
-    if (s->vtnr > 0)
-        free(env[1]); /* XDG_VTNR */
-    free(env);
+        const char *password;
+        if (parse_credentials(cred_buf, n, &username, &password) < 0) {
+            log_warn("session_runner: invalid credentials from greeter on seat '%s'", s->name);
+            ipc_send(parent_end, "fail:invalid credentials\n",
+                     strlen("fail:invalid credentials\n"));
+            continue;
+        }
 
-    if (auth_r != PAM_SUCCESS) {
-        log_error("session_runner: PAM auth failed on seat '%s': %d", s->name, auth_r);
-        _exit(EXIT_FAILURE);
+        int auth_r = auth_open_session(username, password, (const char **)pam_env, pam_conf_path,
+                                       "atrium-dev", &pam_result);
+
+        if (auth_r != PAM_SUCCESS) {
+            /* auth_open_session already logged the PAM error. */
+            log_warn("session_runner: auth failed for '%s' on seat '%s'", username, s->name);
+            ipc_send(parent_end, "fail:authentication failed\n",
+                     strlen("fail:authentication failed\n"));
+            continue;
+        }
+
+        log_info("session_runner: auth ok for '%s' on seat '%s'", username, s->name);
+        ipc_send(parent_end, "ok\n", 3);
+        break;
     }
+
+    free(pam_env[0]); /* XDG_SEAT */
+    if (s->vtnr > 0)
+        free(pam_env[1]); /* XDG_VTNR */
+    free(pam_env);
+
+    /* Greeter exits after reading "ok\n". Wait for it, then clean up the
+    greeter logind session before starting the user session. */
+    wait_child(greeter_pid, "greeter", s->name);
+    ipc_close(parent_end);
+    close(fifo_fd); /* signals logind that the session has ended */
+    bus_close();
+
+    /* ---- USER SESSION PHASE ---- */
 
     /* Activate VT for seat0; blocks until active. */
     if (s->vtnr > 0 && vt_activate(s->vtnr) < 0) {
