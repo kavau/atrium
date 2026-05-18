@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "lib/ipc.h"
@@ -26,14 +27,24 @@ int main(void) {
 
     sleep(5);
 
-    const char *message = "family\0\0";
-    if (ipc_send(ch, message, 19) < 0) {
-        log_error("failed to send message over IPC channel");
+    /* username "alice" + empty password, both NULL-terminated. */
+    const char message[] = "alice\0\0";
+    if (ipc_send(ch, message, sizeof(message)) < 0) {
+        log_error("failed to send credentials");
         ipc_close(ch);
         return EXIT_FAILURE;
     }
-    ipc_close(ch);
 
+    char result[64] = {0};
+    ssize_t n = ipc_recv(ch, result, sizeof(result) - 1);
+    if (n <= 0) {
+        log_error("failed to read auth result");
+        ipc_close(ch);
+        return EXIT_FAILURE;
+    }
+    fprintf(stderr, "Auth result: %.*s", (int)n, result);
+
+    ipc_close(ch);
     fprintf(stderr, "Fake greeter exiting\n");
-    return 0;
+    return (strncmp(result, "ok", 2) == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

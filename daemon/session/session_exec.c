@@ -34,6 +34,10 @@ oom:
 /* Redirect stderr to the systemd journal under "atrium" so that child process
 output (cage, greeter, compositor) appears alongside daemon log lines. */
 static void redirect_stderr_to_journal(void) {
+    /* Skip redirect if ATRIUM_LOG_STDERR is set, so child output goes to the
+    terminal instead of the journal when testing interactively. */
+    if (getenv("ATRIUM_LOG_STDERR"))
+        return;
     int jfd = sd_journal_stream_fd("atrium", LOG_DEBUG, 0);
     if (jfd >= 0) {
         dup2(jfd, STDERR_FILENO);
