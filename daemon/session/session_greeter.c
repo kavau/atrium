@@ -1,8 +1,8 @@
 #include "session_greeter.h"
 
 #include <assert.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "daemon/core/seat.h"
@@ -24,10 +24,18 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
         _exit(EXIT_FAILURE);
     }
 
-    /* Build the session environment: USER LOGNAME HOME SHELL PATH XDG_SEAT
-    [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_RUNTIME_DIR XDG_SESSION_ID
-    WLR_LIBINPUT_NO_DEVICES NULL */
-    int n_env = 12 + (s->vtnr > 0 ? 1 : 0);
+    /* Build the session environment - count the number of env vars first. */
+    int n_env = 0;
+    char **ipc_env = ipc_getenvlist(ch);
+    if (!ipc_env)
+        goto oom;
+    for (char **p = ipc_env; *p; p++)
+        ++n_env;
+    n_env += NUM_ENV_PASSWD;
+    /* XDG_SEAT [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_RUNTIME_DIR
+    XDG_SESSION_ID WLR_LIBINPUT_NO_DEVICES NULL */
+    n_env += 7 + (s->vtnr > 0 ? 1 : 0);
+
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("child_exec_greeter: calloc");
@@ -51,23 +59,22 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
     if (asprintf(&env[i++], "XDG_SESSION_ID=%s", session_id) < 0)
         goto oom;
     env[i++] = "WLR_LIBINPUT_NO_DEVICES=1";
+
+    for (char **p = ipc_env; *p; p++)
+        env[i++] = *p;
+
     env[i++] = NULL;
     assert(i == n_env);
 
-    /* Build the command to exec. ipc_prepare_for_exec clears FD_CLOEXEC so
-    the channel fds survive exec and the greeter binary can reconstruct them. */
-    char cmd[512];
     if (ipc_prepare_for_exec(ch) < 0) {
         log_syserr("child_exec_greeter: ipc_prepare_for_exec");
         _exit(EXIT_FAILURE);
     }
-    char fd_args[64];
-    ipc_fmt_args(ch, fd_args, sizeof(fd_args));
-    snprintf(cmd, sizeof(cmd), "%s %s", GREETER, fd_args);
-    /* TODO: running the greeter via a shell is unnecessary overhead. */
-    char *argv[] = {"sh", "-c", cmd, NULL};
 
-    log_debug("child_exec_greeter: exec: %s", cmd);
+    /* TODO: running the greeter via a shell is unnecessary overhead. */
+    char *argv[] = {"sh", "-c", GREETER, NULL};
+
+    log_debug("child_exec_greeter: exec: %s", GREETER);
     drop_privs_and_exec(pw, "/bin/sh", argv, env);
 
 oom:

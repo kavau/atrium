@@ -13,7 +13,7 @@
 #include "lib/ipc.h"
 #include "lib/log.h"
 
-int main(int argc, char *argv[]) {
+int main(void) {
     char username[LINE_MAX];
     printf("Username: ");
     if (!fgets(username, sizeof(username), stdin)) {
@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
 
     /* Send credentials to the daemon */
     ipc_channel *ch = NULL;
-    if (ipc_create_from_args(&ch, argc, argv) < 0) {
+    if (ipc_create_from_env(&ch) < 0) {
         log_error("failed to create IPC channel");
         return EXIT_FAILURE;
     }

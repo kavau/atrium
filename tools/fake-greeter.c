@@ -10,17 +10,16 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #include "lib/ipc.h"
 #include "lib/log.h"
 
-int main(int argc, char *argv[]) {
+int main(void) {
     fprintf(stderr, "Fake greeter started with PID %d\n", getpid());
 
     ipc_channel *ch = NULL;
-    if (ipc_create_from_args(&ch, argc, argv) < 0) {
+    if (ipc_create_from_env(&ch) < 0) {
         log_error("failed to create IPC channel");
         return EXIT_FAILURE;
     }

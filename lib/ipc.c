@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -76,10 +77,6 @@ int ipc_prepare_for_exec(ipc_channel *ch) {
     return 0;
 }
 
-void ipc_fmt_args(ipc_channel *ch, char *buf, size_t len) {
-    snprintf(buf, len, "--read-fd=%d --write-fd=%d", ch->read_fd, ch->write_fd);
-}
-
 static int ipc_from_fds(ipc_channel **ch, int read_fd, int write_fd) {
     ipc_channel *channel = malloc(sizeof(ipc_channel));
     if (!channel) {
@@ -92,15 +89,39 @@ static int ipc_from_fds(ipc_channel **ch, int read_fd, int write_fd) {
     return 0;
 }
 
-int ipc_create_from_args(ipc_channel **ch, int argc, char *argv[]) {
-    int read_fd = -1, write_fd = -1;
-    for (int i = 1; i < argc; i++) {
-        if (sscanf(argv[i], "--read-fd=%d", &read_fd) == 1)
-            continue;
-        if (sscanf(argv[i], "--write-fd=%d", &write_fd) == 1)
-            continue;
+char **ipc_getenvlist(ipc_channel *ch) {
+    char **list = malloc(3 * sizeof(char *));
+    if (!list) {
+        log_syserr("ipc_getenvlist: malloc");
+        return NULL;
     }
-    if (read_fd < 0 || write_fd < 0)
+    if (asprintf(&list[0], "CREDENTIALS_FD=%d", ch->write_fd) < 0) {
+        log_syserr("ipc_getenvlist: asprintf");
+        free(list);
+        return NULL;
+    }
+    if (asprintf(&list[1], "RESULT_FD=%d", ch->read_fd) < 0) {
+        log_syserr("ipc_getenvlist: asprintf");
+        free(list[0]);
+        free(list);
+        return NULL;
+    }
+    list[2] = NULL;
+    return list;
+}
+
+int ipc_create_from_env(ipc_channel **ch) {
+    const char *creds = getenv("CREDENTIALS_FD");
+    const char *result = getenv("RESULT_FD");
+    if (!creds || !result) {
+        log_error("ipc_create_from_env: CREDENTIALS_FD or RESULT_FD not set");
         return -1;
+    }
+    int write_fd = -1, read_fd = -1;
+    if (sscanf(creds, "%d", &write_fd) != 1 || write_fd < 0 ||
+        sscanf(result, "%d", &read_fd) != 1 || read_fd < 0) {
+        log_error("ipc_create_from_env: invalid fd values");
+        return -1;
+    }
     return ipc_from_fds(ch, read_fd, write_fd);
 }

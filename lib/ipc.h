@@ -26,11 +26,11 @@ void ipc_close(ipc_channel *ch);
 Returns 0 on success, -1 on failure. */
 int ipc_prepare_for_exec(ipc_channel *ch);
 
-/* Format command line arguments for passing the IPC channel to a child
-process. The arguments can be parsed by ipc_create_from_args(). */
-void ipc_fmt_args(ipc_channel *ch, char *buf, size_t len);
+/* Return a list of environment variables for re-creating the IPC channel via
+ipc_create_from_env(). Caller owns the array and the strings.
+Returns NULL on allocation failure. */
+char **ipc_getenvlist(ipc_channel *ch);
 
 /* Create a bidirectional IPC channel from existing file descriptors supplied
-via command line arguments (e.g., --read-fd=3 --write-fd=4).
-Returns 0 on success, -1 on failure. */
-int ipc_create_from_args(ipc_channel **ch, int argc, char *argv[]);
+via environment variables. Returns 0 on success, -1 on failure. */
+int ipc_create_from_env(ipc_channel **ch);

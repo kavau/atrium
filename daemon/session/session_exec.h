@@ -5,6 +5,8 @@
 
 #include <pwd.h>
 
+#define NUM_ENV_PASSWD 5 /* USER LOGNAME HOME SHELL PATH */
+
 /* Look up username in the passwd database and append USER, LOGNAME, HOME,
 SHELL, and PATH entries to env[i..]. Sets *pw_out on success. Returns the
 updated index, or -1 on error (getpwnam failure or OOM). */
