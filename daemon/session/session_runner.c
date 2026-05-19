@@ -125,16 +125,12 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     struct passwd *pw = getpwnam(GREETER_USERNAME);
     if (!pw) {
         log_error("session_runner: getpwnam failed for '%s'", GREETER_USERNAME);
-        ipc_close(parent_end);
-        ipc_close(child_end);
         _exit(EXIT_FAILURE);
     }
 
     pid_t greeter_pid = fork();
     if (greeter_pid < 0) {
         log_syserr("session_runner: fork (greeter)");
-        ipc_close(parent_end);
-        ipc_close(child_end);
         _exit(EXIT_FAILURE);
     }
 
@@ -155,7 +151,6 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     int fifo_fd = -1;
 
     if (bus_open() < 0) {
-        ipc_close(parent_end);
         waitpid(greeter_pid, NULL, 0);
         _exit(EXIT_FAILURE);
     }
@@ -163,9 +158,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     if (bus_create_session(s->name, (uint32_t)s->vtnr, pw->pw_uid, greeter_pid, "", "greeter",
                            session_id, sizeof(session_id), session_obj, sizeof(session_obj),
                            runtime_path, sizeof(runtime_path), &fifo_fd) < 0) {
-        ipc_close(parent_end);
         waitpid(greeter_pid, NULL, 0);
-        bus_close();
         _exit(EXIT_FAILURE);
     }
 
@@ -173,20 +166,14 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
              (int)greeter_pid, s->name);
 
     if (s->vtnr > 0 && bus_activate_session(session_obj) < 0) {
-        ipc_close(parent_end);
         waitpid(greeter_pid, NULL, 0);
-        close(fifo_fd);
-        bus_close();
         _exit(EXIT_FAILURE);
     }
 
     if (wait_session_active(session_id) < 0) {
         log_error("session_runner: session %s never became active; aborting on seat '%s'",
                   session_id, s->name);
-        ipc_close(parent_end);
         waitpid(greeter_pid, NULL, 0);
-        close(fifo_fd);
-        bus_close();
         _exit(EXIT_FAILURE);
     }
     wait_udev_settle(s->name);
@@ -203,19 +190,18 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     char **pam_env = calloc(n_env, sizeof(*pam_env));
     if (!pam_env) {
         log_syserr("session_runner: calloc");
-        ipc_close(parent_end);
         wait_child(greeter_pid, "greeter", s->name);
-        close(fifo_fd);
-        bus_close();
         _exit(EXIT_FAILURE);
     }
     int i = 0;
     if (asprintf(&pam_env[i++], "XDG_SEAT=%s", s->name) < 0) {
         log_error("session_runner: out of memory");
+        wait_child(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
     if (s->vtnr > 0 && asprintf(&pam_env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
         log_error("session_runner: out of memory");
+        wait_child(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
     pam_env[i++] = "XDG_SESSION_TYPE=wayland";
@@ -231,7 +217,6 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         if (n <= 0) {
             log_error("session_runner: greeter disconnected before auth on seat '%s'", s->name);
             wait_child(greeter_pid, "greeter", s->name);
-            /* No further cleanup necessary: _exit closes all fds and reclaims memory. */
             _exit(EXIT_FAILURE);
         }
 
