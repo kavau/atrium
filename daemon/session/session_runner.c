@@ -3,9 +3,12 @@
 #include <assert.h>
 #include <errno.h>
 #include <pwd.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <systemd/sd-login.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "auth.h"
@@ -54,9 +57,60 @@ static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
         log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
 }
 
+/* Wait until logind has activated the session by polling sd_session_is_active().
+Returns 0 when active, -1 on timeout or error. */
+static int wait_session_active(const char *session_id) {
+    const int MAX_POLLS = 100; /* 100 x 20 ms = 2 s ceiling */
+    const int POLL_US = 20000; /* 20 ms */
+    for (int i = 0; i < MAX_POLLS; i++) {
+        int r = sd_session_is_active(session_id);
+        if (r > 0) {
+            log_info("session %s active (waited %d ms)", session_id, i * 20);
+            return 0;
+        }
+        if (r < 0) {
+            log_error("sd_session_is_active(%s): %s", session_id, strerror(-r));
+            return -1;
+        }
+        usleep((useconds_t)POLL_US);
+    }
+    log_error("session %s: timed out waiting for active state (2 s)", session_id);
+    return -1;
+}
+
+/* Wait for udevadm settle to complete, to make sure device ACLs have been
+applied. TODO: consider using libudev udev_queue_get_queue_is_empty() and
+udev_queue_get_fd() instead of forking udevadm. */
+static void wait_udev_settle(const char *seat_name) {
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    pid_t settle_pid = fork();
+    if (settle_pid == 0) {
+        /* child */
+        execl("/usr/bin/udevadm", "udevadm", "settle", "--timeout=5", (char *)NULL);
+        _exit(127);
+    } else if (settle_pid > 0) {
+        /* parent */
+        int wstatus = 0;
+        waitpid(settle_pid, &wstatus, 0);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        long ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
+        if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0)
+            log_warn("%s: udevadm settle failed with status %d after %ld ms", seat_name,
+                     WEXITSTATUS(wstatus), ms);
+        else
+            log_info("%s: udevadm settle completed in %ld ms", seat_name, ms);
+    } else {
+        log_syserr("wait_udev_settle: fork");
+    }
+}
+
 _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     assert(pam_conf_path);
     assert(s);
+
+    /* Ignore SIGPIPE to prevent a broken IPC pipe from killing this process. */
+    signal(SIGPIPE, SIG_IGN);
 
     /* ---- GREETER PHASE ---- */
 
@@ -126,8 +180,16 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         _exit(EXIT_FAILURE);
     }
 
-    /* SHORTCUT: wait to make sure session is active. */
-    sleep(1);
+    if (wait_session_active(session_id) < 0) {
+        log_error("session_runner: session %s never became active; aborting on seat '%s'",
+                  session_id, s->name);
+        ipc_close(parent_end);
+        waitpid(greeter_pid, NULL, 0);
+        close(fifo_fd);
+        bus_close();
+        _exit(EXIT_FAILURE);
+    }
+    wait_udev_settle(s->name);
 
     /* Signal greeter to proceed by sending the session_id. */
     if (ipc_send(parent_end, session_id, strlen(session_id)) < 0)
