@@ -57,6 +57,30 @@ static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
         log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
 }
 
+/* Send SIGTERM to pid, poll for exit up to 5 s, then escalate to SIGKILL. */
+static void kill_and_wait(pid_t pid, const char *desc, const char *seat_name) {
+    const int MAX_POLLS = 100; /* 100 x 50 ms = 5 s ceiling */
+    const int POLL_US = 50000; /* 50 ms */
+    kill(pid, SIGTERM);
+    for (int i = 0; i < MAX_POLLS; i++) {
+        int wstatus = 0;
+        pid_t r = waitpid(pid, &wstatus, WNOHANG);
+        if (r == pid) {
+            if (WIFEXITED(wstatus))
+                log_info("%s exited with status %d on seat '%s'", desc, WEXITSTATUS(wstatus),
+                         seat_name);
+            else if (WIFSIGNALED(wstatus))
+                log_info("%s terminated by signal %d (%s) on seat '%s'", desc, WTERMSIG(wstatus),
+                         strsignal(WTERMSIG(wstatus)), seat_name);
+            return;
+        }
+        usleep(POLL_US);
+    }
+    log_warn("%s did not exit after SIGTERM on seat '%s'; sending SIGKILL", desc, seat_name);
+    kill(pid, SIGKILL);
+    waitpid(pid, NULL, 0);
+}
+
 /* Wait until logind has activated the session by polling sd_session_is_active().
 Returns 0 when active, -1 on timeout or error. */
 static int wait_session_active(const char *session_id) {
@@ -88,6 +112,7 @@ static void wait_udev_settle(const char *seat_name) {
     if (settle_pid == 0) {
         /* child */
         execl("/usr/bin/udevadm", "udevadm", "settle", "--timeout=5", (char *)NULL);
+        log_syserr("wait_udev_settle: execl udevadm");
         _exit(127);
     } else if (settle_pid > 0) {
         /* parent */
@@ -151,14 +176,14 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     int fifo_fd = -1;
 
     if (bus_open() < 0) {
-        waitpid(greeter_pid, NULL, 0);
+        kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
 
     if (bus_create_session(s->name, (uint32_t)s->vtnr, pw->pw_uid, greeter_pid, "", "greeter",
                            session_id, sizeof(session_id), session_obj, sizeof(session_obj),
                            runtime_path, sizeof(runtime_path), &fifo_fd) < 0) {
-        waitpid(greeter_pid, NULL, 0);
+        kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
 
@@ -166,14 +191,14 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
              (int)greeter_pid, s->name);
 
     if (s->vtnr > 0 && bus_activate_session(session_obj) < 0) {
-        waitpid(greeter_pid, NULL, 0);
+        kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
 
     if (wait_session_active(session_id) < 0) {
         log_error("session_runner: session %s never became active; aborting on seat '%s'",
                   session_id, s->name);
-        waitpid(greeter_pid, NULL, 0);
+        kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
     wait_udev_settle(s->name);
@@ -190,18 +215,18 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     char **pam_env = calloc(n_env, sizeof(*pam_env));
     if (!pam_env) {
         log_syserr("session_runner: calloc");
-        wait_child(greeter_pid, "greeter", s->name);
+        kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
     int i = 0;
     if (asprintf(&pam_env[i++], "XDG_SEAT=%s", s->name) < 0) {
         log_error("session_runner: out of memory");
-        wait_child(greeter_pid, "greeter", s->name);
+        kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
     if (s->vtnr > 0 && asprintf(&pam_env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
         log_error("session_runner: out of memory");
-        wait_child(greeter_pid, "greeter", s->name);
+        kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
     pam_env[i++] = "XDG_SESSION_TYPE=wayland";
@@ -216,7 +241,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         ssize_t n = ipc_recv(parent_end, cred_buf, sizeof(cred_buf) - 1);
         if (n <= 0) {
             log_error("session_runner: greeter disconnected before auth on seat '%s'", s->name);
-            wait_child(greeter_pid, "greeter", s->name);
+            /* Pipe is closed but greeter may still be running teardown; give it
+            a chance to exit before escalating. */
+            kill_and_wait(greeter_pid, "greeter", s->name);
             _exit(EXIT_FAILURE);
         }
 
@@ -249,9 +276,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         free(pam_env[1]); /* XDG_VTNR */
     free(pam_env);
 
-    /* Greeter exits after reading "ok\n". Wait for it, then clean up the
-    greeter logind session before starting the user session. */
-    wait_child(greeter_pid, "greeter", s->name);
+    /* Greeter exits after reading "ok\n". Give it a timeout before escalating
+    to SIGTERM/SIGKILL so a stuck greeter does not block the user session. */
+    kill_and_wait(greeter_pid, "greeter", s->name);
     ipc_close(parent_end);
     close(fifo_fd); /* signals logind that the session has ended */
     bus_close();
