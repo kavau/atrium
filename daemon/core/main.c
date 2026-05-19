@@ -30,8 +30,7 @@ int main(int argc, char *argv[]) {
         log_error("failed to allocate VT for seat0: %d", vtnr);
         return EXIT_FAILURE;
     }
-    /* TODO: suppress VT keyboard so keystrokes typed into the Wayland
-    session don't leak into the TTY's input buffer. */
+    vt_suppress_keyboard(vtnr);
 #endif
 
     /* SHORTCUT: create hardcoded seats. We add seats in reverse order because
@@ -94,6 +93,7 @@ int main(int argc, char *argv[]) {
 
     /* Cleanup */
     if (vtnr > 0) {
+        vt_restore_keyboard(vtnr);
         vt_release(vtnr);
     }
     return EXIT_SUCCESS;

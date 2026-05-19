@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <linux/kd.h>
 #include <linux/vt.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -69,4 +70,31 @@ void vt_release(int vtnr) {
     close(tty0);
 
     log_info("released VT%d", vtnr);
+}
+
+static int open_vt(int vtnr) {
+    char path[16];
+    snprintf(path, sizeof(path), "/dev/tty%d", vtnr);
+    int fd = open(path, O_RDWR | O_CLOEXEC | O_NOCTTY);
+    if (fd < 0)
+        log_syserr("open_vt: open %s", path);
+    return fd;
+}
+
+void vt_suppress_keyboard(int vtnr) {
+    int fd = open_vt(vtnr);
+    if (fd < 0)
+        return;
+    if (ioctl(fd, KDSKBMODE, K_OFF) < 0)
+        log_syserr("vt_suppress_keyboard: ioctl KDSKBMODE K_OFF on VT%d", vtnr);
+    close(fd);
+}
+
+void vt_restore_keyboard(int vtnr) {
+    int fd = open_vt(vtnr);
+    if (fd < 0)
+        return;
+    if (ioctl(fd, KDSKBMODE, K_UNICODE) < 0)
+        log_syserr("vt_restore_keyboard: ioctl KDSKBMODE K_UNICODE on VT%d", vtnr);
+    close(fd);
 }
