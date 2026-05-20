@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/kd.h>
 #include <linux/vt.h>
@@ -64,8 +65,12 @@ void vt_release(int vtnr) {
     }
 
     if (ioctl(tty0, VT_DISALLOCATE, vtnr) < 0) {
-        /* TODO: EBUSY here is harmless, we should at most warn about it. */
-        log_syserr("vt_release: ioctl VT_DISALLOCATE");
+        /* EBUSY means the VT is still open (e.g. a process hasn't exited yet);
+        the kernel will free it once the last fd is closed. */
+        if (errno == EBUSY)
+            log_warn("vt_release: VT%d is busy, will be freed when last fd closes", vtnr);
+        else
+            log_syserr("vt_release: ioctl VT_DISALLOCATE");
     }
     close(tty0);
 
