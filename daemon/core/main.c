@@ -1,7 +1,10 @@
 #include <assert.h>
 #include <errno.h>
+#include <poll.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/signalfd.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -16,6 +19,23 @@ int main(int argc, char *argv[]) {
     (void)argv;
     log_info("starting");
     log_debug("debug logging enabled");
+
+    /* Block SIGTERM and SIGCHLD immediately so they are delivered via signalfd
+    rather than asynchronously. Must happen before any sleep or fork. */
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGCHLD);
+    if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0) {
+        log_syserr("main: sigprocmask");
+        return EXIT_FAILURE;
+    }
+
+    int sfd = signalfd(-1, &mask, SFD_CLOEXEC);
+    if (sfd < 0) {
+        log_syserr("main: signalfd");
+        return EXIT_FAILURE;
+    }
 
     /* SHORTCUT: allow hardware initialization to complete before seat discovery */
     sleep(SEAT_DISCOVERY_DELAY);
@@ -39,57 +59,76 @@ int main(int argc, char *argv[]) {
     int n_seats = sizeof(seat_names) / sizeof(seat_names[0]);
     for (int i = n_seats - 1; i >= 0; i--) {
         log_info("adding seat '%s'", seat_names[i]);
-        if (!seat_add(seat_names[i], strcmp(seat_names[i], "seat0") ? 0 : vtnr)) {
+        if (!seat_add(seat_names[i], strcmp(seat_names[i], "seat0") ? 0 : vtnr))
             log_error("failed to add seat '%s'", seat_names[i]);
-        }
     }
 
     /* Start a session runner on each seat. */
     for (seat *s = seat_first(); s; s = seat_next(s)) {
         log_info("starting session runner on seat '%s'", s->name);
-        int r = runner_start(PAM_CONF_PATH, s);
-        if (r != 0) {
-            log_error("failed to launch runner on %s: %d", s->name, r);
-            /* TODO: retry */
-        }
+        if (runner_start(PAM_CONF_PATH, s) != 0)
+            log_error("failed to launch runner on seat '%s'", s->name); /* TODO: retry */
         sleep(5); /* SHORTCUT: wait a bit before starting the next runner */
     }
 
-    /* Simple event loop */
+    /* Event loop: wait for SIGCHLD (child exited) or SIGTERM (shutdown). */
+    struct pollfd pfd = {.fd = sfd, .events = POLLIN};
     while (1) {
-        int wstatus;
-        pid_t pid = waitpid(-1, &wstatus, 0);
-        if (pid < 0) {
+        if (poll(&pfd, 1, -1) < 0) {
             if (errno == EINTR)
                 continue;
-            log_syserr("waitpid");
-            break; /* no children remain */
+            log_syserr("main: poll");
+            break;
         }
 
-        for (seat *s = seat_first(); s; s = seat_next(s)) {
-            if (pid != s->runner_pid)
-                continue;
+        struct signalfd_siginfo si;
+        if (read(sfd, &si, sizeof(si)) != (ssize_t)sizeof(si)) {
+            log_syserr("main: read signalfd");
+            break;
+        }
 
-            if (WIFEXITED(wstatus))
-                log_debug("session runner (PID %d) on seat '%s' exited with status %d", pid,
-                          s->name, WEXITSTATUS(wstatus));
-            else if (WIFSIGNALED(wstatus))
-                log_warn("session runner (PID %d) on seat '%s' terminated by signal %d (%s)", pid,
-                         s->name, WTERMSIG(wstatus), strsignal(WTERMSIG(wstatus)));
-            else
-                log_warn("session runner (PID %d) on seat '%s' exited with unexpected status %d",
-                         pid, s->name, wstatus);
+        if ((int)si.ssi_signo == SIGCHLD) {
+            /* Drain all ready children -- SIGCHLD coalesces so one signal may
+            cover multiple exits. */
+            while (1) {
+                int wstatus;
+                pid_t pid = waitpid(-1, &wstatus, WNOHANG);
+                if (pid <= 0)
+                    break;
 
-            s->runner_pid = 0;
-            s->state = SEAT_IDLE;
+                for (seat *s = seat_first(); s; s = seat_next(s)) {
+                    if (pid != s->runner_pid)
+                        continue;
 
-            log_info("restarting session runner on seat '%s'", s->name);
-            sleep(1); /* SHORTCUT: avoid tight crash-loop */
-            if (runner_start(PAM_CONF_PATH, s) != 0)
-                log_error("failed to restart runner on seat '%s'", s->name);
-            break; /* TODO: retry */
+                    if (WIFEXITED(wstatus))
+                        log_debug("session runner (PID %d) on seat '%s' exited with status %d", pid,
+                                  s->name, WEXITSTATUS(wstatus));
+                    else if (WIFSIGNALED(wstatus))
+                        log_warn(
+                            "session runner (PID %d) on seat '%s' terminated by signal %d (%s)",
+                            pid, s->name, WTERMSIG(wstatus), strsignal(WTERMSIG(wstatus)));
+                    else
+                        log_warn(
+                            "session runner (PID %d) on seat '%s' exited with unexpected status %d",
+                            pid, s->name, wstatus);
+
+                    s->runner_pid = 0;
+                    s->state = SEAT_IDLE;
+
+                    log_info("restarting session runner on seat '%s'", s->name);
+                    sleep(1); /* SHORTCUT: avoid tight crash-loop */
+                    if (runner_start(PAM_CONF_PATH, s) != 0)
+                        log_error("failed to restart runner on seat '%s'", s->name);
+                    break;
+                }
+            }
+        } else if ((int)si.ssi_signo == SIGTERM) {
+            log_info("received SIGTERM, shutting down");
+            break;
         }
     }
+
+    close(sfd);
 
     /* Shutdown: stop all session runners before releasing the VT. */
     for (seat *s = seat_first(); s; s = seat_next(s))
