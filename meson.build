@@ -71,7 +71,7 @@ executable('atrium-dev',
 
 executable('atrium-dev-greeter',
   sources: [
-    'greeter/main.c',
+    'greeter/main-txt.c',
     'lib/ipc.c',
   ],
   dependencies: [
