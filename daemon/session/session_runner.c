@@ -19,6 +19,7 @@
 #include "lib/defs.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
+#include "lib/proc.h"
 #include "session_compositor.h"
 #include "session_greeter.h"
 
@@ -77,30 +78,6 @@ static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
                  strsignal(WTERMSIG(wstatus)), seat_name);
     else
         log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
-}
-
-/* Send SIGTERM to pid, poll for exit up to 5 s, then escalate to SIGKILL. */
-static void kill_and_wait(pid_t pid, const char *desc, const char *seat_name) {
-    const int MAX_POLLS = 100; /* 100 x 50 ms = 5 s ceiling */
-    const int POLL_US = 50000; /* 50 ms */
-    kill(pid, SIGTERM);
-    for (int i = 0; i < MAX_POLLS; i++) {
-        int wstatus = 0;
-        pid_t r = waitpid(pid, &wstatus, WNOHANG);
-        if (r == pid) {
-            if (WIFEXITED(wstatus))
-                log_info("%s exited with status %d on seat '%s'", desc, WEXITSTATUS(wstatus),
-                         seat_name);
-            else if (WIFSIGNALED(wstatus))
-                log_info("%s terminated by signal %d (%s) on seat '%s'", desc, WTERMSIG(wstatus),
-                         strsignal(WTERMSIG(wstatus)), seat_name);
-            return;
-        }
-        usleep(POLL_US);
-    }
-    log_warn("%s did not exit after SIGTERM on seat '%s'; sending SIGKILL", desc, seat_name);
-    kill(pid, SIGKILL);
-    waitpid(pid, NULL, 0);
 }
 
 /* Wait until logind has activated the session by polling sd_session_is_active().

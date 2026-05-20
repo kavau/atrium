@@ -1,0 +1,7 @@
+#pragma once
+
+#include <unistd.h>
+
+/* Send SIGTERM to pid, poll for exit up to 5 s, then escalate to SIGKILL.
+ * desc and seat_name are used only for log messages. */
+void kill_and_wait(pid_t pid, const char *desc, const char *seat_name);
