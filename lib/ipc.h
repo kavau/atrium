@@ -19,6 +19,9 @@ int ipc_create(ipc_channel **end1, ipc_channel **end2);
 ssize_t ipc_send(ipc_channel *ch, const void *data, size_t len);
 ssize_t ipc_recv(ipc_channel *ch, void *data, size_t len);
 
+/* Send a null-terminated string over the channel. */
+ssize_t ipc_send_str(ipc_channel *ch, const char *msg);
+
 /* Close the IPC channel */
 void ipc_close(ipc_channel *ch);
 

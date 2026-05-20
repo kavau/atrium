@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "log.h"
@@ -48,6 +49,10 @@ int ipc_create(ipc_channel **end1, ipc_channel **end2) {
 ssize_t ipc_send(ipc_channel *ch, const void *data, size_t len) {
     assert(ch->write_fd != -1);
     return write(ch->write_fd, data, len);
+}
+
+ssize_t ipc_send_str(ipc_channel *ch, const char *msg) {
+    return ipc_send(ch, msg, strlen(msg));
 }
 
 ssize_t ipc_recv(ipc_channel *ch, void *data, size_t len) {

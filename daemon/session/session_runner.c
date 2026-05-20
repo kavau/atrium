@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <pwd.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -20,6 +21,27 @@
 #include "lib/log.h"
 #include "session_compositor.h"
 #include "session_greeter.h"
+
+/* Validate username: non-empty, within LOGIN_NAME_MAX, portable filename chars
+only ([A-Za-z0-9._-]) and optional trailing '$'. Rejects ANSI escape sequences and other
+injection. */
+static int is_valid_username(const char *username) {
+    if (!username || username[0] == '\0')
+        return 0;
+    size_t len = strlen(username);
+    if (len >= LOGIN_NAME_MAX)
+        return 0;
+    for (size_t i = 0; i < len; i++) {
+        char c = username[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+            c == '_' || c == '-' || c == '.')
+            continue;
+        if (c == '$' && i == len - 1)
+            continue;
+        return 0;
+    }
+    return 1;
+}
 
 /* Parse credentials from greeter IPC message (format: "username\0password\0").
 On success, *username and *password point into buf. Returns 0 or -1. */
@@ -250,8 +272,13 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         const char *password;
         if (parse_credentials(cred_buf, n, &username, &password) < 0) {
             log_warn("session_runner: invalid credentials from greeter on seat '%s'", s->name);
-            ipc_send(parent_end, "fail:invalid credentials\n",
-                     strlen("fail:invalid credentials\n"));
+            ipc_send_str(parent_end, "fail:invalid credentials\n");
+            continue;
+        }
+
+        if (!is_valid_username(username)) {
+            log_warn("session_runner: invalid username from greeter on seat '%s'", s->name);
+            ipc_send_str(parent_end, "fail:invalid username\n");
             continue;
         }
 
@@ -261,13 +288,12 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         if (auth_r != PAM_SUCCESS) {
             /* auth_open_session already logged the PAM error. */
             log_warn("session_runner: auth failed for '%s' on seat '%s'", username, s->name);
-            ipc_send(parent_end, "fail:authentication failed\n",
-                     strlen("fail:authentication failed\n"));
+            ipc_send_str(parent_end, "fail:authentication failed\n");
             continue;
         }
 
         log_info("session_runner: auth ok for '%s' on seat '%s'", username, s->name);
-        ipc_send(parent_end, "ok\n", 3);
+        ipc_send_str(parent_end, "ok\n");
         break;
     }
 
