@@ -5,6 +5,7 @@
 
 #include "daemon/session/session_runner.h"
 #include "lib/log.h"
+#include "lib/proc.h"
 #include "seat.h"
 
 int runner_start(const char *pam_conf_path, seat *s) {
@@ -28,4 +29,14 @@ int runner_start(const char *pam_conf_path, seat *s) {
     s->runner_pid = runner_pid;
     log_info("started session runner with PID %d on seat '%s'", runner_pid, s->name);
     return 0;
+}
+
+void runner_stop(seat *s) {
+    if (s->runner_pid <= 0)
+        return;
+
+    log_info("stopping session runner (PID %d) on seat '%s'", s->runner_pid, s->name);
+    kill_and_wait(s->runner_pid, "session runner", s->name);
+    s->runner_pid = 0;
+    s->state = SEAT_IDLE;
 }

@@ -91,7 +91,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    /* Cleanup */
+    /* Shutdown: stop all session runners before releasing the VT. */
+    for (seat *s = seat_first(); s; s = seat_next(s))
+        runner_stop(s);
+
     if (vtnr > 0) {
         vt_restore_keyboard(vtnr);
         vt_release(vtnr);
