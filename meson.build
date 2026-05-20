@@ -66,6 +66,7 @@ executable('atrium-dev',
     dep_libsystemd,
   ],
   install: true,
+  install_tag: 'daemon',
 )
 
 executable('atrium-dev-greeter',
@@ -76,6 +77,7 @@ executable('atrium-dev-greeter',
   dependencies: [
   ],
   install: true,
+  install_tag: 'greeter',
 )
 
 executable('atrium-gtk-greeter',
@@ -87,6 +89,7 @@ executable('atrium-gtk-greeter',
     dep_gtk4,
   ],
   install: true,
+  install_tag: 'greeter',
 )
 
 executable('atrium-auth-test',
@@ -127,6 +130,7 @@ executable('atrium-fake-compositor',
   dependencies: [
   ],
   install: true,
+  install_tag: 'daemon',
 )
 
 executable('atrium-fake-greeter',
@@ -137,6 +141,7 @@ executable('atrium-fake-greeter',
   dependencies: [
   ],
   install: true,
+  install_tag: 'daemon',
 )
 
 executable('atrium-ipc-test',
@@ -165,9 +170,11 @@ executable('atrium-greeter-test',
 install_data(
   'data/pam/atrium-dev',
   install_dir: '/etc/pam.d',
+  install_tag: 'daemon',
 )
 
 install_data(
   'data/atrium-dev.service',
   install_dir: '/usr/lib/systemd/system',
+  install_tag: 'daemon',
 )
