@@ -32,6 +32,7 @@ endif
 cc = meson.get_compiler('c')
 dep_libpam = cc.find_library('pam')
 dep_libsystemd = dependency('libsystemd')
+dep_gtk4       = dependency('gtk4')
 
 # Feature detection
 
@@ -73,6 +74,17 @@ executable('atrium-dev-greeter',
     'lib/ipc.c',
   ],
   dependencies: [
+  ],
+  install: true,
+)
+
+executable('atrium-gtk-greeter',
+  sources: [
+    'greeter/main-gtk.c',
+    'lib/ipc.c',
+  ],
+  dependencies: [
+    dep_gtk4,
   ],
   install: true,
 )
@@ -131,6 +143,17 @@ executable('atrium-ipc-test',
   sources: [
     'lib/ipc.c',
     'tools/ipc-test.c',
+  ],
+  dependencies: [
+  ],
+  install: false,
+)
+
+executable('atrium-greeter-test',
+  sources: [
+    'lib/ipc.c',
+    'lib/proc.c',
+    'tools/greeter-test.c',
   ],
   dependencies: [
   ],
