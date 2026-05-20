@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <glib-unix.h>
 #include <gtk/gtk.h>
 
 #include "lib/ipc.h"
@@ -53,6 +54,40 @@ static int enumerate_users(user_entry *users, int max) {
     return count;
 }
 
+/* Callback for IPC response from the daemon */
+static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer user_data) {
+    (void)fd;
+    GtkWidget *widget = GTK_WIDGET(user_data);
+
+    if (condition & (G_IO_ERR | G_IO_HUP)) {
+        log_error("greeter: IPC fd error or hangup");
+        goto err;
+    }
+
+    char    buf[512];
+    ssize_t n = ipc_recv(g_ch, buf, sizeof(buf) - 1);
+    if (n <= 0) {
+        log_error("greeter: failed to receive response from daemon");
+        goto err;
+    }
+
+    buf[n] = '\0';
+    log_debug("greeter: received response: %s", buf);
+    if (strcmp(buf, "ok\n") == 0) {
+        log_info("greeter: authentication successful for user '%s'; exiting",
+                 g_selected_user->username);
+        g_application_quit(g_application_get_default());
+        return G_SOURCE_REMOVE;
+    }
+
+    log_info("greeter: authentication failed for user '%s': %s", g_selected_user->username, buf);
+
+err:
+    /* TODO: show error message to user */
+    gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
+    return G_SOURCE_REMOVE;
+}
+
 static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
     (void)widget;
     g_selected_user = user_data;
@@ -65,54 +100,54 @@ static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
     gtk_widget_grab_focus(GTK_WIDGET(g_password_entry));
 }
 
+/* Construct credentials string for daemon: "<username>\0<password>\0" */
+static int build_credentials_str(char *buf, size_t buflen, const char *username,
+                                 const char *password) {
+    size_t ulen = strlen(username) + 1; /* include the \0 */
+    size_t plen = strlen(password) + 1;
+    if (ulen + plen > buflen) {
+        log_error("greeter: credentials too long to send");
+        return -1;
+    }
+    memcpy(buf, username, ulen);
+    memcpy(buf + ulen, password, plen);
+    return ulen + plen;
+}
+
 static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     (void)user_data;
+
     if (!g_selected_user) {
         log_warn("greeter: login clicked but no user selected");
         return;
     }
-
     log_debug("greeter: login clicked for user '%s'", g_selected_user->username);
-    const char *password = gtk_editable_get_text(GTK_EDITABLE(g_password_entry));
 
-    gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), FALSE);
+    GtkRoot *root = gtk_widget_get_root(widget);
+    gtk_root_set_focus(root, NULL);
+    gtk_widget_set_sensitive(GTK_WIDGET(root), FALSE);
 
     /* Send credentials to daemon */
-    char   buf[512];
-    size_t ulen = strlen(g_selected_user->username) + 1; /* include the \0 */
-    size_t plen = strlen(password) + 1;
-    if (ulen + plen > sizeof(buf)) {
-        log_error("greeter: credentials too long to send");
+    char        buf[512];
+    const char *password = gtk_editable_get_text(GTK_EDITABLE(g_password_entry));
+    int credlen = build_credentials_str(buf, sizeof(buf), g_selected_user->username, password);
+    if (credlen < 0)
         goto err;
-    }
-    memcpy(buf, g_selected_user->username, ulen);
-    memcpy(buf + ulen, password, plen);
-    if (ipc_send(g_ch, buf, ulen + plen) < 0) {
+    if (ipc_send(g_ch, buf, credlen) < 0) {
         log_syserr("greeter: failed to send credentials");
         goto err;
     }
+
+    /* Activate fd watcher for ipc channel */
+    g_unix_fd_add(ipc_get_read_fd(g_ch), G_IO_IN | G_IO_ERR | G_IO_HUP, on_ipc_response_ready,
+                  widget);
     log_info("greeter: sent credentials for user '%s'; waiting for response",
              g_selected_user->username);
+    return;
 
-    /* Block waiting for auth result */
-    ssize_t n = ipc_recv(g_ch, buf, sizeof(buf) - 1);
-    if (n <= 0) {
-        log_error("greeter: failed to receive response from daemon");
-        goto err;
-    }
-
-    buf[n] = '\0';
-    log_debug("greeter: received response: %s", buf);
-    if (strcmp(buf, "ok\n") == 0) {
-        log_info("greeter: authentication successful for user '%s'", g_selected_user->username);
-        g_application_quit(g_application_get_default()); /* SHORTCUT */
-        return;
-    }
-
-    log_info("greeter: authentication failed for user '%s': %s", g_selected_user->username, buf);
 err:
     /* TODO: show error message to user */
-    gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
+    gtk_widget_set_sensitive(GTK_WIDGET(root), TRUE);
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
@@ -125,7 +160,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     /* gtk_window_fullscreen(GTK_WINDOW(window)); */
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
 
-    /* Stack consisting of user selection box and password box */
+    /* Stack consisting of user selection page and password entry page */
 
     GtkWidget *stack = gtk_stack_new();
     gtk_window_set_child(GTK_WINDOW(window), stack);
