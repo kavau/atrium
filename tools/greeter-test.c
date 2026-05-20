@@ -6,12 +6,19 @@
  */
 
 #include <stdlib.h>
+#include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "lib/ipc.h"
 #include "lib/log.h"
 #include "lib/proc.h"
+
+static void log_credentials(const char *buf) {
+    const char *username = buf;
+    const char *password = buf + strlen(username) + 1;
+    log_info("greeter: received credentials for user '%s' with password '%s'", username, password);
+}
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -60,23 +67,21 @@ int main(int argc, char *argv[]) {
     then ok in the second round */
     for (int i = 0; i < 2; i++) {
         log_info("parent process: waiting for message from greeter...");
-        char buf[512];
-        ssize_t n = ipc_recv(parent_end, buf, sizeof(buf) - 1);
+        char    buf[512];
+        ssize_t n = ipc_recv(parent_end, buf, sizeof(buf) - 2);
         if (n <= 0) {
             log_error("greeter disconnected");
             kill_and_wait(greeter_pid, "greeter", "seat0");
-            ipc_close(parent_end);
             return EXIT_FAILURE;
         }
-        buf[n] = '\0';
-        log_info("received from greeter: %s", buf);
-
+        buf[n] = '\0'; /* defensive - log_credentials expects two null terminators */
+        buf[n + 1] = '\0';
+        log_credentials(buf);
         const char *response = (i == 0) ? "fail:invalid credentials\n" : "ok\n";
         log_info("sending to greeter: %s", response);
         if (ipc_send_str(parent_end, response) < 0) {
             log_syserr("ipc_send_str");
             kill_and_wait(greeter_pid, "greeter", "seat0");
-            ipc_close(parent_end);
             return EXIT_FAILURE;
         }
     }

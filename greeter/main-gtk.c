@@ -1,4 +1,6 @@
 #include <pwd.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <gtk/gtk.h>
@@ -6,40 +8,44 @@
 #include "lib/ipc.h"
 #include "lib/log.h"
 
-#define MAX_NUM_USERS 100
+#define MAX_NUM_USERS    100
 #define MAX_USERNAME_LEN 256
 
 typedef struct {
     char username[MAX_USERNAME_LEN];
 } user_entry;
 
-typedef struct {
-    user_entry *users;
-    int num_users;
-    ipc_channel *ch;
-} activate_ctx;
-
-typedef struct {
-    user_entry *user;
-    ipc_channel *ch;
-} login_ctx;
+/* Global variables - avoid passing context around */
+static ipc_channel *g_ch;
+static GtkStack    *g_stack;
+static GtkLabel    *g_user_label;
+static GtkEntry    *g_password_entry;
+static user_entry  *g_selected_user;
+static user_entry   g_users[MAX_NUM_USERS];
+static int          g_num_users;
 
 static int enumerate_users(user_entry *users, int max) {
-    int count = 0;
+    int            count = 0;
     struct passwd *pw;
 
     setpwent();
     while ((pw = getpwent()) != NULL && count < max) {
         if (pw->pw_uid < 1000 || pw->pw_uid >= 65534)
             continue;
-        if (pw->pw_shell) {
-            if (strstr(pw->pw_shell, "nologin") || strcmp(pw->pw_shell, "/bin/false") == 0)
-                continue;
+        if (pw->pw_shell == NULL || pw->pw_shell[0] == '\0' || strstr(pw->pw_shell, "nologin") ||
+            strcmp(pw->pw_shell, "/bin/false") == 0) {
+            continue;
         }
         snprintf(users[count].username, sizeof(users[count].username), "%s", pw->pw_name);
         count++;
     }
     endpwent();
+
+#ifdef ATRIUM_DEBUG
+    /* For testing only: add more users */
+    snprintf(users[count++].username, sizeof(users[0].username), "Alice");
+    snprintf(users[count++].username, sizeof(users[0].username), "Bob");
+#endif
 
     if (count == max)
         log_warn("user list truncated at %d entries", max);
@@ -47,53 +53,70 @@ static int enumerate_users(user_entry *users, int max) {
     return count;
 }
 
-static void free_login_ctx(gpointer data, GClosure *closure) {
-    (void)closure;
-    g_free(data);
+static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
+    g_selected_user = user_data;
+
+    char title[MAX_USERNAME_LEN + 16];
+    snprintf(title, sizeof(title), "Log in as %s", g_selected_user->username);
+    gtk_label_set_text(g_user_label, title);
+    gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
+    gtk_stack_set_visible_child_name(g_stack, "password");
+    gtk_widget_grab_focus(GTK_WIDGET(g_password_entry));
 }
 
-static void on_user_selected(GtkWidget *widget, gpointer user_data) {
-    login_ctx *lctx = user_data;
+static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)user_data;
+    if (!g_selected_user) {
+        log_warn("greeter: login clicked but no user selected");
+        return;
+    }
 
-    log_debug("greeter: user '%s' selected", lctx->user->username);
-    const char password[] = "password"; /* TODO: prompt for password */
+    log_debug("greeter: login clicked for user '%s'", g_selected_user->username);
+    const char *password = gtk_editable_get_text(GTK_EDITABLE(g_password_entry));
 
     gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), FALSE);
 
     /* Send credentials to daemon */
-    char buf[512];
-    size_t ulen = strlen(lctx->user->username) + 1; /* include the \0 */
+    char   buf[512];
+    size_t ulen = strlen(g_selected_user->username) + 1; /* include the \0 */
     size_t plen = strlen(password) + 1;
-    memcpy(buf, lctx->user->username, ulen);
-    memcpy(buf + ulen, password, plen);
-    if (ipc_send(lctx->ch, buf, ulen + plen) < 0) {
-        log_syserr("greeter: failed to send credentials");
-        gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
-        return; /* TODO: show error message */
+    if (ulen + plen > sizeof(buf)) {
+        log_error("greeter: credentials too long to send");
+        goto err;
     }
-    log_info("greeter: sent credentials for user '%s'; waiting for response", lctx->user->username);
+    memcpy(buf, g_selected_user->username, ulen);
+    memcpy(buf + ulen, password, plen);
+    if (ipc_send(g_ch, buf, ulen + plen) < 0) {
+        log_syserr("greeter: failed to send credentials");
+        goto err;
+    }
+    log_info("greeter: sent credentials for user '%s'; waiting for response",
+             g_selected_user->username);
 
     /* Block waiting for auth result */
-    ssize_t n = ipc_recv(lctx->ch, buf, sizeof(buf) - 1);
+    ssize_t n = ipc_recv(g_ch, buf, sizeof(buf) - 1);
     if (n <= 0) {
         log_error("greeter: failed to receive response from daemon");
-        return; /* TODO: show error message */
+        goto err;
     }
 
     buf[n] = '\0';
     log_debug("greeter: received response: %s", buf);
     if (strcmp(buf, "ok\n") == 0) {
-        log_info("greeter: authentication successful for user '%s'", lctx->user->username);
+        log_info("greeter: authentication successful for user '%s'", g_selected_user->username);
         g_application_quit(g_application_get_default()); /* SHORTCUT */
         return;
     }
 
-    log_info("greeter: authentication failed for user '%s': %s", lctx->user->username, buf);
+    log_info("greeter: authentication failed for user '%s': %s", g_selected_user->username, buf);
+err:
+    /* TODO: show error message to user */
     gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
-    activate_ctx *actx = user_data;
+    (void)user_data;
 
     GtkWidget *window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "atrium");
@@ -102,48 +125,69 @@ static void activate(GtkApplication *app, gpointer user_data) {
     /* gtk_window_fullscreen(GTK_WINDOW(window)); */
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
 
+    /* Stack consisting of user selection box and password box */
+
+    GtkWidget *stack = gtk_stack_new();
+    gtk_window_set_child(GTK_WINDOW(window), stack);
+    g_stack = GTK_STACK(stack);
+
+    /* User selection page */
+
     GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_halign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(users_box, GTK_ALIGN_CENTER);
-    gtk_window_set_child(GTK_WINDOW(window), users_box);
+    gtk_stack_add_named(g_stack, users_box, "users");
 
-    for (int i = 0; i < actx->num_users; i++) {
-        GtkWidget *btn = gtk_button_new_with_label(actx->users[i].username);
-
-        login_ctx *lctx = g_new(login_ctx, 1);
-        lctx->user = &actx->users[i];
-        lctx->ch = actx->ch;
-        g_signal_connect_data(btn, "clicked", G_CALLBACK(on_user_selected), lctx, free_login_ctx,
-                              0);
-
+    for (int i = 0; i < g_num_users; i++) {
+        GtkWidget *btn = gtk_button_new_with_label(g_users[i].username);
+        g_signal_connect(btn, "clicked", G_CALLBACK(on_user_clicked), &g_users[i]);
         gtk_box_append(GTK_BOX(users_box), btn);
     }
 
+    /* Password entry page */
+
+    GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_halign(password_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(password_box, GTK_ALIGN_CENTER);
+    gtk_stack_add_named(g_stack, password_box, "password");
+
+    GtkWidget *password_title = gtk_label_new("");
+    gtk_box_append(GTK_BOX(password_box), password_title);
+    g_user_label = GTK_LABEL(password_title);
+
+    gtk_box_append(GTK_BOX(password_box), gtk_label_new("Password:"));
+
+    GtkWidget *password_entry = gtk_entry_new();
+    gtk_entry_set_input_purpose(GTK_ENTRY(password_entry), GTK_INPUT_PURPOSE_PASSWORD);
+    gtk_entry_set_visibility(GTK_ENTRY(password_entry), FALSE);
+    gtk_box_append(GTK_BOX(password_box), password_entry);
+    g_password_entry = GTK_ENTRY(password_entry);
+
+    GtkWidget *login_btn = gtk_button_new_with_label("Log In");
+    g_signal_connect(login_btn, "clicked", G_CALLBACK(on_login_clicked), NULL);
+    g_signal_connect(password_entry, "activate", G_CALLBACK(on_login_clicked), NULL);
+    gtk_box_append(GTK_BOX(password_box), login_btn);
+
+    /* Show the window */
+
+    gtk_stack_set_visible_child_name(GTK_STACK(stack), "users");
     gtk_window_present(GTK_WINDOW(window));
 }
 
-static int run_ui(int num_users, user_entry *users, ipc_channel *ch) {
-    activate_ctx actx = {.num_users = num_users, .users = users, .ch = ch};
-
-    GtkApplication *app = gtk_application_new("com.kavau.atrium", G_APPLICATION_NON_UNIQUE);
-    g_signal_connect(app, "activate", G_CALLBACK(activate), &actx);
-    int status = g_application_run(G_APPLICATION(app), 0, NULL);
-    g_object_unref(app);
-    return status;
-}
-
 int main(void) {
-    user_entry users[MAX_NUM_USERS];
-    int num_users = enumerate_users(users, MAX_NUM_USERS);
-    ipc_channel *ch;
-    if (ipc_create_from_env(&ch) != 0) {
+    g_num_users = enumerate_users(g_users, MAX_NUM_USERS);
+
+    if (ipc_create_from_env(&g_ch) != 0) {
         log_error("failed to create IPC channel from environment");
         return EXIT_FAILURE;
     }
 
-    int status = run_ui(num_users, users, ch);
+    GtkApplication *app = gtk_application_new("com.kavau.atrium", G_APPLICATION_NON_UNIQUE);
+    g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
+    int status = g_application_run(G_APPLICATION(app), 0, NULL);
+    g_object_unref(app);
 
     log_info("greeter exiting with status %d", status);
-    ipc_close(ch);
+    ipc_close(g_ch);
     return status;
 }
