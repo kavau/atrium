@@ -1,6 +1,7 @@
 /* atrium default theme - catppuccin mocha */
 
 @define-color atrium-bg           #1e1e2e; /* very dark navy */
+@define-color atrium-card         #313244; /* slightly lighter surface */
 @define-color atrium-text         #cdd6f4; /* pale lavender */
 @define-color atrium-border       #45475a; /* dim grey-blue */
 @define-color atrium-accent       #89b4fa; /* soft blue */
@@ -13,7 +14,23 @@ window {
   color: @atrium-text;
 }
 
+.card {
+  background-color: @atrium-card;
+  border-radius: 12px;
+  padding: 32px 40px;
+  min-width: 340px;
+}
+
+.heading {
+  font-size: 1.25em;
+  font-weight: bold;
+  color: @atrium-text;
+  margin-bottom: 8px;
+}
+
 button {
+  font-size: 1em;
+  background-image: none;
   background-color: @atrium-accent;
   color: @atrium-accent-fg;
   border: none;
@@ -23,6 +40,7 @@ button {
 }
 
 button:hover {
+  background-image: none;
   background-color: @atrium-accent-hover;
   box-shadow: none;
 }
@@ -31,7 +49,10 @@ button:active {
   box-shadow: none;
 }
 
-entry {
+/* Target the inner GtkText node for border and colors - the outer entry node
+ * is a container that Adwaita does not style for border drawing. */
+.password-entry > text {
+  font-size: 1em;
   background-color: @atrium-bg;
   color: @atrium-text;
   border: 1px solid @atrium-border;
@@ -39,6 +60,6 @@ entry {
   padding: 6px 10px;
 }
 
-entry:focus {
+.password-entry:focus > text {
   border-color: @atrium-accent;
 }
