@@ -26,6 +26,15 @@ if get_option('debug_logging')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
 
+# Greeter CSS (compiled-in)
+
+gnome = import('gnome')
+greeter_resources = gnome.compile_resources(
+  'greeter-resources',
+  'greeter/greeter.gresource.xml',
+  source_dir: 'greeter',
+)
+
 # Dependencies
 
 # dep_libpam = dependency('libpam')
@@ -82,8 +91,10 @@ executable('atrium-dev-greeter',
 
 executable('atrium-gtk-greeter',
   sources: [
+    greeter_resources,
     'greeter/ipc.c',
     'greeter/main-gtk.c',
+    'greeter/theme.c',
     'greeter/ui-gtk.c',
     'greeter/users.c',
     'lib/ipc.c',

@@ -1,14 +1,13 @@
 #include "ui-gtk.h"
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include <glib-unix.h>
 #include <gtk/gtk.h>
 
 #include "ipc.h"
 #include "lib/log.h"
+#include "theme.h"
 
 /* Global variables - avoid passing context around */
 static ipc_channel        *g_ch;
@@ -91,6 +90,8 @@ err:
 
 static void activate(GtkApplication *app, gpointer user_data) {
     (void)user_data;
+
+    theme_apply();
 
     GtkWidget *window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), "atrium");

@@ -1,0 +1,44 @@
+/* atrium default theme - catppuccin mocha */
+
+@define-color atrium-bg           #1e1e2e; /* very dark navy */
+@define-color atrium-text         #cdd6f4; /* pale lavender */
+@define-color atrium-border       #45475a; /* dim grey-blue */
+@define-color atrium-accent       #89b4fa; /* soft blue */
+@define-color atrium-accent-hover #b4d0ff; /* lighter blue */
+@define-color atrium-accent-fg    #1e1e2e; /* same as bg - text on accent */
+@define-color atrium-error        #f38ba8; /* soft red */
+
+window {
+  background-color: @atrium-bg;
+  color: @atrium-text;
+}
+
+button {
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
+  border: none;
+  box-shadow: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+}
+
+button:hover {
+  background-color: @atrium-accent-hover;
+  box-shadow: none;
+}
+
+button:active {
+  box-shadow: none;
+}
+
+entry {
+  background-color: @atrium-bg;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+entry:focus {
+  border-color: @atrium-accent;
+}
