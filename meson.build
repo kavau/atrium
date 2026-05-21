@@ -28,9 +28,8 @@ endif
 
 # Dependencies
 
-# dep_libpam = dependency('libpam')
 cc = meson.get_compiler('c')
-dep_libpam = cc.find_library('pam')
+dep_libpam     = cc.find_library('pam')  # libpam does not ship a .pc file on some distros
 dep_libsystemd = dependency('libsystemd')
 
 # Feature detection
@@ -114,7 +113,7 @@ executable('atrium-fake-compositor',
   ],
   dependencies: [
   ],
-  install: true,
+  install: true,  # TODO: change to false for actual release
 )
 
 executable('atrium-fake-greeter',
@@ -124,7 +123,7 @@ executable('atrium-fake-greeter',
   ],
   dependencies: [
   ],
-  install: true,
+  install: true,  # TODO: change to false for actual release
 )
 
 executable('atrium-ipc-test',
