@@ -58,6 +58,14 @@ static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
     gtk_widget_grab_focus(GTK_WIDGET(g_password_entry));
 }
 
+static void on_back_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    g_selected_user = NULL;
+    gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
+    gtk_stack_set_visible_child_name(g_stack, "users");
+}
+
 static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     (void)user_data;
 
@@ -149,6 +157,11 @@ static void activate(GtkApplication *app, gpointer user_data) {
     g_signal_connect(login_btn, "clicked", G_CALLBACK(on_login_clicked), NULL);
     g_signal_connect(password_entry, "activate", G_CALLBACK(on_login_clicked), NULL);
     gtk_box_append(GTK_BOX(password_box), login_btn);
+
+    GtkWidget *back_btn = gtk_button_new_with_label("Back");
+    gtk_widget_add_css_class(back_btn, "back-button");
+    g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_clicked), NULL);
+    gtk_box_append(GTK_BOX(password_box), back_btn);
 
     /* Show the window */
 

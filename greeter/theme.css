@@ -49,6 +49,19 @@ button:active {
   box-shadow: none;
 }
 
+.back-button {
+  background-image: none;
+  background-color: transparent;
+  color: @atrium-text;
+  box-shadow: none;
+}
+
+.back-button:hover {
+  background-image: none;
+  background-color: @atrium-border;
+  box-shadow: none;
+}
+
 /* Target the inner GtkText node for border and colors - the outer entry node
  * is a container that Adwaita does not style for border drawing. */
 .password-entry > text {
