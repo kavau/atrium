@@ -46,9 +46,31 @@ err:
     return G_SOURCE_REMOVE;
 }
 
+/* Disable the window, send credentials, and register the IPC response watcher.
+ * Re-enables the window on send failure. */
+static void submit_credentials(GtkWidget *widget, const char *password) {
+    GtkRoot *root = gtk_widget_get_root(widget);
+    gtk_widget_set_sensitive(GTK_WIDGET(root), FALSE);
+    if (ipc_send_credentials(g_ch, g_selected_user->username, password) != 0) {
+        /* TODO: show error message to user */
+        gtk_widget_set_sensitive(GTK_WIDGET(root), TRUE);
+        return;
+    }
+    g_unix_fd_add(ipc_get_read_fd(g_ch), G_IO_IN | G_IO_ERR | G_IO_HUP,
+                  on_ipc_response_ready, widget);
+    log_info("greeter: sent credentials for user '%s'; waiting for response",
+             g_selected_user->username);
+}
+
 static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
-    (void)widget;
     g_selected_user = user_data;
+
+    if (g_selected_user->passwordless) {
+        log_info("greeter: passwordless user '%s', skipping password page",
+                 g_selected_user->username);
+        submit_credentials(widget, "");
+        return;
+    }
 
     char title[MAX_DISPLAY_NAME_LEN + 16];
     snprintf(title, sizeof(title), "Log in as %s", g_selected_user->username);
@@ -75,25 +97,8 @@ static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     }
     log_debug("greeter: login clicked for user '%s'", g_selected_user->username);
 
-    GtkRoot *root = gtk_widget_get_root(widget);
-    gtk_root_set_focus(root, NULL);
-    gtk_widget_set_sensitive(GTK_WIDGET(root), FALSE);
-
-    /* Send credentials to daemon */
-    const char *password = gtk_editable_get_text(GTK_EDITABLE(g_password_entry));
-    if (ipc_send_credentials(g_ch, g_selected_user->username, password) != 0)
-        goto err;
-
-    /* Activate fd watcher for ipc channel */
-    g_unix_fd_add(ipc_get_read_fd(g_ch), G_IO_IN | G_IO_ERR | G_IO_HUP, on_ipc_response_ready,
-                  widget);
-    log_info("greeter: sent credentials for user '%s'; waiting for response",
-             g_selected_user->username);
-    return;
-
-err:
-    /* TODO: show error message to user */
-    gtk_widget_set_sensitive(GTK_WIDGET(root), TRUE);
+    gtk_root_set_focus(gtk_widget_get_root(widget), NULL);
+    submit_credentials(widget, gtk_editable_get_text(GTK_EDITABLE(g_password_entry)));
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
