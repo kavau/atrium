@@ -279,9 +279,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         free(pam_env[1]); /* XDG_VTNR */
     free(pam_env);
 
-    /* Greeter exits after reading "ok\n". Give it a timeout before escalating
-    to SIGTERM/SIGKILL so a stuck greeter does not block the user session. */
-    kill_and_wait(greeter_pid, "greeter", s->name);
+    /* Greeter exits after reading "ok\n". Wait for it to exit cleanly; send
+    SIGTERM and SIGKILL only if it does not exit within 5 s. */
+    wait_and_kill(greeter_pid, "greeter", s->name);
     ipc_close(parent_end);
     close(fifo_fd); /* signals logind that the session has ended */
     bus_close();
