@@ -1,4 +1,3 @@
-#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,53 +5,20 @@
 #include <glib-unix.h>
 #include <gtk/gtk.h>
 
-#include "lib/ipc.h"
+#include "ipc.h"
 #include "lib/log.h"
+#include "users.h"
 
-#define MAX_NUM_USERS    100
-#define MAX_USERNAME_LEN 256
-
-typedef struct {
-    char username[MAX_USERNAME_LEN];
-} user_entry;
+#define MAX_NUM_USERS 100
 
 /* Global variables - avoid passing context around */
-static ipc_channel *g_ch;
-static GtkStack    *g_stack;
-static GtkLabel    *g_user_label;
-static GtkEntry    *g_password_entry;
-static user_entry  *g_selected_user;
-static user_entry   g_users[MAX_NUM_USERS];
-static int          g_num_users;
-
-static int enumerate_users(user_entry *users, int max) {
-    int            count = 0;
-    struct passwd *pw;
-
-    setpwent();
-    while ((pw = getpwent()) != NULL && count < max) {
-        if (pw->pw_uid < 1000 || pw->pw_uid >= 65534)
-            continue;
-        if (pw->pw_shell == NULL || pw->pw_shell[0] == '\0' || strstr(pw->pw_shell, "nologin") ||
-            strcmp(pw->pw_shell, "/bin/false") == 0) {
-            continue;
-        }
-        snprintf(users[count].username, sizeof(users[count].username), "%s", pw->pw_name);
-        count++;
-    }
-    endpwent();
-
-#ifdef ATRIUM_DEBUG
-    /* For testing only: add more users */
-    snprintf(users[count++].username, sizeof(users[0].username), "Alice");
-    snprintf(users[count++].username, sizeof(users[0].username), "Bob");
-#endif
-
-    if (count == max)
-        log_warn("user list truncated at %d entries", max);
-
-    return count;
-}
+static ipc_channel  *g_ch;
+static GtkStack     *g_stack;
+static GtkLabel     *g_user_label;
+static GtkEntry     *g_password_entry;
+static greeter_user *g_selected_user;
+static greeter_user  g_users[MAX_NUM_USERS];
+static int           g_num_users;
 
 /* Callback for IPC response from the daemon */
 static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer user_data) {
@@ -64,23 +30,17 @@ static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer 
         goto err;
     }
 
-    char    buf[512];
-    ssize_t n = ipc_recv(g_ch, buf, sizeof(buf) - 1);
-    if (n <= 0) {
-        log_error("greeter: failed to receive response from daemon");
+    ipc_status status = ipc_read_result(g_ch);
+    /* TODO: add separate failure states for auth/ipc failures. */
+    if (status == IPC_FAIL) {
+        log_info("greeter: authentication failed for user '%s'", g_selected_user->username);
         goto err;
     }
 
-    buf[n] = '\0';
-    log_debug("greeter: received response: %s", buf);
-    if (strcmp(buf, "ok\n") == 0) {
-        log_info("greeter: authentication successful for user '%s'; exiting",
-                 g_selected_user->username);
-        g_application_quit(g_application_get_default());
-        return G_SOURCE_REMOVE;
-    }
-
-    log_info("greeter: authentication failed for user '%s': %s", g_selected_user->username, buf);
+    log_info("greeter: authentication successful for user '%s'; exiting",
+             g_selected_user->username);
+    g_application_quit(g_application_get_default());
+    return G_SOURCE_REMOVE;
 
 err:
     /* TODO: show error message to user */
@@ -92,26 +52,12 @@ static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
     (void)widget;
     g_selected_user = user_data;
 
-    char title[MAX_USERNAME_LEN + 16];
+    char title[MAX_DISPLAY_NAME_LEN + 16];
     snprintf(title, sizeof(title), "Log in as %s", g_selected_user->username);
     gtk_label_set_text(g_user_label, title);
     gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
     gtk_stack_set_visible_child_name(g_stack, "password");
     gtk_widget_grab_focus(GTK_WIDGET(g_password_entry));
-}
-
-/* Construct credentials string for daemon: "<username>\0<password>\0" */
-static int build_credentials_str(char *buf, size_t buflen, const char *username,
-                                 const char *password) {
-    size_t ulen = strlen(username) + 1; /* include the \0 */
-    size_t plen = strlen(password) + 1;
-    if (ulen + plen > buflen) {
-        log_error("greeter: credentials too long to send");
-        return -1;
-    }
-    memcpy(buf, username, ulen);
-    memcpy(buf + ulen, password, plen);
-    return ulen + plen;
 }
 
 static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
@@ -128,15 +74,9 @@ static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     gtk_widget_set_sensitive(GTK_WIDGET(root), FALSE);
 
     /* Send credentials to daemon */
-    char        buf[512];
     const char *password = gtk_editable_get_text(GTK_EDITABLE(g_password_entry));
-    int credlen = build_credentials_str(buf, sizeof(buf), g_selected_user->username, password);
-    if (credlen < 0)
+    if (ipc_send_credentials(g_ch, g_selected_user->username, password) != 0)
         goto err;
-    if (ipc_send(g_ch, buf, credlen) < 0) {
-        log_syserr("greeter: failed to send credentials");
-        goto err;
-    }
 
     /* Activate fd watcher for ipc channel */
     g_unix_fd_add(ipc_get_read_fd(g_ch), G_IO_IN | G_IO_ERR | G_IO_HUP, on_ipc_response_ready,

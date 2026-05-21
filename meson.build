@@ -82,7 +82,9 @@ executable('atrium-dev-greeter',
 
 executable('atrium-gtk-greeter',
   sources: [
+    'greeter/ipc.c',
     'greeter/main-gtk.c',
+    'greeter/users.c',
     'lib/ipc.c',
   ],
   dependencies: [
