@@ -16,9 +16,20 @@
 #include "vt.h"
 
 static void on_seat_discovered(const char *seat_id, void *userdata) {
+    static const char *ignored[] = IGNORE_SEATS;
+    for (size_t i = 0; i < sizeof(ignored) / sizeof(ignored[0]); i++)
+        if (ignored[i] && strcmp(seat_id, ignored[i]) == 0) {
+            log_info("ignoring seat '%s' (listed in IGNORE_SEATS)", seat_id);
+            return;
+        }
+
     int seat0_vtnr = *(int *)userdata;
-    /* Only seat0 is associated with a VT */
+    /* Only seat0 is associated with a VT. */
     int vtnr = strcmp(seat_id, "seat0") == 0 ? seat0_vtnr : 0;
+    if (vtnr > 0)
+        log_info("discovered seat '%s' (vtnr=%d)", seat_id, vtnr);
+    else
+        log_info("discovered seat '%s'", seat_id);
     if (!seat_add(seat_id, vtnr))
         log_error("on_seat_discovered: seat_add failed for '%s'", seat_id);
 }

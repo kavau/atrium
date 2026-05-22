@@ -9,6 +9,10 @@
 
 /* SHORTCUT: the following parameters should be read from a runtime config file. */
 
+/* Seat names to ignore during enumeration (e.g. monitor-less seats). Set to
+{NULL} to disable. */
+#define IGNORE_SEATS {NULL}
+
 /* Number of seconds to wait at startup before seat discovery. */
 #define SEAT_DISCOVERY_DELAY 2
 
