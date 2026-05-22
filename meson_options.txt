@@ -1,2 +1,6 @@
 # meson_options.txt
 option('debug_logging', type: 'boolean', value: true, description: 'Enable debug logging')
+option('dist', type: 'combo',
+       choices: ['unset', 'arch', 'debian', 'fedora'],
+       value: 'unset',
+       description: 'Target distribution -- required. Choose: arch, debian, or fedora')

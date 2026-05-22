@@ -22,6 +22,11 @@ add_project_arguments(
 
 # Build options
 
+if get_option('dist') == 'unset'
+  error('-Ddist is required. Choose one of: arch, debian, fedora')
+endif
+dist = get_option('dist')
+
 if get_option('debug_logging')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
@@ -139,7 +144,8 @@ executable('atrium-ipc-test',
 # Data
 
 install_data(
-  'data/pam/atrium-dev',
+  'data/pam.d/atrium-dev.' + dist,
+  rename: 'atrium-dev',
   install_dir: '/etc/pam.d',
 )
 
