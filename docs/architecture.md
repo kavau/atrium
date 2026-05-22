@@ -34,6 +34,10 @@ authentication flow proceeds through the following stages:
 4. `pam_setcred` - manages additional credentials
 5. `pam_open_session` - sets up a user session
 
+The last step, `pam_open_session`, locks the current process into a new cgroup,
+and must therefore run in a dedicated child process. The other steps can be run
+in either the parent or the child process.
+
 The `pam_handle` acquired in the process must be maintained for the duration of
 the user session. On successful completion of the authentication flow, PAM
 delivers a list of environment variables that must be applied to the login
@@ -113,3 +117,21 @@ lifecycle.
 Once the session compositor exits, the session runner tears down the login
 session and exits as well. This signals the daemon that the session has
 completed.
+
+### Greeter (`daemon/core/greeter.c`)
+
+- The greeter is launched via its own session runner process
+
+## Limitations
+
+### PAM conversation
+
+In the above design, the greeter collects user credentials, sends them back to the daemon, and exits. Afterwards, the daemon starts a new session runner, which drives a new PAM conversation using the pre-collected answers. In other words, the greeter executes a pre-scripted conversation.
+
+However, PAM is designed to drive this conversation via conversation callbacks: PAM asks for authentication tokens (e.g. password, two-factor, ...), the daemon forwards the request to the greeter, which then shows the appropriate prompt. This design supports a very flexible authentication flow. To support this, a single session runner would need to own the PAM context across authentication and user session. The session runner:
+
+- Initiates the PAM conversation
+- Launches the greeter
+- Acts as a proxy between greeter and PAM
+- Launches the user session upon successful authentication.
+- Closes the PAM session after the user session completed.
