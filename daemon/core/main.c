@@ -8,17 +8,30 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "daemon/session/bus.h"
 #include "lib/defs.h"
 #include "lib/log.h"
 #include "runner.h"
 #include "seat.h"
 #include "vt.h"
 
+static void on_seat_discovered(const char *seat_id, void *userdata) {
+    int seat0_vtnr = *(int *)userdata;
+    /* Only seat0 is associated with a VT */
+    int vtnr = strcmp(seat_id, "seat0") == 0 ? seat0_vtnr : 0;
+    if (!seat_add(seat_id, vtnr))
+        log_error("on_seat_discovered: seat_add failed for '%s'", seat_id);
+}
+
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
     log_info("starting");
     log_debug("debug logging enabled");
+
+    /* Ignore SIGPIPE globally so a broken IPC pipe returns EPIPE from write()
+    rather than killing the process. Inherited by all child processes. */
+    signal(SIGPIPE, SIG_IGN);
 
     /* Block SIGTERM and SIGCHLD immediately so they are delivered via signalfd
     rather than asynchronously. Must happen before any sleep or fork. */
@@ -37,6 +50,9 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    if (bus_open() < 0)
+        return EXIT_FAILURE;
+
     /* SHORTCUT: allow hardware initialization to complete before seat discovery */
     sleep(SEAT_DISCOVERY_DELAY);
 
@@ -48,19 +64,16 @@ int main(int argc, char *argv[]) {
     int vtnr = vt_alloc();
     if (vtnr < 0) {
         log_error("failed to allocate VT for seat0: %d", vtnr);
+        bus_close();
         return EXIT_FAILURE;
     }
     vt_suppress_keyboard(vtnr);
 #endif
 
-    /* SHORTCUT: create hardcoded seats. We add seats in reverse order because
-    seat_add appends to the front (although order does not matter) */
-    char *seat_names[] = {SEATS};
-    int n_seats = sizeof(seat_names) / sizeof(seat_names[0]);
-    for (int i = n_seats - 1; i >= 0; i--) {
-        log_info("adding seat '%s'", seat_names[i]);
-        if (!seat_add(seat_names[i], strcmp(seat_names[i], "seat0") ? 0 : vtnr))
-            log_error("failed to add seat '%s'", seat_names[i]);
+    if (bus_enumerate_seats(on_seat_discovered, &vtnr) < 0) {
+        log_error("failed to enumerate seats");
+        bus_close();
+        return EXIT_FAILURE;
     }
 
     /* Start a session runner on each seat. */
@@ -138,5 +151,6 @@ int main(int argc, char *argv[]) {
         vt_restore_keyboard(vtnr);
         vt_release(vtnr);
     }
+    bus_close();
     return EXIT_SUCCESS;
 }

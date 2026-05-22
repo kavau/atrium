@@ -122,6 +122,53 @@ cleanup:
     return (r < 0) ? -1 : 0;
 }
 
+int bus_enumerate_seats(bus_on_seat_fn on_seat, void *userdata) {
+    assert(g_bus);
+    log_debug("bus_enumerate_seats: calling ListSeats");
+
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+
+    int r = sd_bus_call_method(g_bus, "org.freedesktop.login1",
+                               "/org/freedesktop/login1",
+                               "org.freedesktop.login1.Manager",
+                               "ListSeats", &error, &reply, "");
+    if (r < 0) {
+        log_error("bus_enumerate_seats: ListSeats: %s",
+                  error.message ? error.message : strerror(-r));
+        goto cleanup;
+    }
+
+    /* Reply type is a(so): array of (seat-id, object-path) structs. */
+    r = sd_bus_message_enter_container(reply, 'a', "(so)");
+    if (r < 0) {
+        log_error("bus_enumerate_seats: enter container: %s", strerror(-r));
+        goto cleanup;
+    }
+
+    int n = 0;
+    while ((r = sd_bus_message_enter_container(reply, 'r', "so")) > 0) {
+        const char *seat_id = NULL, *obj_path = NULL;
+        r = sd_bus_message_read(reply, "so", &seat_id, &obj_path);
+        if (r < 0) {
+            log_error("bus_enumerate_seats: read entry: %s", strerror(-r));
+            break;
+        }
+        on_seat(seat_id, userdata);
+        n++;
+        sd_bus_message_exit_container(reply);
+    }
+    sd_bus_message_exit_container(reply);
+
+    if (r >= 0)
+        log_info("bus_enumerate_seats: found %d seat(s)", n);
+
+cleanup:
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(reply);
+    return (r < 0) ? -1 : 0;
+}
+
 int bus_activate_session(const char *session_object) {
     assert(g_bus);
     log_debug("bus_activate_session: %s", session_object);

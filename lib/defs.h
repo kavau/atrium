@@ -4,9 +4,6 @@
 
 #define MAX_LEN_SEAT 64
 
-/* SHORTCUT: hardcoded seats */
-#define SEATS "seat0", "seat1"
-
 /* SHORTCUT: pass the PAM config path in the environment instead */
 #define PAM_CONF_PATH "/etc/pam.d"
 
