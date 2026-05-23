@@ -49,7 +49,7 @@ endif
 
 # Executables
 
-executable('atrium-dev',
+executable('atrium',
   sources: [
     'daemon/core/runner.c',
     'daemon/core/main.c',
@@ -71,7 +71,7 @@ executable('atrium-dev',
   install: true,
 )
 
-executable('atrium-dev-greeter',
+executable('atrium-greeter',
   sources: [
     'greeter/main.c',
     'lib/ipc.c',
@@ -144,8 +144,8 @@ executable('atrium-ipc-test',
 # Data
 
 install_data(
-  'data/pam.d/atrium-dev.' + dist,
-  rename: 'atrium-dev',
+  'data/pam.d/atrium.' + dist,
+  rename: 'atrium',
   install_dir: '/etc/pam.d',
 )
 
@@ -162,6 +162,6 @@ meson.add_install_script('systemd-sysusers', '/usr/lib/sysusers.d/atrium.conf',
   skip_if_destdir: true)
 
 install_data(
-  'data/atrium-dev.service',
+  'data/atrium.service',
   install_dir: '/usr/lib/systemd/system',
 )

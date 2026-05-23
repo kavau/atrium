@@ -260,7 +260,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         }
 
         int auth_r = auth_open_session(username, password, (const char **)pam_env, pam_conf_path,
-                                       "atrium-dev", &pam_result);
+                                       "atrium", &pam_result);
 
         if (auth_r != PAM_SUCCESS) {
             /* auth_open_session already logged the PAM error. */
