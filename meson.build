@@ -31,6 +31,16 @@ if get_option('debug_logging')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
 
+# Greeter install path: most distros follow the FHS convention /usr/libexec/;
+# Arch keeps internal helpers under lib/<pkg>/.
+if dist == 'arch'
+  greeter_install_dir = get_option('prefix') / 'lib' / 'atrium'
+else
+  greeter_install_dir = get_option('libexecdir')
+endif
+greeter_path = greeter_install_dir / 'atrium-greeter'
+add_project_arguments('-DATRIUM_GREETER_PATH="' + greeter_path + '"', language: 'c')
+
 # Dependencies
 
 cc = meson.get_compiler('c')
@@ -79,7 +89,10 @@ executable('atrium-greeter',
   dependencies: [
   ],
   install: true,
+  install_dir: greeter_install_dir,
 )
+
+# Tools (not installed)
 
 executable('atrium-auth-test',
   sources: [
@@ -118,7 +131,7 @@ executable('atrium-fake-compositor',
   ],
   dependencies: [
   ],
-  install: true,  # TODO: change to false for actual release
+  install: false
 )
 
 executable('atrium-fake-greeter',
@@ -128,7 +141,7 @@ executable('atrium-fake-greeter',
   ],
   dependencies: [
   ],
-  install: true,  # TODO: change to false for actual release
+  install: false
 )
 
 executable('atrium-ipc-test',
