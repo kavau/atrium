@@ -6,13 +6,22 @@
 #include <glib-unix.h>
 #include <gtk/gtk.h>
 
+#include "defs.h"
 #include "ipc.h"
 #include "lib/log.h"
 #include "theme.h"
 
+/* The different pages in the UI stack. */
+typedef enum {
+    PAGE_USERS = 0, /* zero so static g_pre_blank_page defaults to it */
+    PAGE_PASSWORD,
+    PAGE_BLANK,
+} greeter_page;
+
 /* Global variables - avoid passing context around */
 static ipc_channel        *g_ch;
 static GtkStack           *g_stack;
+static GtkWindow          *g_window;
 static GtkLabel           *g_user_label;
 static GtkEntry           *g_password_entry;
 static greeter_user const *g_selected_user;
@@ -22,14 +31,37 @@ static GtkSpinner         *g_users_spinner;
 static GtkLabel           *g_users_error_label;
 static GtkSpinner         *g_password_spinner;
 static GtkLabel           *g_password_error_label;
+static guint               g_blank_timer_id;
+static greeter_page        g_pre_blank_page; /* page we were on before blanking */
 
-static gboolean on_users_page(void) {
-    return strcmp(gtk_stack_get_visible_child_name(g_stack), "users") == 0;
+static greeter_page current_page(void) {
+    const char *name = gtk_stack_get_visible_child_name(g_stack);
+    if (strcmp(name, "password") == 0)
+        return PAGE_PASSWORD;
+    if (strcmp(name, "blank") == 0)
+        return PAGE_BLANK;
+    return PAGE_USERS;
+}
+
+static void switch_page(greeter_page page) {
+    const char *name;
+    switch (page) {
+        case PAGE_PASSWORD:
+            name = "password";
+            break;
+        case PAGE_BLANK:
+            name = "blank";
+            break;
+        default:
+            name = "users";
+            break;
+    }
+    gtk_stack_set_visible_child_name(g_stack, name);
 }
 
 /* Reset the current page to its idle state: hide its spinner and error label. */
 static void reset_page(void) {
-    if (on_users_page()) {
+    if (current_page() == PAGE_USERS) {
         gtk_spinner_stop(g_users_spinner);
         gtk_widget_set_visible(GTK_WIDGET(g_users_spinner), FALSE);
         gtk_label_set_text(g_users_error_label, "");
@@ -44,7 +76,7 @@ static void reset_page(void) {
 
 /* Start the spinner for the current page. */
 static void start_spinner(void) {
-    if (on_users_page()) {
+    if (current_page() == PAGE_USERS) {
         gtk_spinner_start(g_users_spinner);
         gtk_widget_set_visible(GTK_WIDGET(g_users_spinner), TRUE);
     } else {
@@ -55,7 +87,7 @@ static void start_spinner(void) {
 
 /* Stop the spinner and show an error message on the current page. */
 static void show_error(const char *message) {
-    if (on_users_page()) {
+    if (current_page() == PAGE_USERS) {
         gtk_spinner_stop(g_users_spinner);
         gtk_widget_set_visible(GTK_WIDGET(g_users_spinner), FALSE);
         gtk_label_set_text(g_users_error_label, message);
@@ -68,10 +100,65 @@ static void show_error(const char *message) {
     }
 }
 
+static gboolean on_blank_timeout(gpointer user_data) {
+    (void)user_data;
+    g_blank_timer_id = 0;
+    g_pre_blank_page = current_page();
+    gtk_root_set_focus(GTK_ROOT(g_window), NULL);
+    switch_page(PAGE_BLANK);
+    GdkCursor *none_cursor = gdk_cursor_new_from_name("none", NULL);
+    gdk_surface_set_cursor(gtk_native_get_surface(GTK_NATIVE(g_window)), none_cursor);
+    g_object_unref(none_cursor);
+    return G_SOURCE_REMOVE;
+}
+
+static void reset_blank_timer(void) {
+    if (g_blank_timer_id != 0)
+        g_source_remove(g_blank_timer_id);
+    g_blank_timer_id = g_timeout_add_seconds(GREETER_BLANK_TIMEOUT, on_blank_timeout, NULL);
+}
+
+static void unblank_screen(void) {
+    if (current_page() != PAGE_BLANK)
+        return;
+    switch_page(g_pre_blank_page);
+    g_pre_blank_page = PAGE_USERS;
+    gdk_surface_set_cursor(gtk_native_get_surface(GTK_NATIVE(g_window)), NULL);
+    reset_blank_timer();
+}
+
+static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode,
+                               GdkModifierType state, gpointer user_data) {
+    (void)controller;
+    (void)keyval;
+    (void)keycode;
+    (void)state;
+    (void)user_data;
+    if (current_page() == PAGE_BLANK)
+        unblank_screen();
+    else
+        reset_blank_timer();
+    return FALSE; /* don't consume - let the event reach its target widget */
+}
+
+static void on_motion(GtkEventControllerMotion *controller, gdouble x, gdouble y,
+                      gpointer user_data) {
+    (void)controller;
+    (void)x;
+    (void)y;
+    (void)user_data;
+    if (current_page() == PAGE_BLANK)
+        unblank_screen();
+    else
+        reset_blank_timer();
+}
+
 /* Callback for IPC response from the daemon */
 static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer user_data) {
     (void)fd;
     GtkWidget *widget = GTK_WIDGET(user_data);
+
+    unblank_screen();
 
     if (condition & (G_IO_ERR | G_IO_HUP)) {
         log_error("greeter: IPC fd error or hangup");
@@ -132,7 +219,7 @@ static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
     snprintf(title, sizeof(title), "Log in as %s", g_selected_user->display_name);
     gtk_label_set_text(g_user_label, title);
     gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
-    gtk_stack_set_visible_child_name(g_stack, "password");
+    switch_page(PAGE_PASSWORD);
     reset_page();
     gtk_widget_grab_focus(GTK_WIDGET(g_password_entry));
 }
@@ -142,7 +229,7 @@ static void on_back_clicked(GtkWidget *widget, gpointer user_data) {
     (void)user_data;
     g_selected_user = NULL;
     gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
-    gtk_stack_set_visible_child_name(g_stack, "users");
+    switch_page(PAGE_USERS);
     reset_page();
 }
 
@@ -165,11 +252,20 @@ static void activate(GtkApplication *app, gpointer user_data) {
     theme_apply();
 
     GtkWidget *window = gtk_application_window_new(app);
+    g_window = GTK_WINDOW(window);
     gtk_window_set_title(GTK_WINDOW(window), "atrium");
     gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
     gtk_window_fullscreen(GTK_WINDOW(window));
 
-    /* Stack consisting of user selection page and password entry page */
+    GtkEventController *key_controller = gtk_event_controller_key_new();
+    g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), NULL);
+    gtk_widget_add_controller(window, key_controller);
+
+    GtkEventController *motion_controller = gtk_event_controller_motion_new();
+    g_signal_connect(motion_controller, "motion", G_CALLBACK(on_motion), NULL);
+    gtk_widget_add_controller(window, motion_controller);
+
+    /* Stack consisting of user selection, password entry, and blank screen pages */
 
     GtkWidget *stack = gtk_stack_new();
     gtk_window_set_child(GTK_WINDOW(window), stack);
@@ -246,10 +342,19 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(password_box), password_error_label);
     g_password_error_label = GTK_LABEL(password_error_label);
 
-    /* Show the window */
+    /* Blank screen page. SHORTCUT - show a black screen instead of real DPMS */
 
-    gtk_stack_set_visible_child_name(GTK_STACK(stack), "users");
+    GtkWidget *blank_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_hexpand(blank_box, TRUE);
+    gtk_widget_set_vexpand(blank_box, TRUE);
+    gtk_widget_add_css_class(blank_box, "blank-page");
+    gtk_stack_add_named(g_stack, blank_box, "blank");
+
+    /* Show the window and start the blank timer */
+
+    switch_page(PAGE_USERS);
     gtk_window_present(GTK_WINDOW(window));
+    reset_blank_timer();
 }
 
 int run_ui(const greeter_user *users, int num_users, ipc_channel *ch) {
