@@ -129,7 +129,7 @@ static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
     }
 
     char title[MAX_DISPLAY_NAME_LEN + 16];
-    snprintf(title, sizeof(title), "Log in as %s", g_selected_user->username);
+    snprintf(title, sizeof(title), "Log in as %s", g_selected_user->display_name);
     gtk_label_set_text(g_user_label, title);
     gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
     gtk_stack_set_visible_child_name(g_stack, "password");
@@ -188,7 +188,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(users_box), heading);
 
     for (int i = 0; i < g_num_users; i++) {
-        GtkWidget *btn = gtk_button_new_with_label(g_users[i].username);
+        GtkWidget *btn = gtk_button_new_with_label(g_users[i].display_name);
         g_signal_connect(btn, "clicked", G_CALLBACK(on_user_clicked), (void *)&g_users[i]);
         gtk_box_append(GTK_BOX(users_box), btn);
     }

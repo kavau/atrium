@@ -12,8 +12,7 @@
 
 typedef struct {
     char username[MAX_USERNAME_LEN];         /* pw_name */
-    char display_name[MAX_DISPLAY_NAME_LEN]; /* real name from GECOS, or username if empty.
-                                                TODO: unimplemented */
+    char display_name[MAX_DISPLAY_NAME_LEN]; /* real name from GECOS, or username if empty */
     int  passwordless;                       /* 1 if user is in the nopasswdlogin group */
 } greeter_user;
 

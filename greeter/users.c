@@ -19,6 +19,20 @@ int enumerate_users(greeter_user *users, int max) {
             continue;
         }
         snprintf(users[count].username, sizeof(users[count].username), "%s", pw->pw_name);
+
+        /* Populate display_name from the first GECOS field or fall back to username.
+        By convention, GECOS is a comma-separated list with the first field containing
+        the user's full name. */
+        const char *gecos = pw->pw_gecos ? pw->pw_gecos : "";
+        const char *comma = strchr(gecos, ',');
+        size_t      dlen = comma ? (size_t)(comma - gecos) : strlen(gecos);
+        if (dlen > 0)
+            snprintf(users[count].display_name, sizeof(users[count].display_name), "%.*s",
+                     (int)dlen, gecos);
+        else
+            snprintf(users[count].display_name, sizeof(users[count].display_name), "%s",
+                     pw->pw_name);
+
         users[count].passwordless = 0;
         count++;
     }
