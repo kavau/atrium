@@ -75,8 +75,16 @@ spinner {
   box-shadow: none;
 }
 
-/* Target the inner GtkText node for border and colors - the outer entry node
- * is a container that Adwaita does not style for border drawing. */
+/* Strip Adwaita's padding/background from the outer entry container. */
+.password-entry {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: 0;
+}
+
+/* Border and colors on the inner GtkText node. */
 .password-entry > text {
   font-size: 1em;
   background-color: @atrium-bg;
