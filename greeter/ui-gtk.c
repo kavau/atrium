@@ -33,6 +33,7 @@ static GtkSpinner         *g_password_spinner;
 static GtkLabel           *g_password_error_label;
 static guint               g_blank_timer_id;
 static greeter_page        g_pre_blank_page; /* page we were on before blanking */
+static gint64              g_blank_start_us; /* monotonic time when blanking started */
 
 static greeter_page current_page(void) {
     const char *name = gtk_stack_get_visible_child_name(g_stack);
@@ -100,15 +101,22 @@ static void show_error(const char *message) {
     }
 }
 
+/* GTK fires a synthetic motion event immediately after blanking, in order to
+re-evaluate which widget is under the cursor. Therefore we ignore motion events
+within this window after blanking starts. */
+#define BLANK_MOTION_GUARD_US (200 * 1000) /* 200 ms in microseconds */
+
 static gboolean on_blank_timeout(gpointer user_data) {
     (void)user_data;
     g_blank_timer_id = 0;
     g_pre_blank_page = current_page();
+    g_blank_start_us = g_get_monotonic_time();
     gtk_root_set_focus(GTK_ROOT(g_window), NULL);
     switch_page(PAGE_BLANK);
     GdkCursor *none_cursor = gdk_cursor_new_from_name("none", NULL);
     gdk_surface_set_cursor(gtk_native_get_surface(GTK_NATIVE(g_window)), none_cursor);
     g_object_unref(none_cursor);
+    log_info("greeter: screen blanked");
     return G_SOURCE_REMOVE;
 }
 
@@ -121,6 +129,7 @@ static void reset_blank_timer(void) {
 static void unblank_screen(void) {
     if (current_page() != PAGE_BLANK)
         return;
+    log_info("greeter: screen unblanked");
     switch_page(g_pre_blank_page);
     g_pre_blank_page = PAGE_USERS;
     gdk_surface_set_cursor(gtk_native_get_surface(GTK_NATIVE(g_window)), NULL);
@@ -134,10 +143,12 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, 
     (void)keycode;
     (void)state;
     (void)user_data;
-    if (current_page() == PAGE_BLANK)
+    if (current_page() == PAGE_BLANK) {
+        log_debug("greeter: key pressed while blank");
         unblank_screen();
-    else
+    } else {
         reset_blank_timer();
+    }
     return FALSE; /* don't consume - let the event reach its target widget */
 }
 
@@ -147,10 +158,15 @@ static void on_motion(GtkEventControllerMotion *controller, gdouble x, gdouble y
     (void)x;
     (void)y;
     (void)user_data;
-    if (current_page() == PAGE_BLANK)
+    if (current_page() == PAGE_BLANK) {
+        gint64 elapsed = g_get_monotonic_time() - g_blank_start_us;
+        log_debug("greeter: motion while blank, elapsed=%ldms", (long)(elapsed / 1000));
+        if (elapsed < BLANK_MOTION_GUARD_US)
+            return;
         unblank_screen();
-    else
+    } else {
         reset_blank_timer();
+    }
 }
 
 /* Callback for IPC response from the daemon */
