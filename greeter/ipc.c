@@ -1,8 +1,11 @@
 #include "ipc.h"
 
+#include <stdio.h>
+#include <string.h>
+
 #include "lib/log.h"
 
-ipc_status ipc_read_result(ipc_channel *ch) {
+ipc_status ipc_read_result(ipc_channel *ch, char *reason, size_t reason_len) {
     /* FRAGILE: assumes the reply fits in a single read(). This holds because
     the daemon writes <= PIPE_BUF bytes atomically; if messages ever exceed
     PIPE_BUF, this needs a read loop. */
@@ -10,12 +13,29 @@ ipc_status ipc_read_result(ipc_channel *ch) {
     ssize_t n = ipc_recv(ch, buf, sizeof(buf) - 1);
     if (n <= 0) {
         log_error("greeter: failed to receive response from daemon");
+        snprintf(reason, reason_len, IPC_ERROR_INTERNAL);
         return IPC_FAIL;
     }
 
     buf[n] = '\0';
     log_debug("greeter: received IPC response '%s'", buf);
-    return strcmp(buf, "ok\n") == 0 ? IPC_OK : IPC_FAIL;
+
+    if (strcmp(buf, "ok\n") == 0) {
+        reason[0] = '\0';
+        return IPC_OK;
+    }
+
+    /* Parse "fail:<reason>\n" */
+    if (strncmp(buf, "fail:", 5) == 0) {
+        const char *p = buf + 5;
+        size_t      len = strlen(p);
+        if (len > 0 && p[len - 1] == '\n')
+            len--;
+        snprintf(reason, reason_len, "%.*s", (int)len, p);
+    } else {
+        snprintf(reason, reason_len, IPC_ERROR_INTERNAL);
+    }
+    return IPC_FAIL;
 }
 
 /* Construct credentials string for daemon: "<username>\0<password>\0" */

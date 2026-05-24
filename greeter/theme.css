@@ -49,6 +49,19 @@ button:active {
   box-shadow: none;
 }
 
+spinner {
+  -gtk-icon-size: 1em;
+}
+
+.blank-page {
+  background-color: black;
+}
+
+.error-label {
+  color: @atrium-error;
+  font-size: 0.9em;
+}
+
 .back-button {
   background-image: none;
   background-color: transparent;
