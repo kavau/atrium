@@ -34,6 +34,8 @@ static GtkLabel           *g_password_error_label;
 static guint               g_blank_timer_id;
 static greeter_page        g_pre_blank_page; /* page we were on before blanking */
 static gint64              g_blank_start_us; /* monotonic time when blanking started */
+static guint               g_auth_fd_source_id;
+static guint               g_auth_timeout_id;
 
 static greeter_page current_page(void) {
     const char *name = gtk_stack_get_visible_child_name(g_stack);
@@ -169,10 +171,30 @@ static void on_motion(GtkEventControllerMotion *controller, gdouble x, gdouble y
     }
 }
 
+static gboolean on_auth_timeout(gpointer user_data) {
+    GtkWidget *widget = GTK_WIDGET(user_data);
+    log_error("greeter: timed out waiting for daemon response");
+    g_auth_timeout_id = 0;
+    if (g_auth_fd_source_id != 0) {
+        g_source_remove(g_auth_fd_source_id);
+        g_auth_fd_source_id = 0;
+    }
+    unblank_screen();
+    show_error(IPC_ERROR_INTERNAL);
+    gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
+    return G_SOURCE_REMOVE;
+}
+
 /* Callback for IPC response from the daemon */
 static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer user_data) {
     (void)fd;
     GtkWidget *widget = GTK_WIDGET(user_data);
+
+    if (g_auth_timeout_id != 0) {
+        g_source_remove(g_auth_timeout_id);
+        g_auth_timeout_id = 0;
+    }
+    g_auth_fd_source_id = 0;
 
     unblank_screen();
 
@@ -215,8 +237,10 @@ static void submit_credentials(GtkWidget *widget, const char *password) {
         gtk_widget_set_sensitive(GTK_WIDGET(root), TRUE);
         return;
     }
-    g_unix_fd_add(ipc_get_read_fd(g_ch), G_IO_IN | G_IO_ERR | G_IO_HUP, on_ipc_response_ready,
-                  widget);
+    g_auth_fd_source_id = g_unix_fd_add(ipc_get_read_fd(g_ch),
+                                        G_IO_IN | G_IO_ERR | G_IO_HUP,
+                                        on_ipc_response_ready, widget);
+    g_auth_timeout_id = g_timeout_add_seconds(GREETER_AUTH_TIMEOUT, on_auth_timeout, widget);
     log_info("greeter: sent credentials for user '%s'; waiting for response",
              g_selected_user->username);
 }
