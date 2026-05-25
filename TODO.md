@@ -1,10 +1,7 @@
 # Next steps
 
-- Simplified PAM for Crostini testing
-- Real greeter
-- Seat discovery
 - Hotplug monitoring
-- Update text greeter
+- Greeter button width and margins should scale with base font size
 
 # Testing
 

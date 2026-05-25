@@ -77,6 +77,9 @@ int main(int argc, char *argv[]) {
         buf[n] = '\0'; /* defensive - log_credentials expects two null terminators */
         buf[n + 1] = '\0';
         log_credentials(buf);
+
+        sleep(1);
+
         const char *response = (i == 0) ? "fail:invalid credentials\n" : "ok\n";
         log_info("sending to greeter: %s", response);
         if (ipc_send_str(parent_end, response) < 0) {

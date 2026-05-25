@@ -237,8 +237,7 @@ static void submit_credentials(GtkWidget *widget, const char *password) {
         gtk_widget_set_sensitive(GTK_WIDGET(root), TRUE);
         return;
     }
-    g_auth_fd_source_id = g_unix_fd_add(ipc_get_read_fd(g_ch),
-                                        G_IO_IN | G_IO_ERR | G_IO_HUP,
+    g_auth_fd_source_id = g_unix_fd_add(ipc_get_read_fd(g_ch), G_IO_IN | G_IO_ERR | G_IO_HUP,
                                         on_ipc_response_ready, widget);
     g_auth_timeout_id = g_timeout_add_seconds(GREETER_AUTH_TIMEOUT, on_auth_timeout, widget);
     log_info("greeter: sent credentials for user '%s'; waiting for response",
@@ -313,7 +312,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     /* User selection page */
 
-    GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
     gtk_widget_set_halign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(users_box, "card");
@@ -321,13 +320,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     GtkWidget *heading = gtk_label_new("Log in");
     gtk_widget_add_css_class(heading, "heading");
+    gtk_widget_set_halign(heading, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(users_box), heading);
-
-    for (int i = 0; i < g_num_users; i++) {
-        GtkWidget *btn = gtk_button_new_with_label(g_users[i].display_name);
-        g_signal_connect(btn, "clicked", G_CALLBACK(on_user_clicked), (void *)&g_users[i]);
-        gtk_box_append(GTK_BOX(users_box), btn);
-    }
 
     GtkWidget *users_spinner = gtk_spinner_new();
     gtk_widget_set_visible(users_spinner, FALSE);
@@ -340,23 +334,34 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(users_box), users_error_label);
     g_users_error_label = GTK_LABEL(users_error_label);
 
+    GtkWidget *user_buttons_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_box_append(GTK_BOX(users_box), user_buttons_box);
+
+    for (int i = 0; i < g_num_users; i++) {
+        GtkWidget *btn = gtk_button_new_with_label(g_users[i].display_name);
+        gtk_widget_add_css_class(btn, "user-button");
+        g_signal_connect(btn, "clicked", G_CALLBACK(on_user_clicked), (void *)&g_users[i]);
+        gtk_box_append(GTK_BOX(user_buttons_box), btn);
+    }
+
     /* Password entry page */
 
-    GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 20);
     gtk_widget_set_halign(password_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(password_box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(password_box, "card");
     gtk_stack_add_named(g_stack, password_box, "password");
 
     GtkWidget *password_title = gtk_label_new("");
+    gtk_widget_add_css_class(password_title, "heading");
+    gtk_widget_set_halign(password_title, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(password_box), password_title);
     g_user_label = GTK_LABEL(password_title);
-
-    gtk_box_append(GTK_BOX(password_box), gtk_label_new("Password:"));
 
     GtkWidget *password_entry = gtk_entry_new();
     gtk_entry_set_input_purpose(GTK_ENTRY(password_entry), GTK_INPUT_PURPOSE_PASSWORD);
     gtk_entry_set_visibility(GTK_ENTRY(password_entry), FALSE);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(password_entry), "Password");
     gtk_widget_add_css_class(password_entry, "password-entry");
     gtk_box_append(GTK_BOX(password_box), password_entry);
     g_password_entry = GTK_ENTRY(password_entry);
@@ -366,21 +371,24 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(password_box), password_spinner);
     g_password_spinner = GTK_SPINNER(password_spinner);
 
-    GtkWidget *login_btn = gtk_button_new_with_label("Log In");
-    g_signal_connect(login_btn, "clicked", G_CALLBACK(on_login_clicked), NULL);
-    g_signal_connect(password_entry, "activate", G_CALLBACK(on_login_clicked), NULL);
-    gtk_box_append(GTK_BOX(password_box), login_btn);
-
-    GtkWidget *back_btn = gtk_button_new_with_label("Back");
-    gtk_widget_add_css_class(back_btn, "back-button");
-    g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_clicked), NULL);
-    gtk_box_append(GTK_BOX(password_box), back_btn);
-
     GtkWidget *password_error_label = gtk_label_new("");
     gtk_widget_add_css_class(password_error_label, "error-label");
     gtk_widget_set_visible(password_error_label, FALSE);
     gtk_box_append(GTK_BOX(password_box), password_error_label);
     g_password_error_label = GTK_LABEL(password_error_label);
+
+    GtkWidget *action_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_box_append(GTK_BOX(password_box), action_box);
+
+    GtkWidget *login_btn = gtk_button_new_with_label("Log In");
+    g_signal_connect(login_btn, "clicked", G_CALLBACK(on_login_clicked), NULL);
+    g_signal_connect(password_entry, "activate", G_CALLBACK(on_login_clicked), NULL);
+    gtk_box_append(GTK_BOX(action_box), login_btn);
+
+    GtkWidget *back_btn = gtk_button_new_with_label("← Back");
+    gtk_widget_add_css_class(back_btn, "back-button");
+    g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_clicked), NULL);
+    gtk_box_append(GTK_BOX(action_box), back_btn);
 
     /* Blank screen page. SHORTCUT - show a black screen instead of real DPMS */
 

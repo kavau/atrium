@@ -7,6 +7,7 @@
 @define-color atrium-accent       #89b4fa; /* soft blue */
 @define-color atrium-accent-hover #b4d0ff; /* lighter blue */
 @define-color atrium-accent-fg    #1e1e2e; /* same as bg - text on accent */
+@define-color atrium-subtle       #6c7086; /* muted grey-violet */
 @define-color atrium-error        #f38ba8; /* soft red */
 
 window {
@@ -17,18 +18,18 @@ window {
 .card {
   background-color: @atrium-card;
   border-radius: 12px;
-  padding: 32px 40px;
+  padding: 56px 64px;
   min-width: 340px;
 }
 
 .heading {
-  font-size: 1.25em;
+  font-size: 1.3em;
   font-weight: bold;
   color: @atrium-text;
   margin-bottom: 8px;
 }
 
-button {
+.card button {
   font-size: 1em;
   background-image: none;
   background-color: @atrium-accent;
@@ -39,13 +40,17 @@ button {
   padding: 8px 16px;
 }
 
-button:hover {
+.card button:hover {
   background-image: none;
   background-color: @atrium-accent-hover;
   box-shadow: none;
 }
 
-button:active {
+.card .user-button {
+  padding: 12px 16px;
+}
+
+.card button:active {
   box-shadow: none;
 }
 
@@ -62,14 +67,14 @@ spinner {
   font-size: 0.9em;
 }
 
-.back-button {
+.card .back-button {
   background-image: none;
   background-color: transparent;
   color: @atrium-text;
   box-shadow: none;
 }
 
-.back-button:hover {
+.card .back-button:hover {
   background-image: none;
   background-color: @atrium-border;
   box-shadow: none;
@@ -94,6 +99,10 @@ spinner {
   padding: 6px 10px;
 }
 
-.password-entry:focus > text {
-  border-color: @atrium-accent;
+.password-entry > text > placeholder {
+  color: @atrium-subtle;
+}
+
+.password-entry > text:focus {
+  border: 2px solid @atrium-accent;
 }
