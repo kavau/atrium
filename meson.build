@@ -162,16 +162,21 @@ install_data(
   install_dir: '/etc/pam.d',
 )
 
-# Create the atriumdm system user via systemd-sysusers. Package managers on
-# supported distros fire the sysusers hook automatically on install.
+# Create the atriumdm system user and home directory. These hooks are run by
+# the package manager on supported distros.
 install_data(
   'data/sysusers.d/atrium.conf',
   install_dir: '/usr/lib/sysusers.d',
 )
+install_data(
+  'data/tmpfiles.d/atrium.conf',
+  install_dir: '/usr/lib/tmpfiles.d',
+)
 
-# For source installs, call systemd-sysusers directly to create the atriumdm
-# user (package manager installs skip this).
+# For source installs, create the atriumdm user and home directory directly.
 meson.add_install_script('systemd-sysusers', '/usr/lib/sysusers.d/atrium.conf',
+  skip_if_destdir: true)
+meson.add_install_script('systemd-tmpfiles', '--create', '/usr/lib/tmpfiles.d/atrium.conf',
   skip_if_destdir: true)
 
 install_data(
