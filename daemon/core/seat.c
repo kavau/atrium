@@ -47,3 +47,10 @@ seat *seat_next(const seat *s) {
     seat_entry *e = (seat_entry *)s;
     return e->next ? &e->next->s : NULL;
 }
+
+seat *seat_find_by_pid(pid_t pid) {
+    for (seat *s = seat_first(); s; s = seat_next(s))
+        if (s->runner_pid == pid)
+            return s;
+    return NULL;
+}

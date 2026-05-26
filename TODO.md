@@ -1,9 +1,8 @@
 # Next steps
 
 - Password field is not cleared on auth failure
-- Update text greeter
-- Simplified PAM for Crostini testing
 - Hotplug monitoring
+- Alt+arrow VT switching?
 
 # Testing
 

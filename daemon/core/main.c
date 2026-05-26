@@ -92,7 +92,6 @@ int main(int argc, char *argv[]) {
         log_info("starting session runner on seat '%s'", s->name);
         if (runner_start(PAM_CONF_PATH, s) != 0)
             log_error("failed to launch runner on seat '%s'", s->name); /* TODO: retry */
-        sleep(5); /* SHORTCUT: wait a bit before starting the next runner */
     }
 
     /* Event loop: wait for SIGCHLD (child exited) or SIGTERM (shutdown). */
@@ -112,39 +111,34 @@ int main(int argc, char *argv[]) {
         }
 
         if ((int)si.ssi_signo == SIGCHLD) {
-            /* Drain all ready children -- SIGCHLD coalesces so one signal may
-            cover multiple exits. */
-            while (1) {
-                int wstatus;
-                pid_t pid = waitpid(-1, &wstatus, WNOHANG);
-                if (pid <= 0)
-                    break;
-
-                for (seat *s = seat_first(); s; s = seat_next(s)) {
-                    if (pid != s->runner_pid)
-                        continue;
-
-                    if (WIFEXITED(wstatus))
-                        log_debug("session runner (PID %d) on seat '%s' exited with status %d", pid,
-                                  s->name, WEXITSTATUS(wstatus));
-                    else if (WIFSIGNALED(wstatus))
-                        log_warn(
-                            "session runner (PID %d) on seat '%s' terminated by signal %d (%s)",
-                            pid, s->name, WTERMSIG(wstatus), strsignal(WTERMSIG(wstatus)));
-                    else
-                        log_warn(
-                            "session runner (PID %d) on seat '%s' exited with unexpected status %d",
-                            pid, s->name, wstatus);
-
-                    s->runner_pid = 0;
-                    s->state = SEAT_IDLE;
-
-                    log_info("restarting session runner on seat '%s'", s->name);
-                    sleep(1); /* SHORTCUT: avoid tight crash-loop */
-                    if (runner_start(PAM_CONF_PATH, s) != 0)
-                        log_error("failed to restart runner on seat '%s'", s->name);
-                    break;
+            /* Drain all ready children */
+            int wstatus;
+            pid_t pid;
+            while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
+                seat *s = seat_find_by_pid(pid);
+                if (!s) {
+                    log_debug("reaped unknown PID %d", (int)pid);
+                    continue;
                 }
+
+                if (WIFEXITED(wstatus))
+                    log_debug("session runner (PID %d) on seat '%s' exited with status %d", pid,
+                              s->name, WEXITSTATUS(wstatus));
+                else if (WIFSIGNALED(wstatus))
+                    log_warn("session runner (PID %d) on seat '%s' terminated by signal %d (%s)",
+                             pid, s->name, WTERMSIG(wstatus), strsignal(WTERMSIG(wstatus)));
+                else
+                    log_warn(
+                        "session runner (PID %d) on seat '%s' exited with unexpected status %d",
+                        pid, s->name, wstatus);
+
+                s->runner_pid = 0;
+                s->state = SEAT_IDLE;
+
+                log_info("restarting session runner on seat '%s'", s->name);
+                sleep(1); /* SHORTCUT: avoid tight crash-loop */
+                if (runner_start(PAM_CONF_PATH, s) != 0)
+                    log_error("failed to restart runner on seat '%s'", s->name);
             }
         } else if ((int)si.ssi_signo == SIGTERM) {
             log_info("received SIGTERM, shutting down");

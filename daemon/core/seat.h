@@ -18,9 +18,9 @@ typedef enum {
 /* Holds the current state of a seat */
 typedef struct seat {
     char name[MAX_LEN_SEAT];
-    int vtnr;          /* allocated VT number; 0 for non-seat0 seats */
-    seat_state state;  /* current state: SEAT_IDLE or SEAT_RUNNING */
-    pid_t runner_pid;  /* PID of the session runner, or 0 if none */
+    int vtnr;         /* allocated VT number; 0 for non-seat0 seats */
+    seat_state state; /* current state: SEAT_IDLE or SEAT_RUNNING */
+    pid_t runner_pid; /* PID of the session runner, or 0 if none */
 } seat;
 
 /* Add a seat with the given name and VT number (only relevant for seat0).
@@ -32,3 +32,6 @@ seat *seat_first(void);
 
 /* Seat iteration - return the next seat or NULL */
 seat *seat_next(const seat *s);
+
+/* Return the seat whose runner_pid matches pid, or NULL if not found. */
+seat *seat_find_by_pid(pid_t pid);
