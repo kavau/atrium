@@ -31,21 +31,21 @@ if get_option('debug_logging')
   add_project_arguments('-DATRIUM_DEBUG', language: 'c')
 endif
 
-# Greeter install path: most distros follow the FHS convention /usr/libexec/;
-# Arch keeps internal helpers under lib/<pkg>/.
+# Greeter install path: most distros follow the FHS convention /usr/libexec/,
+# but Arch keeps internal helpers under lib/<pkg>/.
 if dist == 'arch'
   greeter_install_dir = get_option('prefix') / 'lib' / 'atrium'
 else
   greeter_install_dir = get_option('libexecdir')
 endif
-greeter_path = greeter_install_dir / 'atrium-greeter'
-add_project_arguments('-DATRIUM_GREETER_PATH="' + greeter_path + '"', language: 'c')
+add_project_arguments('-DATRIUM_GREETER_DIR="' + greeter_install_dir + '"', language: 'c')
 
 # Dependencies
 
 cc = meson.get_compiler('c')
 dep_libpam     = cc.find_library('pam')  # libpam does not ship a .pc file on some distros
 dep_libsystemd = dependency('libsystemd')
+dep_gtk4       = dependency('gtk4')
 
 # Feature detection
 
@@ -56,6 +56,15 @@ have_pam_start_confdir = cc.has_function(
 if have_pam_start_confdir
     add_project_arguments('-DHAVE_PAM_START_CONFDIR=1', language: 'c')
 endif
+
+# Greeter CSS (compiled-in)
+
+gnome = import('gnome')
+greeter_resources = gnome.compile_resources(
+  'greeter-resources',
+  'greeter/greeter.gresource.xml',
+  source_dir: 'greeter',
+)
 
 # Executables
 
@@ -79,17 +88,37 @@ executable('atrium',
     dep_libsystemd,
   ],
   install: true,
+  install_tag: 'daemon',
 )
 
-executable('atrium-greeter',
+executable('atrium-txt-greeter',
   sources: [
-    'greeter/main.c',
+    'greeter/main-txt.c',
     'lib/ipc.c',
   ],
   dependencies: [
   ],
   install: true,
   install_dir: greeter_install_dir,
+  install_tag: 'greeter',
+)
+
+executable('atrium-gtk-greeter',
+  sources: [
+    greeter_resources,
+    'greeter/ipc.c',
+    'greeter/main-gtk.c',
+    'greeter/theme.c',
+    'greeter/ui-gtk.c',
+    'greeter/users.c',
+    'lib/ipc.c',
+  ],
+  dependencies: [
+    dep_gtk4,
+  ],
+  install: true,
+  install_dir: greeter_install_dir,
+  install_tag: 'greeter',
 )
 
 # Tools (not installed)
@@ -131,7 +160,7 @@ executable('atrium-fake-compositor',
   ],
   dependencies: [
   ],
-  install: false
+  install: false,
 )
 
 executable('atrium-fake-greeter',
@@ -141,7 +170,7 @@ executable('atrium-fake-greeter',
   ],
   dependencies: [
   ],
-  install: false
+  install: false,
 )
 
 executable('atrium-ipc-test',
@@ -154,12 +183,30 @@ executable('atrium-ipc-test',
   install: false,
 )
 
+executable('atrium-greeter-test',
+  sources: [
+    'lib/ipc.c',
+    'lib/proc.c',
+    'tools/greeter-test.c',
+  ],
+  dependencies: [
+  ],
+  install: false,
+)
+
 # Data
+
+install_data(
+  'data/atrium.service',
+  install_dir: '/usr/lib/systemd/system',
+  install_tag: 'daemon',
+)
 
 install_data(
   'data/pam.d/atrium.' + dist,
   rename: 'atrium',
   install_dir: '/etc/pam.d',
+  install_tag: 'daemon',
 )
 
 # Create the atriumdm system user and home directory. These hooks are run by
@@ -167,10 +214,12 @@ install_data(
 install_data(
   'data/sysusers.d/atrium.conf',
   install_dir: '/usr/lib/sysusers.d',
+  install_tag: 'daemon',
 )
 install_data(
   'data/tmpfiles.d/atrium.conf',
   install_dir: '/usr/lib/tmpfiles.d',
+  install_tag: 'daemon',
 )
 
 # For source installs, create the atriumdm user and home directory directly.
@@ -178,8 +227,3 @@ meson.add_install_script('systemd-sysusers', '/usr/lib/sysusers.d/atrium.conf',
   skip_if_destdir: true)
 meson.add_install_script('systemd-tmpfiles', '--create', '/usr/lib/tmpfiles.d/atrium.conf',
   skip_if_destdir: true)
-
-install_data(
-  'data/atrium.service',
-  install_dir: '/usr/lib/systemd/system',
-)

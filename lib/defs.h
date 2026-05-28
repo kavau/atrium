@@ -20,11 +20,12 @@
 fake greeter/compositor from a graphical session)*/
 #define HEADLESS 0
 
-/* Greeter to launch on each seat. ATRIUM_GREETER_PATH is set by meson to
+/* Greeter to launch on each seat. ATRIUM_GREETER_DIR is set by meson to
 the distro-appropriate libexecdir. */
-#define GREETER                                            \
-    "/usr/bin/cage -- /usr/bin/foot -f monospace:size=18 " \
-    "-o colors-dark.background=000000 " ATRIUM_GREETER_PATH
+#define GREETER                                               \
+    "/usr/bin/cage -s -- /usr/bin/foot -f monospace:size=18 " \
+    "-o colors-dark.background=000000 "                       \
+    ATRIUM_GREETER_DIR "/atrium-txt-greeter"
 
 /* User to launch greeter as. */
 #define GREETER_USERNAME "atriumdm"
@@ -34,7 +35,5 @@ the distro-appropriate libexecdir. */
     "/usr/bin/cage -s -m last -- foot -f monospace:size=18 " \
     "-o colors-dark.background=000000"
 
-/* Desktop environment name reported to logind and set in XDG_CURRENT_DESKTOP /
-XDG_SESSION_DESKTOP. Must match the compositor's own XDG_CURRENT_DESKTOP value
-so that portals and MIME handlers identify the running session correctly. */
+/* Desktop environment name exported as XDG_CURRENT_DESKTOP / XDG_SESSION_DESKTOP. */
 #define DESKTOP_NAME "cage"

@@ -51,9 +51,7 @@ ssize_t ipc_send(ipc_channel *ch, const void *data, size_t len) {
     return write(ch->write_fd, data, len);
 }
 
-ssize_t ipc_send_str(ipc_channel *ch, const char *msg) {
-    return ipc_send(ch, msg, strlen(msg));
-}
+ssize_t ipc_send_str(ipc_channel *ch, const char *msg) { return ipc_send(ch, msg, strlen(msg)); }
 
 ssize_t ipc_recv(ipc_channel *ch, void *data, size_t len) {
     assert(ch->read_fd != -1);
@@ -93,6 +91,8 @@ static int ipc_from_fds(ipc_channel **ch, int read_fd, int write_fd) {
     *ch = channel;
     return 0;
 }
+
+int ipc_get_read_fd(ipc_channel *ch) { return ch->read_fd; }
 
 char **ipc_getenvlist(ipc_channel *ch) {
     char **list = malloc(3 * sizeof(char *));

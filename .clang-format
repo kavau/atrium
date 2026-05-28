@@ -7,3 +7,5 @@ IndentCaseLabels: true
 BreakBeforeBraces: Attach
 SpaceBeforeParens: ControlStatements
 AlignEscapedNewlines: Left
+AlignConsecutiveDeclarations: true
+AlignConsecutiveMacros: true

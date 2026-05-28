@@ -1,0 +1,108 @@
+/* atrium default theme - catppuccin mocha */
+
+@define-color atrium-bg           #1e1e2e; /* very dark navy */
+@define-color atrium-card         #313244; /* slightly lighter surface */
+@define-color atrium-text         #cdd6f4; /* pale lavender */
+@define-color atrium-border       #45475a; /* dim grey-blue */
+@define-color atrium-accent       #89b4fa; /* soft blue */
+@define-color atrium-accent-hover #b4d0ff; /* lighter blue */
+@define-color atrium-accent-fg    #1e1e2e; /* same as bg - text on accent */
+@define-color atrium-subtle       #6c7086; /* muted grey-violet */
+@define-color atrium-error        #f38ba8; /* soft red */
+
+window {
+  background-color: @atrium-bg;
+  color: @atrium-text;
+}
+
+.card {
+  background-color: @atrium-card;
+  border-radius: 12px;
+  padding: 56px 64px;
+  min-width: 340px;
+}
+
+.heading {
+  font-size: 1.3em;
+  font-weight: bold;
+  color: @atrium-text;
+  margin-bottom: 8px;
+}
+
+.card button {
+  font-size: 1em;
+  background-image: none;
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
+  border: none;
+  box-shadow: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+}
+
+.card button:hover {
+  background-image: none;
+  background-color: @atrium-accent-hover;
+  box-shadow: none;
+}
+
+.card .user-button {
+  padding: 12px 16px;
+}
+
+.card button:active {
+  box-shadow: none;
+}
+
+spinner {
+  -gtk-icon-size: 1em;
+}
+
+.blank-page {
+  background-color: black;
+}
+
+.error-label {
+  color: @atrium-error;
+  font-size: 0.9em;
+}
+
+.card .back-button {
+  background-image: none;
+  background-color: transparent;
+  color: @atrium-text;
+  box-shadow: none;
+}
+
+.card .back-button:hover {
+  background-image: none;
+  background-color: @atrium-border;
+  box-shadow: none;
+}
+
+/* Strip Adwaita's padding/background from the outer entry container. */
+.password-entry {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: 0;
+}
+
+/* Border and colors on the inner GtkText node. */
+.password-entry > text {
+  font-size: 1em;
+  background-color: @atrium-bg;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.password-entry > text > placeholder {
+  color: @atrium-subtle;
+}
+
+.password-entry > text:focus {
+  border: 2px solid @atrium-accent;
+}

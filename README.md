@@ -11,6 +11,7 @@ A lightweight display manager for Linux with first-class multiseat support.
 ```shell
 meson setup build
 ninja -C build
+sudo ninja -C build install
 ```
 
 ## Development
@@ -29,3 +30,10 @@ sudo systemd-run --scope build/atrium-dev
 
 `systemd-run --scope` is needed in order to run atrium in a fresh scope, not in
 the scope of the existing session.
+
+To install only the daemon or only the greeter, use
+
+```shell
+sudo meson install -C build --tags daemon
+sudo meson install -C build --tags greeter
+```

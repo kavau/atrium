@@ -37,3 +37,6 @@ char **ipc_getenvlist(ipc_channel *ch);
 /* Create a bidirectional IPC channel from existing file descriptors supplied
 via environment variables. Returns 0 on success, -1 on failure. */
 int ipc_create_from_env(ipc_channel **ch);
+
+/* Return the file descriptor for reading from the IPC channel */
+int ipc_get_read_fd(ipc_channel *ch);
