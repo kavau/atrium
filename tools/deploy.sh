@@ -20,10 +20,10 @@ set -euo pipefail
 cd $DEST
 if [[ ! -d build ]]; then
     echo "--- Running meson setup"
-    meson setup build
+    meson setup build -Ddist="$DIST"
 else
     echo "--- Reconfiguring meson"
-    meson setup build --reconfigure
+    meson setup build --reconfigure -Ddist="$DIST"
 fi
 echo "--- Running ninja"
 ninja -C build

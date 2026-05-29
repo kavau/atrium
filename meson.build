@@ -36,7 +36,7 @@ endif
 if dist == 'arch'
   greeter_install_dir = get_option('prefix') / 'lib' / 'atrium'
 else
-  greeter_install_dir = get_option('libexecdir')
+  greeter_install_dir = get_option('prefix') / get_option('libexecdir')
 endif
 add_project_arguments('-DATRIUM_GREETER_DIR="' + greeter_install_dir + '"', language: 'c')
 
