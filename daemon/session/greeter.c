@@ -5,11 +5,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "daemon/core/config.h"
 #include "daemon/core/seat.h"
-#include "lib/defs.h"
+#include "exec.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
-#include "exec.h"
 
 _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_channel *ch) {
     assert(username);
@@ -72,12 +72,12 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
     }
 
     /* TODO: running the greeter via a shell is unnecessary overhead. */
-    char *argv[] = {"sh", "-c", GREETER, NULL};
+    char *argv[] = {"sh", "-c", (char *)config_greeter(), NULL};
 
-    log_debug("child_exec_greeter: exec: %s", GREETER);
+    log_debug("child_exec_greeter: exec: %s", config_greeter());
     drop_privs_and_exec(pw, "/bin/sh", argv, env);
 
 oom:
     log_error("child_exec_greeter: out of memory");
-    _exit(EXIT_FAILURE);
+    _exit(EXIT_FAILURE); /* no cleanup needed */
 }

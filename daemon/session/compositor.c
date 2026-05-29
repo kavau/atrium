@@ -6,9 +6,9 @@
 #include <unistd.h>
 
 #include "auth.h"
-#include "lib/defs.h"
-#include "lib/log.h"
+#include "daemon/core/config.h"
 #include "exec.h"
+#include "lib/log.h"
 
 _Noreturn void child_exec_compositor(const char *username, const auth_result *pam_result) {
     assert(username);
@@ -47,21 +47,28 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     if (asprintf(&env[i++], "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%u/bus",
                  (unsigned)pw->pw_uid) < 0)
         goto oom;
-    env[i++] = "XDG_SESSION_DESKTOP=" DESKTOP_NAME;
-    env[i++] = "XDG_CURRENT_DESKTOP=" DESKTOP_NAME;
+    if (asprintf(&env[i++], "XDG_SESSION_DESKTOP=%s", config_desktop()) < 0)
+        goto oom;
+    if (asprintf(&env[i++], "XDG_CURRENT_DESKTOP=%s", config_desktop()) < 0)
+        goto oom;
     env[i++] = NULL;
     assert(i == n_env);
+
+    /* Build "exec <compositor>" for the login shell to run. */
+    char *exec_cmd;
+    if (asprintf(&exec_cmd, "exec %s", config_compositor()) < 0)
+        goto oom;
 
     /* Prepend '-' to argv[0] to force a login shell (reads .profile, sets PATH). */
     char argv0[64];
     const char *base = strrchr(pw->pw_shell, '/');
     snprintf(argv0, sizeof(argv0), "-%s", base ? base + 1 : pw->pw_shell);
-    char *argv[] = {argv0, "-c", "exec " COMPOSITOR, NULL};
+    char *argv[] = {argv0, "-c", exec_cmd, NULL};
 
-    log_debug("child_exec_compositor: exec '%s' for user '%s'", COMPOSITOR, username);
+    log_debug("child_exec_compositor: exec '%s' for user '%s'", config_compositor(), username);
     drop_privs_and_exec(pw, pw->pw_shell, argv, env);
 
 oom:
     log_error("child_exec_compositor: out of memory");
-    _exit(EXIT_FAILURE);
+    _exit(EXIT_FAILURE); /* no cleanup needed */
 }

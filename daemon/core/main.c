@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "bus.h"
+#include "config.h"
 #include "lib/defs.h"
 #include "lib/log.h"
 #include "runner.h"
@@ -16,12 +17,10 @@
 #include "vt.h"
 
 static void on_seat_discovered(const char *seat_id, void *userdata) {
-    static const char *ignored[] = IGNORE_SEATS;
-    for (size_t i = 0; i < sizeof(ignored) / sizeof(ignored[0]); i++)
-        if (ignored[i] && strcmp(seat_id, ignored[i]) == 0) {
-            log_info("ignoring seat '%s' (listed in IGNORE_SEATS)", seat_id);
-            return;
-        }
+    if (config_is_seat_ignored(seat_id)) {
+        log_info("ignoring seat '%s' (listed in config)", seat_id);
+        return;
+    }
 
     int seat0_vtnr = *(int *)userdata;
     /* Only seat0 is associated with a VT. */
@@ -39,6 +38,7 @@ int main(int argc, char *argv[]) {
     (void)argv;
     log_info("starting");
     log_debug("debug logging enabled");
+    config_load("/etc/atrium.conf");
 
     /* Ignore SIGPIPE globally so a broken IPC pipe returns EPIPE from write()
     rather than killing the process. Inherited by all child processes. */
@@ -65,7 +65,8 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
 
     /* SHORTCUT: allow hardware initialization to complete before seat discovery */
-    sleep(SEAT_DISCOVERY_DELAY);
+    if (config_seat_discovery_delay() > 0)
+        usleep((useconds_t)config_seat_discovery_delay() * 1000);
 
     /* Allocate a VT for seat0. SHORTCUT: needs to be done after seat0 is discovered. */
 #if HEADLESS
@@ -136,7 +137,7 @@ int main(int argc, char *argv[]) {
                 s->state = SEAT_IDLE;
 
                 log_info("restarting session runner on seat '%s'", s->name);
-                sleep(1); /* SHORTCUT: avoid tight crash-loop */
+                usleep((useconds_t)config_crash_restart_delay() * 1000);
                 if (runner_start(PAM_CONF_PATH, s) != 0)
                     log_error("failed to restart runner on seat '%s'", s->name);
             }

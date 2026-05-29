@@ -1,0 +1,35 @@
+# /etc/atrium.conf - atrium display manager configuration
+# Lines starting with '#' are comments. Unknown keys are ignored.
+
+# Compositor override. When set, this command is launched directly on each seat
+# after authentication. Leave unset to let atrium discover available sessions
+# from /usr/share/wayland-sessions/.
+# 
+# Example:
+#   compositor = sway
+
+# Desktop identifier used with compositor= override; added as
+# XDG_CURRENT_DESKTOP / XDG_SESSION_DESKTOP to the session environment.
+#
+# Example:
+#   desktop = sway
+
+# Milliseconds to wait before seat discovery at daemon startup. Increase if
+# seats are missed at boot due to slow device enumeration.
+seat-discovery-delay = 2000
+
+# Milliseconds to wait before restarting the greeter after a crash.
+crash-restart-delay = 1000
+
+# Greeter command. Must honour the CREDENTIALS_FD and RESULT_FD environment
+# variables set by the daemon. Two greeters are provided:
+#   atrium-gtk-greeter  GTK4 graphical greeter (default)
+#   atrium-txt-greeter  text-based greeter (runs inside 'foot')
+greeter = /usr/bin/cage -s -- @greeter_dir@/atrium-gtk-greeter
+# greeter = /usr/bin/cage -s -- /usr/bin/foot @greeter_dir@/atrium-txt-greeter
+
+# Seats to ignore during enumeration. Repeat for multiple seats.
+# Useful for seats with no connected display that would crash-loop the greeter.
+#
+# Example:
+#   ignore-seat = seat2

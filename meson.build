@@ -84,9 +84,10 @@ greeter_resources = gnome.compile_resources(
 
 executable('atrium',
   sources: [
-    'daemon/core/runner.c',
     'daemon/core/bus.c',
+    'daemon/core/config.c',
     'daemon/core/main.c',
+    'daemon/core/runner.c',
     'daemon/core/seat.c',
     'daemon/core/vt.c',
     'daemon/session/auth.c',
@@ -94,10 +95,12 @@ executable('atrium',
     'daemon/session/exec.c',
     'daemon/session/greeter.c',
     'daemon/session/session_runner.c',
+    'lib/conf_helpers.c',
     'lib/ipc.c',
     'lib/proc.c',
   ],
   dependencies: [
+    dep_inih,
     dep_libpam,
     dep_libsystemd,
   ],
@@ -151,17 +154,20 @@ executable('atrium-auth-test',
 executable('atrium-start-session',
   sources: [
     'daemon/core/bus.c',
+    'daemon/core/config.c',
     'daemon/core/vt.c',
     'daemon/session/auth.c',
     'daemon/session/compositor.c',
     'daemon/session/exec.c',
     'daemon/session/greeter.c',
     'daemon/session/session_runner.c',
+    'lib/conf_helpers.c',
     'lib/ipc.c',
     'lib/proc.c',
     'tools/start-session.c',
   ],
   dependencies: [
+    dep_inih,
     dep_libpam,
     dep_libsystemd,
   ],
@@ -221,6 +227,14 @@ install_data(
   rename: 'atrium',
   install_dir: '/etc/pam.d',
   install_tag: 'daemon',
+)
+
+configure_file(
+  input: 'data/atrium.conf.in',
+  output: 'atrium.conf',
+  configuration: {'greeter_dir': greeter_install_dir},
+  install: true,
+  install_dir: '/etc',
 )
 
 # Create the atriumdm system user and home directory. These hooks are run by
