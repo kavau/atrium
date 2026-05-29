@@ -57,6 +57,20 @@ if have_pam_start_confdir
     add_project_arguments('-DHAVE_PAM_START_CONFDIR=1', language: 'c')
 endif
 
+# Third-party libraries
+
+# inih INI parser. INI_MAX_LINE was raised to accommodate long exec strings.
+inc_inih = include_directories('third_party/inih')
+lib_inih = static_library('inih',
+  'third_party/inih/ini.c',
+  include_directories: inc_inih,
+  c_args: ['-DINI_MAX_LINE=1024', '-DINI_ALLOW_MULTILINE=0'],
+)
+dep_inih = declare_dependency(
+  link_with: lib_inih,
+  include_directories: inc_inih
+)
+
 # Greeter CSS (compiled-in)
 
 gnome = import('gnome')
