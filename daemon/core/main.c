@@ -8,7 +8,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "daemon/session/bus.h"
+#include "bus.h"
 #include "lib/defs.h"
 #include "lib/log.h"
 #include "runner.h"

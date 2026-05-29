@@ -13,15 +13,15 @@
 #include <unistd.h>
 
 #include "auth.h"
-#include "bus.h"
+#include "daemon/core/bus.h"
 #include "daemon/core/seat.h"
 #include "daemon/core/vt.h"
 #include "lib/defs.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
 #include "lib/proc.h"
-#include "session_compositor.h"
-#include "session_greeter.h"
+#include "compositor.h"
+#include "greeter.h"
 
 /* Validate username: non-empty, within LOGIN_NAME_MAX, portable filename chars
 only ([A-Za-z0-9._-]) and optional trailing '$'. Rejects ANSI escape sequences and other

@@ -1,4 +1,4 @@
-#include "session_greeter.h"
+#include "greeter.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -9,7 +9,7 @@
 #include "lib/defs.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
-#include "session_exec.h"
+#include "exec.h"
 
 _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_channel *ch) {
     assert(username);

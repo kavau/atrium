@@ -1,6 +1,6 @@
 #pragma once
 /*
- * session_greeter.h - greeter child process setup
+ * greeter.h - greeter child process setup
  */
 
 #include "daemon/core/seat.h"

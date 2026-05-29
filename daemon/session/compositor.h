@@ -1,6 +1,6 @@
 #pragma once
 /*
- * session_compositor.h - compositor child process setup
+ * compositor.h - compositor child process setup
  */
 
 #include "auth.h"

@@ -1,6 +1,6 @@
 #pragma once
 /*
- * session_exec.h - shared exec helpers (privilege drop, passwd environment)
+ * exec.h - shared exec helpers (privilege drop, passwd environment)
  */
 
 #include <pwd.h>

@@ -31,6 +31,6 @@ int bus_activate_session(const char *session_object);
 /* Callback invoked by bus_enumerate_seats for each discovered seat. */
 typedef void (*bus_on_seat_fn)(const char *seat_id, void *userdata);
 
-/* Enumera seats via logind's ListSeats() and invoke on_seat for each result.
+/* Enumerate seats via logind's ListSeats() and invoke on_seat for each result.
  * Returns 0 on success, -1 on error. */
 int bus_enumerate_seats(bus_on_seat_fn on_seat, void *userdata);

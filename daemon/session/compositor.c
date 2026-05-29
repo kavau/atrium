@@ -1,4 +1,4 @@
-#include "session_compositor.h"
+#include "compositor.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -8,7 +8,7 @@
 #include "auth.h"
 #include "lib/defs.h"
 #include "lib/log.h"
-#include "session_exec.h"
+#include "exec.h"
 
 _Noreturn void child_exec_compositor(const char *username, const auth_result *pam_result) {
     assert(username);
