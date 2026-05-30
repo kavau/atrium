@@ -176,6 +176,17 @@ executable('atrium-start-session',
   install: false,
 )
 
+executable('atrium-list-sessions',
+  sources: [
+    'daemon/session/sessions.c',
+    'tools/list-sessions.c',
+  ],
+  dependencies: [
+    dep_inih,
+  ],
+  install: false,
+)
+
 executable('atrium-fake-compositor',
   sources: [
     'tools/fake-compositor.c',
