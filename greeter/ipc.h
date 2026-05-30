@@ -15,8 +15,10 @@ typedef enum {
     IPC_FAIL,
 } ipc_status;
 
-/* Send credentials to the daemon. Returns 0 on success, -1 on failure. */
-int ipc_send_credentials(ipc_channel *ch, const char *username, const char *password);
+/* Send credentials to the daemon. session_id is the chosen Wayland session
+or "" if none was selected. Returns 0 on success, -1 on failure. */
+int ipc_send_credentials(ipc_channel *ch, const char *username, const char *password,
+                         const char *session_id);
 
 /* Read and parse a daemon response. On IPC_FAIL, reason is populated with a
  * user-facing message. On IPC_OK, reason is set to an empty string. */

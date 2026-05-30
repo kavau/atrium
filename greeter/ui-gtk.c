@@ -19,23 +19,26 @@ typedef enum {
 } greeter_page;
 
 /* Global variables - avoid passing context around */
-static ipc_channel        *g_ch;
-static GtkStack           *g_stack;
-static GtkWindow          *g_window;
-static GtkLabel           *g_user_label;
-static GtkEntry           *g_password_entry;
-static greeter_user const *g_selected_user;
-static greeter_user const *g_users;
-static int                 g_num_users;
-static GtkSpinner         *g_users_spinner;
-static GtkLabel           *g_users_error_label;
-static GtkSpinner         *g_password_spinner;
-static GtkLabel           *g_password_error_label;
-static guint               g_blank_timer_id;
-static greeter_page        g_pre_blank_page; /* page we were on before blanking */
-static gint64              g_blank_start_us; /* monotonic time when blanking started */
-static guint               g_auth_fd_source_id;
-static guint               g_auth_timeout_id;
+static ipc_channel           *g_ch;
+static GtkStack              *g_stack;
+static GtkWindow             *g_window;
+static GtkLabel              *g_user_label;
+static GtkEntry              *g_password_entry;
+static greeter_user    const *g_selected_user;
+static greeter_user    const *g_users;
+static int                    g_num_users;
+static greeter_session const *g_sessions;
+static int                    g_num_sessions;
+static GtkDropDown           *g_session_dropdown; /* NULL when hidden (<= 1 session) */
+static GtkSpinner            *g_users_spinner;
+static GtkLabel              *g_users_error_label;
+static GtkSpinner            *g_password_spinner;
+static GtkLabel              *g_password_error_label;
+static guint                  g_blank_timer_id;
+static greeter_page           g_pre_blank_page; /* page we were on before blanking */
+static gint64                 g_blank_start_us; /* monotonic time when blanking started */
+static guint                  g_auth_fd_source_id;
+static guint                  g_auth_timeout_id;
 
 static greeter_page current_page(void) {
     const char *name = gtk_stack_get_visible_child_name(g_stack);
@@ -224,6 +227,18 @@ err:
     return G_SOURCE_REMOVE;
 }
 
+/* Return the id of the currently selected session, or "" if none. */
+static const char *get_selected_session_id(void) {
+    if (g_session_dropdown) {
+        guint idx = gtk_drop_down_get_selected(g_session_dropdown);
+        if ((int)idx < g_num_sessions)
+            return g_sessions[idx].id;
+    } else if (g_num_sessions >= 1) {
+        return g_sessions[0].id;
+    }
+    return "";
+}
+
 /* Disable the window, send credentials, and register the IPC response watcher.
  * Re-enables the window on send failure. */
 static void submit_credentials(GtkWidget *widget, const char *password) {
@@ -232,7 +247,8 @@ static void submit_credentials(GtkWidget *widget, const char *password) {
 
     GtkRoot *root = gtk_widget_get_root(widget);
     gtk_widget_set_sensitive(GTK_WIDGET(root), FALSE);
-    if (ipc_send_credentials(g_ch, g_selected_user->username, password) != 0) {
+    if (ipc_send_credentials(g_ch, g_selected_user->username, password,
+                             get_selected_session_id()) != 0) {
         show_error(IPC_ERROR_INTERNAL);
         gtk_widget_set_sensitive(GTK_WIDGET(root), TRUE);
         return;
@@ -334,6 +350,18 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(users_box), users_error_label);
     g_users_error_label = GTK_LABEL(users_error_label);
 
+    /* Session dropdown — only shown when there are two or more sessions. */
+    if (g_num_sessions > 1) {
+        const char *names[MAX_NUM_SESSIONS + 1];
+        for (int i = 0; i < g_num_sessions; i++)
+            names[i] = g_sessions[i].name;
+        names[g_num_sessions] = NULL;
+        GtkWidget *dropdown = gtk_drop_down_new_from_strings(names);
+        gtk_widget_add_css_class(dropdown, "session-dropdown");
+        gtk_box_append(GTK_BOX(users_box), dropdown);
+        g_session_dropdown = GTK_DROP_DOWN(dropdown);
+    }
+
     GtkWidget *user_buttons_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_box_append(GTK_BOX(users_box), user_buttons_box);
 
@@ -405,10 +433,14 @@ static void activate(GtkApplication *app, gpointer user_data) {
     reset_blank_timer();
 }
 
-int run_ui(const greeter_user *users, int num_users, ipc_channel *ch) {
-    g_users = users;
-    g_num_users = num_users;
-    g_ch = ch;
+int run_ui(const greeter_user *users, int num_users,
+           const greeter_session *sessions, int num_sessions,
+           ipc_channel *ch) {
+    g_users        = users;
+    g_num_users    = num_users;
+    g_sessions     = sessions;
+    g_num_sessions = num_sessions;
+    g_ch           = ch;
 
     GtkApplication *app = gtk_application_new("com.kavau.atrium", G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
