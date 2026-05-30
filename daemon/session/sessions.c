@@ -1,0 +1,204 @@
+#include "sessions.h"
+
+#include <dirent.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "ini.h"
+#include "lib/log.h"
+
+#define SESSIONS_MAX 64
+
+/* Where to look for session files */
+static const char *session_dirs[] = {
+    "/usr/local/share/wayland-sessions",
+    "/usr/share/wayland-sessions",
+};
+#define N_SESSION_DIRS ((int)(sizeof(session_dirs) / sizeof(session_dirs[0])))
+
+static session_entry g_sessions[SESSIONS_MAX];
+static int           g_session_count = 0;
+
+/* inih callback context for parsing a single .desktop file. */
+typedef struct {
+    session_entry *entry;
+    int            skip;
+    int            oom;
+} parse_ctx;
+
+/* Convert semicolon-separated list to colon-separated (XDG_CURRENT_DESKTOP
+format). Strip trailing colon if present. */
+static char *convert_semicolons(const char *input) {
+    char *out = strdup(input);
+    if (!out)
+        return NULL;
+    for (char *p = out; *p; p++)
+        if (*p == ';')
+            *p = ':';
+    size_t len = strlen(out);
+    if (len > 0 && out[len - 1] == ':')
+        out[len - 1] = '\0';
+    return out;
+}
+
+/* inih callback for parsing a .desktop file entry. */
+static int on_desktop_key(void *userdata, const char *section, const char *name,
+                          const char *value) {
+    if (strcmp(section, "Desktop Entry") != 0)
+        return 1;
+
+    parse_ctx *ctx = userdata;
+
+    if (strcmp(name, "Name") == 0) {
+        free(ctx->entry->name);
+        ctx->entry->name = strdup(value);
+        if (!ctx->entry->name) {
+            ctx->oom = 1;
+            return 0;
+        }
+    } else if (strcmp(name, "Exec") == 0) {
+        free(ctx->entry->exec);
+        ctx->entry->exec = strdup(value);
+        if (!ctx->entry->exec) {
+            ctx->oom = 1;
+            return 0;
+        }
+    } else if (strcmp(name, "DesktopNames") == 0) {
+        free(ctx->entry->desktop_names);
+        ctx->entry->desktop_names = convert_semicolons(value);
+        if (!ctx->entry->desktop_names) {
+            ctx->oom = 1;
+            return 0;
+        }
+    } else if ((strcmp(name, "Hidden") == 0 || strcmp(name, "NoDisplay") == 0)
+               && strcmp(value, "true") == 0) {
+        ctx->skip = 1;
+    } else if (strcmp(name, "Type") == 0 && strcmp(value, "Application") != 0) {
+        ctx->skip = 1;
+    }
+    /* Locale-suffixed keys (e.g. Name[de]=) are silently ignored. */
+    return 1;
+}
+
+static void free_entry(session_entry *e) {
+    free(e->id);
+    free(e->name);
+    free(e->exec);
+    free(e->desktop_names);
+    memset(e, 0, sizeof(*e));
+}
+
+static int parse_desktop_file(const char *path, const char *id, session_entry *entry) {
+    memset(entry, 0, sizeof(*entry));
+
+    entry->id = strdup(id);
+    if (!entry->id) {
+        log_error("sessions: out of memory");
+        return -1;
+    }
+
+    parse_ctx ctx = {.entry = entry};
+
+    int r = ini_parse(path, on_desktop_key, &ctx);
+    if (r < 0) {
+        log_syserr("sessions: open %s", path);
+        free_entry(entry);
+        return -1;
+    }
+    if (r > 0)
+        log_warn("sessions: parse error in %s at line %d", path, r);
+
+    if (ctx.oom) {
+        log_error("sessions: out of memory parsing %s", path);
+        free_entry(entry);
+        return -1;
+    }
+    if (ctx.skip || !entry->name || !entry->exec) {
+        log_info("sessions: skipping '%s' from %s", id, path);
+        free_entry(entry);
+        return -1;
+    }
+
+    return 0;
+}
+
+void sessions_free(void) {
+    for (int i = 0; i < g_session_count; i++)
+        free_entry(&g_sessions[i]);
+    g_session_count = 0;
+}
+
+int sessions_scan(void) {
+    sessions_free();
+
+    for (int d = 0; d < N_SESSION_DIRS; d++) {
+        DIR *dir = opendir(session_dirs[d]);
+        if (!dir) {
+            log_debug("sessions: %s: %s", session_dirs[d], strerror(errno));
+            continue;
+        }
+
+        struct dirent *ent;
+        while ((ent = readdir(dir)) != NULL) {
+            if (g_session_count >= SESSIONS_MAX) {
+                log_warn("sessions: list full at %d entries, stopping", SESSIONS_MAX);
+                break;
+            }
+
+            const char *name = ent->d_name;
+            size_t      namelen = strlen(name);
+
+            if (namelen < 9 || strcmp(name + namelen - 8, ".desktop") != 0)
+                continue;
+
+            /* Derive session id: filename without ".desktop" */
+            char   id[64];
+            size_t idlen = namelen - 8;
+            if (idlen >= sizeof(id))
+                idlen = sizeof(id) - 1;
+            memcpy(id, name, idlen);
+            id[idlen] = '\0';
+
+            /* Earlier directory wins: skip duplicates from later dirs. */
+            if (sessions_find(id)) {
+                log_debug("sessions: skip duplicate '%s' from %s", id, session_dirs[d]);
+                continue;
+            }
+
+            char path[512];
+            snprintf(path, sizeof(path), "%s/%s", session_dirs[d], name);
+
+            session_entry entry;
+            if (parse_desktop_file(path, id, &entry) == 0) {
+                g_sessions[g_session_count++] = entry;
+                log_info("sessions: loaded '%s' (id='%s' exec='%s')", entry.name, entry.id,
+                         entry.exec);
+            }
+        }
+
+        closedir(dir);
+    }
+
+    if (g_session_count == 0)
+        log_warn("sessions: no Wayland sessions found");
+    else
+        log_info("sessions: %d session(s) available", g_session_count);
+
+    return g_session_count;
+}
+
+const session_entry *sessions_first(void) { return g_session_count > 0 ? &g_sessions[0] : NULL; }
+
+const session_entry *sessions_next(const session_entry *s) {
+    int idx = (int)(s - g_sessions);
+    return (idx + 1 < g_session_count) ? &g_sessions[idx + 1] : NULL;
+}
+
+const session_entry *sessions_find(const char *id) {
+    for (int i = 0; i < g_session_count; i++) {
+        if (strcmp(g_sessions[i].id, id) == 0)
+            return &g_sessions[i];
+    }
+    return NULL;
+}
