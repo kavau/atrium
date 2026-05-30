@@ -22,6 +22,7 @@
 #include "lib/proc.h"
 #include "compositor.h"
 #include "greeter.h"
+#include "sessions.h"
 
 /* Validate username: non-empty, within LOGIN_NAME_MAX, portable filename chars
 only ([A-Za-z0-9._-]) and optional trailing '$'. Rejects ANSI escape sequences and other
@@ -44,19 +45,31 @@ static int is_valid_username(const char *username) {
     return 1;
 }
 
-/* Parse credentials from greeter IPC message (format: "username\0password\0").
-On success, *username and *password point into buf. Returns 0 or -1. */
-static int parse_credentials(char *buf, ssize_t n, const char **username, const char **password) {
+/* Parse credentials from greeter IPC message. Wire format:
+"username\0password\0[session_id\0]" (session_id is optional for backward
+compatibility). On success, *username, *password, *session_id point into buf.
+Returns 0 on success or -1 on error. */
+static int parse_credentials(char *buf, ssize_t n, const char **username,
+                              const char **password, const char **session_id) {
     if (n <= 0)
         return -1;
     *username = buf;
-    size_t ulen = strnlen(buf, (size_t)n);
+    size_t ulen = strnlen(*username, (size_t)n);
     if (ulen >= (size_t)n)
         return -1;
     *password = buf + ulen + 1;
     size_t remaining = (size_t)n - ulen - 1;
-    if (strnlen(*password, remaining) >= remaining)
+    size_t plen = strnlen(*password, remaining);
+    if (plen >= remaining)
         return -1;
+    remaining -= plen + 1;
+    if (remaining > 0) { /* session_id is optional */
+        *session_id = buf + ulen + 1 + plen + 1;
+        if (strnlen(*session_id, remaining) >= remaining)
+            return -1;
+    } else {
+        *session_id = "";
+    }
     return 0;
 }
 
@@ -138,6 +151,21 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     /* ---- GREETER PHASE ---- */
 
+    /* Scan available Wayland sessions and serialize for the greeter. */
+    char session_list[4096] = "";
+    if (sessions_scan() > 0) {
+        size_t pos = 0;
+        for (const session_entry *e = sessions_first(); e; e = sessions_next(e)) {
+            int w = snprintf(session_list + pos, sizeof(session_list) - pos,
+                             "%s\x1f%s\x1e", e->id, e->name);
+            if (w < 0 || (size_t)w >= sizeof(session_list) - pos) {
+                log_warn("session_runner: session list truncated");
+                break;
+            }
+            pos += (size_t)w;
+        }
+    }
+
     /* Create IPC channel for the greeter to communicate credentials. */
     ipc_channel *parent_end, *child_end;
     if (ipc_create(&parent_end, &child_end) < 0) {
@@ -161,7 +189,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     if (greeter_pid == 0) {
         /* Child process: execute greeter. */
         ipc_close(parent_end);
-        child_exec_greeter(GREETER_USERNAME, s, child_end);
+        child_exec_greeter(GREETER_USERNAME, s, child_end, session_list);
         /* unreachable */
     }
 
@@ -235,19 +263,18 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     char cred_buf[256]; /* must remain valid outside the loop */
     auth_result pam_result;
-    const char *username = NULL;
+    const char *username       = NULL;
+    const char *chosen_session = NULL; /* points into cred_buf; valid after loop */
     while (1) {
         ssize_t n = ipc_recv(parent_end, cred_buf, sizeof(cred_buf) - 1);
         if (n <= 0) {
             log_error("session_runner: greeter disconnected before auth on seat '%s'", s->name);
-            /* Pipe is closed but greeter may still be running teardown; give it
-            a chance to exit before escalating. */
             kill_and_wait(greeter_pid, "greeter", s->name);
             _exit(EXIT_FAILURE);
         }
 
         const char *password;
-        if (parse_credentials(cred_buf, n, &username, &password) < 0) {
+        if (parse_credentials(cred_buf, n, &username, &password, &chosen_session) < 0) {
             log_warn("session_runner: invalid credentials from greeter on seat '%s'", s->name);
             ipc_send_str(parent_end, "fail:invalid credentials\n");
             continue;
@@ -305,7 +332,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     if (comp_pid == 0) {
         /* Child process - execute compositor */
-        child_exec_compositor(username, &pam_result);
+        child_exec_compositor(username, &pam_result, chosen_session ? chosen_session : "");
         /* unreachable */
     }
 
