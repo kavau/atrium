@@ -1,6 +1,7 @@
 #include "runner.h"
 
 #include <assert.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include "daemon/session/session_runner.h"
@@ -20,6 +21,13 @@ int runner_start(const char *pam_conf_path, seat *s) {
     if (runner_pid == 0) {
         /* Child process -- run the full session lifecycle. */
         log_debug("starting session runner on seat '%s'", s->name);
+
+        /* Unblock SIGTERM inherited from the daemon so runner_stop() reaches us. */
+        sigset_t unblock;
+        sigemptyset(&unblock);
+        sigaddset(&unblock, SIGTERM);
+        sigprocmask(SIG_UNBLOCK, &unblock, NULL);
+
         session_runner(pam_conf_path, s);
         /* unreachable */
     }

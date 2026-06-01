@@ -13,16 +13,28 @@
 #include <unistd.h>
 
 #include "auth.h"
+#include "compositor.h"
 #include "daemon/core/bus.h"
 #include "daemon/core/seat.h"
 #include "daemon/core/vt.h"
+#include "greeter.h"
 #include "lib/defs.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
 #include "lib/proc.h"
-#include "compositor.h"
-#include "greeter.h"
 #include "sessions.h"
+
+/* PID of the runner's current child (greeter or compositor). Cleared after the
+child exits. 0 means no child is currently active. */
+static volatile sig_atomic_t g_child_pid = 0;
+
+/* SIGTERM handler: kill the current child so it exits cleanly, then let the
+runner's normal wait path detect the exit and clean up. */
+static void on_sigterm(int sig) {
+    (void)sig;
+    if (g_child_pid > 0)
+        kill((pid_t)g_child_pid, SIGTERM);
+}
 
 /* Validate username: non-empty, within LOGIN_NAME_MAX, portable filename chars
 only ([A-Za-z0-9._-]) and optional trailing '$'. Rejects ANSI escape sequences and other
@@ -49,8 +61,8 @@ static int is_valid_username(const char *username) {
 "username\0password\0[session_id\0]" (session_id is optional for backward
 compatibility). On success, *username, *password, *session_id point into buf.
 Returns 0 on success or -1 on error. */
-static int parse_credentials(char *buf, ssize_t n, const char **username,
-                              const char **password, const char **session_id) {
+static int parse_credentials(char *buf, ssize_t n, const char **username, const char **password,
+                             const char **session_id) {
     if (n <= 0)
         return -1;
     *username = buf;
@@ -76,7 +88,7 @@ static int parse_credentials(char *buf, ssize_t n, const char **username,
 /* Wait for a child process to exit and log the result. Retries on EINTR. Logs
 an error if waitpid fails. */
 static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
-    int wstatus = 0;
+    int   wstatus = 0;
     pid_t r;
     do {
         r = waitpid(pid, &wstatus, 0);
@@ -149,6 +161,11 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     /* Ignore SIGPIPE to prevent a broken IPC pipe from killing this process. */
     signal(SIGPIPE, SIG_IGN);
 
+    /* Install SIGTERM handler so runner_stop() can cleanly shut us down. */
+    struct sigaction sa = {.sa_handler = on_sigterm, .sa_flags = 0};
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTERM, &sa, NULL);
+
     /* ---- GREETER PHASE ---- */
 
     /* Scan available Wayland sessions and serialize for the greeter. */
@@ -156,8 +173,8 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     if (sessions_scan() > 0) {
         size_t pos = 0;
         for (const session_entry *e = sessions_first(); e; e = sessions_next(e)) {
-            int w = snprintf(session_list + pos, sizeof(session_list) - pos,
-                             "%s\x1f%s\x1e", e->id, e->name);
+            int w = snprintf(session_list + pos, sizeof(session_list) - pos, "%s\x1f%s\x1e", e->id,
+                             e->name);
             if (w < 0 || (size_t)w >= sizeof(session_list) - pos) {
                 log_warn("session_runner: session list truncated");
                 break;
@@ -185,13 +202,13 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         log_syserr("session_runner: fork (greeter)");
         _exit(EXIT_FAILURE);
     }
-
     if (greeter_pid == 0) {
         /* Child process: execute greeter. */
         ipc_close(parent_end);
         child_exec_greeter(GREETER_USERNAME, s, child_end, session_list);
         /* unreachable */
     }
+    g_child_pid = (sig_atomic_t)greeter_pid;
 
     /* Parent process: greeter owns child_end. */
     ipc_close(child_end);
@@ -200,7 +217,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     char session_id[32] = {0};
     char session_obj[256] = {0};
     char runtime_path[64] = {0};
-    int fifo_fd = -1;
+    int  fifo_fd = -1;
 
     if (bus_open() < 0) {
         kill_and_wait(greeter_pid, "greeter", s->name);
@@ -238,7 +255,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     /* Build PAM environment once; reused across credential attempts.
     XDG_SEAT [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS */
-    int n_env = 4 + (s->vtnr > 0 ? 1 : 0);
+    int    n_env = 4 + (s->vtnr > 0 ? 1 : 0);
     char **pam_env = calloc(n_env, sizeof(*pam_env));
     if (!pam_env) {
         log_syserr("session_runner: calloc");
@@ -261,9 +278,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     pam_env[i++] = NULL;
     assert(i == n_env);
 
-    char cred_buf[256]; /* must remain valid outside the loop */
+    char        cred_buf[256]; /* must remain valid outside the loop */
     auth_result pam_result;
-    const char *username       = NULL;
+    const char *username = NULL;
     const char *chosen_session = NULL; /* points into cred_buf; valid after loop */
     while (1) {
         ssize_t n = ipc_recv(parent_end, cred_buf, sizeof(cred_buf) - 1);
@@ -309,6 +326,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     /* Greeter exits after reading "ok\n". Wait for it to exit cleanly; send
     SIGTERM and SIGKILL only if it does not exit within 5 s. */
     wait_and_kill(greeter_pid, "greeter", s->name);
+    g_child_pid = 0;
     ipc_close(parent_end);
     close(fifo_fd); /* signals logind that the session has ended */
     bus_close();
@@ -329,18 +347,19 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         auth_close_session(&pam_result);
         _exit(EXIT_FAILURE);
     }
-
     if (comp_pid == 0) {
         /* Child process - execute compositor */
         child_exec_compositor(username, &pam_result, chosen_session ? chosen_session : "");
         /* unreachable */
     }
+    g_child_pid = (sig_atomic_t)comp_pid;
 
     /* Parent process - wait for compositor exit */
     log_info("started user session for '%s' (PID %d) on seat '%s'", username, (int)comp_pid,
              s->name);
 
     wait_child(comp_pid, "compositor", s->name);
+    g_child_pid = 0;
 
     auth_close_session(&pam_result);
     log_debug("session lifecycle complete on seat '%s'", s->name);
