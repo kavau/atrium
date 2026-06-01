@@ -360,6 +360,17 @@ static void activate(GtkApplication *app, gpointer user_data) {
         gtk_widget_add_css_class(dropdown, "session-dropdown");
         gtk_box_append(GTK_BOX(users_box), dropdown);
         g_session_dropdown = GTK_DROP_DOWN(dropdown);
+
+        /* Preselect the last-used session if available. */
+        const char *preselect = getenv("ATRIUM_SESSION_PRESELECT");
+        if (preselect && *preselect) {
+            for (int i = 0; i < g_num_sessions; i++) {
+                if (strcmp(g_sessions[i].id, preselect) == 0) {
+                    gtk_drop_down_set_selected(g_session_dropdown, (guint)i);
+                    break;
+                }
+            }
+        }
     }
 
     GtkWidget *user_buttons_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);

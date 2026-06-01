@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 /*
  * sessions.h - session discovery from .desktop files
  */
@@ -24,5 +26,13 @@ const session_entry *sessions_first(void);
 /* Session iteration - return the next session or NULL. */
 const session_entry *sessions_next(const session_entry *s);
 
-/* Find a session by ID, or NULL if not found. */
+/* Find a session by id, or NULL if not found. */
 const session_entry *sessions_find(const char *id);
+
+/* Persist the session chosen by the user on seat_name so the next greeter
+launch can preselect it. */
+void sessions_save_seat(const char *seat_name, const char *session_id);
+
+/* Load the previously saved session id for seat_name into buf.
+If no valid saved session exists, buf is set to an empty string. */
+void sessions_load_seat(const char *seat_name, char *buf, size_t buflen);

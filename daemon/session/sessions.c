@@ -2,11 +2,16 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "ini.h"
 #include "lib/log.h"
+
+#define SEAT_STATE_DIR "/var/lib/atrium/seats"
 
 #define SESSIONS_MAX 64
 
@@ -71,8 +76,8 @@ static int on_desktop_key(void *userdata, const char *section, const char *name,
             ctx->oom = 1;
             return 0;
         }
-    } else if ((strcmp(name, "Hidden") == 0 || strcmp(name, "NoDisplay") == 0)
-               && strcmp(value, "true") == 0) {
+    } else if ((strcmp(name, "Hidden") == 0 || strcmp(name, "NoDisplay") == 0) &&
+               strcmp(value, "true") == 0) {
         ctx->skip = 1;
     } else if (strcmp(name, "Type") == 0 && strcmp(value, "Application") != 0) {
         ctx->skip = 1;
@@ -201,4 +206,75 @@ const session_entry *sessions_find(const char *id) {
             return &g_sessions[i];
     }
     return NULL;
+}
+
+/* Reject seat names that could cause directory traversal or other path injection. */
+static int is_safe_name(const char *name) {
+    if (!name || name[0] == '\0')
+        return 0;
+    for (const char *p = name; *p; p++) {
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') ||
+              *p == '-' || *p == '_'))
+            return 0;
+    }
+    return 1;
+}
+
+void sessions_save_seat(const char *seat_name, const char *session_id) {
+    if (!is_safe_name(seat_name)) {
+        log_warn("sessions_save_seat: unsafe seat name '%s', skipping", seat_name);
+        return;
+    }
+    if (mkdir(SEAT_STATE_DIR, 0700) < 0 && errno != EEXIST) {
+        log_syserr("sessions_save_seat: mkdir %s", SEAT_STATE_DIR);
+        return;
+    }
+    char path[256], tmp_path[272];
+    snprintf(path, sizeof(path), "%s/%s", SEAT_STATE_DIR, seat_name);
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+
+    FILE *f = fopen(tmp_path, "w");
+    if (!f) {
+        log_syserr("sessions_save_seat: fopen %s", tmp_path);
+        return;
+    }
+    fprintf(f, "%s\n", session_id);
+    fclose(f);
+
+    if (rename(tmp_path, path) < 0) {
+        log_syserr("sessions_save_seat: rename %s -> %s", tmp_path, path);
+        return;
+    }
+    log_debug("sessions_save_seat: saved '%s' for seat '%s'", session_id, seat_name);
+}
+
+void sessions_load_seat(const char *seat_name, char *buf, size_t buflen) {
+    buf[0] = '\0';
+    if (!is_safe_name(seat_name))
+        return;
+    char path[256];
+    snprintf(path, sizeof(path), "%s/%s", SEAT_STATE_DIR, seat_name);
+
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return;
+    if (!fgets(buf, (int)buflen, f)) {
+        buf[0] = '\0';
+        fclose(f);
+        return;
+    }
+    fclose(f);
+
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '\n')
+        buf[len - 1] = '\0';
+    if (buf[0] == '\0')
+        return;
+    if (!sessions_find(buf)) {
+        log_info("sessions_load_seat: saved session '%s' for seat '%s' is no longer installed",
+                 buf, seat_name);
+        buf[0] = '\0';
+        return;
+    }
+    log_debug("sessions_load_seat: preselecting '%s' for seat '%s'", buf, seat_name);
 }

@@ -13,10 +13,11 @@
 #include "lib/log.h"
 
 _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_channel *ch,
-                                  const char *session_list) {
+                                  const char *session_list, const char *preselect) {
     assert(username);
     assert(s);
     assert(session_list);
+    assert(preselect);
 
     /* Block until parent sends session_id. EOF (n <= 0) means parent failed
     (e.g. CreateSession error). */
@@ -36,8 +37,9 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
         ++n_env;
     n_env += NUM_ENV_PASSWD;
     /* XDG_SEAT [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_RUNTIME_DIR
-    XDG_SESSION_ID WLR_LIBINPUT_NO_DEVICES [ATRIUM_SESSION_LIST] NULL */
-    n_env += 7 + (s->vtnr > 0 ? 1 : 0) + (*session_list ? 1 : 0);
+    XDG_SESSION_ID WLR_LIBINPUT_NO_DEVICES [ATRIUM_SESSION_LIST]
+    [ATRIUM_SESSION_PRESELECT] NULL */
+    n_env += 7 + (s->vtnr > 0 ? 1 : 0) + (*session_list ? 1 : 0) + (*preselect ? 1 : 0);
 
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
@@ -63,6 +65,8 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
         goto oom;
     env[i++] = "WLR_LIBINPUT_NO_DEVICES=1";
     if (*session_list && asprintf(&env[i++], "ATRIUM_SESSION_LIST=%s", session_list) < 0)
+        goto oom;
+    if (*preselect && asprintf(&env[i++], "ATRIUM_SESSION_PRESELECT=%s", preselect) < 0)
         goto oom;
 
     for (char **p = ipc_env; *p; p++)

@@ -170,6 +170,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     /* Scan available Wayland sessions and serialize for the greeter. */
     char session_list[4096] = "";
+    char preselect[64] = "";
     if (sessions_scan() > 0) {
         size_t pos = 0;
         for (const session_entry *e = sessions_first(); e; e = sessions_next(e)) {
@@ -181,6 +182,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             }
             pos += (size_t)w;
         }
+        sessions_load_seat(s->name, preselect, sizeof(preselect));
     }
 
     /* Create IPC channel for the greeter to communicate credentials. */
@@ -205,7 +207,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     if (greeter_pid == 0) {
         /* Child process: execute greeter. */
         ipc_close(parent_end);
-        child_exec_greeter(GREETER_USERNAME, s, child_end, session_list);
+        child_exec_greeter(GREETER_USERNAME, s, child_end, session_list, preselect);
         /* unreachable */
     }
     g_child_pid = (sig_atomic_t)greeter_pid;
@@ -314,6 +316,8 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         }
 
         log_info("session_runner: auth ok for '%s' on seat '%s'", username, s->name);
+        if (chosen_session && chosen_session[0] != '\0')
+            sessions_save_seat(s->name, chosen_session);
         ipc_send_str(parent_end, "ok\n");
         break;
     }
