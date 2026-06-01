@@ -86,20 +86,26 @@ static int open_vt(int vtnr) {
     return fd;
 }
 
-void vt_suppress_keyboard(int vtnr) {
+void vt_suppress_keyboard(int vtnr, int *previous_mode) {
     int fd = open_vt(vtnr);
     if (fd < 0)
         return;
+    if (previous_mode) {
+        if (ioctl(fd, KDGKBMODE, previous_mode) < 0) {
+            log_syserr("vt_suppress_keyboard: ioctl KDGKBMODE on VT%d", vtnr);
+            *previous_mode = K_UNICODE; /* safe default */
+        }
+    }
     if (ioctl(fd, KDSKBMODE, K_OFF) < 0)
         log_syserr("vt_suppress_keyboard: ioctl KDSKBMODE K_OFF on VT%d", vtnr);
     close(fd);
 }
 
-void vt_restore_keyboard(int vtnr) {
+void vt_restore_keyboard(int vtnr, int previous_mode) {
     int fd = open_vt(vtnr);
     if (fd < 0)
         return;
-    if (ioctl(fd, KDSKBMODE, K_UNICODE) < 0)
-        log_syserr("vt_restore_keyboard: ioctl KDSKBMODE K_UNICODE on VT%d", vtnr);
+    if (ioctl(fd, KDSKBMODE, previous_mode) < 0)
+        log_syserr("vt_restore_keyboard: ioctl KDSKBMODE on VT%d", vtnr);
     close(fd);
 }

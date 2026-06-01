@@ -327,6 +327,11 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     SIGTERM and SIGKILL only if it does not exit within 5 s. */
     wait_and_kill(greeter_pid, "greeter", s->name);
     g_child_pid = 0;
+
+    /* Re-suppress VT keyboard (cage restores K_UNICODE on exit) */
+    if (s->vtnr > 0)
+        vt_suppress_keyboard(s->vtnr, NULL);
+
     ipc_close(parent_end);
     close(fifo_fd); /* signals logind that the session has ended */
     bus_close();
@@ -360,6 +365,10 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     wait_child(comp_pid, "compositor", s->name);
     g_child_pid = 0;
+
+    /* Re-suppress VT keyboard (compositor may have re-enabled it on exit) */
+    if (s->vtnr > 0)
+        vt_suppress_keyboard(s->vtnr, NULL);
 
     auth_close_session(&pam_result);
     log_debug("session lifecycle complete on seat '%s'", s->name);

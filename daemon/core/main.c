@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <linux/kd.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -79,7 +80,8 @@ int main(int argc, char *argv[]) {
         bus_close();
         return EXIT_FAILURE;
     }
-    vt_suppress_keyboard(vtnr);
+    int vt_kb_mode = K_UNICODE; /* saved keyboard mode; restored at shutdown */
+    vt_suppress_keyboard(vtnr, &vt_kb_mode);
 #endif
 
     if (bus_enumerate_seats(on_seat_discovered, &vtnr) < 0) {
@@ -113,7 +115,7 @@ int main(int argc, char *argv[]) {
 
         if ((int)si.ssi_signo == SIGCHLD) {
             /* Drain all ready children */
-            int wstatus;
+            int   wstatus;
             pid_t pid;
             while ((pid = waitpid(-1, &wstatus, WNOHANG)) > 0) {
                 seat *s = seat_find_by_pid(pid);
@@ -154,7 +156,7 @@ int main(int argc, char *argv[]) {
         runner_stop(s);
 
     if (vtnr > 0) {
-        vt_restore_keyboard(vtnr);
+        vt_restore_keyboard(vtnr, vt_kb_mode);
         vt_release(vtnr);
     }
     bus_close();
