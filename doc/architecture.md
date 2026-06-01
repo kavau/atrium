@@ -2,7 +2,29 @@
 
 This document describes only those parts of the display manager architecture
 that are currently implemented. It will be expanded as the implementation
-proceeds.
+proceeds. The focus is on core architecture, we therefore will not go into
+details such as the UI framework or config files.
+
+## What Is A Display Manager
+
+A display manager consists of two components:
+
+* A **daemon** that starts at boot, and is responsible for user authentication and session lifecycle management.
+* A graphical user interface (the **greeter**) for user selection and password entry.
+
+Once a user successfully authenticates, the display manager launches a **user session** running the user's chosen graphical desktop environment or window manager.
+
+## Design Goals
+
+atrium aims to be a simple, correct display manager with first-class multiseat
+support.
+
+While most display managers treat multiseat as an afterthought, atrium is
+designed from the ground up around the logind seat model.
+
+Focusing on simplicity, atrium explicitly targets Linux systems based on
+systemd/logind and Wayland compositors only. This scope limitation allows
+atrium's code to remain clean and the multiseat logic to stay tractable.
 
 ## High-Level Overview
 
@@ -18,32 +40,32 @@ for the user session. When the user session ends, the session runner terminates,
 and a new session runner is launched by the daemon.
 
 ```text
-┌─────────────────────────────────────────────┐
-│ Daemon                                      │
-├─────────────────────────────────────────────┤
-│  1. Enumerate seats                         │
-│  2. VT allocation (seat0 only)              │
-│  3. Launch a session runner on each seat    │
-│    ┌───────────────────────────────────┐    │
-│    │ Session runner                    │    │
-│    ├───────────────────────────────────┤    │
-│    │              ┌────────────┐       │    │
-│    │  4. Launch   │ Greeter    │       │    │
-│    │              └────────────┘       │    │
-│    │  5. PAM authentication            │    │
-│    │              ┌────────────┐       │    │
-│    │  6. Launch   │ Compositor │       │    │
-│    │              └────────────┘       │    │
-│    └───────────────────────────────────┘    │
-│  7. Event loop                              │
-└─────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│ Daemon                                            │
+├───────────────────────────────────────────────────┤
+│  1. Enumerate seats                               │
+│  2. VT allocation (seat0 only)                    │
+│  3. Event loop:                                   │
+│      4. Launch a session runner on each seat      │
+│      ┌─────────────────────────────────────────┐  │
+│      │ Session runner                          │  │
+│      ├─────────────────────────────────────────┤  │
+│      │                         ┌────────────┐  │  │
+│      │  5. Launch greeter      │ Greeter    │  │  │
+│      │                         └────────────┘  │  │
+│      │  6. PAM authentication                  │  │
+│      │                         ┌────────────┐  │  │
+│      │  7. Launch user session │ Compositor │  │  │
+│      │                         └────────────┘  │  │
+│      └─────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────┘
 ```
 
-Boxes represent child processes. Each step is explained in detail below.
+Nested boxes represent child processes. Each component is explained in detail below.
 
 ## Components
 
-### Seat Enumeration
+### 1. Seat Enumeration (`daemon/core/bus.c`)
 
 In order to find out which seats exist on the system, we call logind's
 `ListSeats` method via the D-Bus.
@@ -54,7 +76,7 @@ workaround is to sleep for a short time before enumerating seats; this will
 eventually be replaced by seat hotplug detection, so atrium discovers new seats
 as logind registers them.
 
-### Virtual Terminals (`daemon/core/vt.c`)
+### 2. Virtual Terminals (`daemon/core/vt.c`)
 
 Virtual Terminals exist only on `seat0`; the concept does not exist for other
 seats. Before starting a session on `seat0` we must allocate a Virtual Terminal
@@ -65,7 +87,20 @@ it for the lifetime of the seat. This guarantees that the VT number is stable.
 The VT keyboard must be suppressed, so keystrokes from the graphical session
 don't leak into the TTY's input buffer.
 
-### Session Runner (`daemon/session/session_runner.c`)
+### 3. Event loop (`daemon/core/main.c`)
+
+At startup, atrium blocks SIGTERM and SIGCHLD interrupts, so that these signals
+are delivered synchronously via a `signalfd` file descriptor. The event loop
+then polls this fd, becoming active when one of the signals arrives. This allows
+us to avoid the main difficulties inherent in asynchronous signal handlers.
+
+atrium's children are session-runner processes, which handle the greeter + user
+session lifecycle for a seat. When the user session ends, the session runner
+exits, causing atrium to be notified via SIGCHLD; atrium then starts a new
+session runner for this seat, ensuring that no context (PAM, env, or fds) is
+carried over from the previous session.
+
+### 4. Session Runner (`daemon/session/session_runner.c`)
 
 As detailed below in *User Session Creation*, the PAM authentication flow must
 not be executed in the daemon process. PAM sets process-specific environment
@@ -81,11 +116,11 @@ Once the session compositor exits, the session runner tears down the login
 session and exits as well. This signals the daemon that the session has
 completed.
 
-### Greeter (`daemon/session/session_greeter.c`)
+### 5. Greeter (`daemon/session/greeter.c`)
 
-When the session runner starts, it first launches a greeter subprocess. The
-greeter's role is to display a UI (inside a `cage` Wayland compositor session)
-and collect the user's credentials (username and password). It sends the
+When the session runner starts, it first launches an *unprivileged* greeter
+subprocess, running as a dedicated system user. The greeter's role is to display
+a UI and collect the user's credentials (username and password). It sends the
 credentials back to the session runner, which handles authentication and
 notifies the greeter of either success (in which case the greeter exits) or
 failure (in which case it prompts the user for credentials again).
@@ -99,10 +134,12 @@ subprocess just for this purpose. Calling `bus_create_session()` directly avoids
 this fork.
 
 Communication with the greeter takes place over a pair of anonymous pipes, one
-for each direction. The greeter sends `username\0password\0`, to which the
-session runner responds with either `ok\n` or `fail:<reason>\n`.
+for each direction. The greeter sends `username\0password\0session_id\0`, to
+which the session runner responds with either `ok\n` or `fail:<reason>\n`.
 
-### PAM Authentication (`daemon/session/auth.c`)
+Atrium uses the `cage` Wayland compositor to run the greeter UI.
+
+### 6. PAM Authentication (`daemon/session/auth.c`)
 
 User authentication is handled via PAM (Pluggable Authentication Modules). The
 authentication flow proceeds through the following stages:
@@ -126,7 +163,9 @@ session.
 When the user session completes, the PAM session is wrapped up via
 `pam_close_session` followed by `pam_setcred(PAM_DELETE_CRED)` and `pam_end`.
 
-### User Session Creation (`daemon/session/session_runner.c`)
+### 7. User Session
+
+#### Session Creation (`daemon/session/session_runner.c`)
 
 Before starting a user session, the display manager must call the logind
 `CreateSession` IPC via the D-Bus. Among other initialization tasks, this will
@@ -135,7 +174,7 @@ execute this IPC
 directly](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html),
 but instead rely on PAM (in particular the `pam_systemd` module) to perform this
 step for us. This simplifies the code significantly, since no direct D-Bus
-communication is necessary. There are a few important points, however:
+communication is necessary. Some important points are:
 
 - The PAM authentication flow (to be precise, `pam_open_session`) must not be
   executed in the daemon process, but in a child process (the session runner).
@@ -150,7 +189,7 @@ communication is necessary. There are a few important points, however:
 - Seat, session type, and session class need to be provided explicitly to the
   PAM environment via `pam_putenv()`.
 
-### Compositor launch (`daemon/session/session_runner.c`)
+#### Compositor launch (`daemon/session/compositor.c`)
 
 Session creation involves asynchronous processes, hence we must wait until the
 logind session is fully activated before starting the compositor. This is done
@@ -159,8 +198,8 @@ from `/run/systemd/`.
 
 After the logind session is confirmed to be active, we fork a child process that
 will eventually become the user's login shell running the compositor. Within the
-child process, there are a few important steps that need to be taken care of
-first, however:
+child process, the following important steps need to be taken care of first,
+however:
 
 1. *Privilege drop*: set the child's `uid`, `gid`, and supplementary groups to
    the corresponding values of the user. This is the most critical step -
@@ -173,15 +212,4 @@ first, however:
    so user-specific configuration files (`~/.profile`) are loaded and PATH is
    configured correctly.
 
-### Event loop
-
-At startup, atrium blocks SIGTERM and SIGCHLD interrupts, so that these signals
-are delivered synchronously via a `signalfd` file descriptor. The event loop
-then polls this fd, becoming active when one of the signals arrives. This allows
-us to avoid the main difficulties inherent in asynchronous signal handlers.
-
-atrium's children are session-runner processes, which handle the greeter + user
-session lifecycle for a seat. When the user session ends, the session runner
-exits, causing atrium to be notified via SIGCHLD; atrium then starts a new
-session runner for this seat, ensuring that no context (PAM, env, or fds) is
-carried over from the previous session.
+After these steps, we `exec` the compositor in the user's login shell, and the user is presented with a graphical session.
