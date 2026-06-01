@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "config.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
 #include "ui-gtk.h"
@@ -42,6 +43,8 @@ static int parse_session_list(greeter_session *sessions, int max) {
 }
 
 int main(void) {
+    greeter_config_load("/etc/atrium-greeter.conf");
+
     greeter_user users[MAX_NUM_USERS];
     int          num_users = enumerate_users(users, MAX_NUM_USERS);
     log_info("found %d login user(s)", num_users);

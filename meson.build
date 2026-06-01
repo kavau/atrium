@@ -124,15 +124,18 @@ executable('atrium-txt-greeter',
 executable('atrium-gtk-greeter',
   sources: [
     greeter_resources,
+    'greeter/config.c',
     'greeter/ipc.c',
     'greeter/main-gtk.c',
     'greeter/theme.c',
     'greeter/ui-gtk.c',
     'greeter/users.c',
+    'lib/conf_helpers.c',
     'lib/ipc.c',
   ],
   dependencies: [
     dep_gtk4,
+    dep_inih,
   ],
   install: true,
   install_dir: greeter_install_dir,
@@ -248,6 +251,12 @@ configure_file(
   configuration: {'greeter_dir': greeter_install_dir},
   install: true,
   install_dir: '/etc',
+)
+
+install_data(
+  'data/atrium-greeter.conf',
+  install_dir: '/etc',
+  install_tag: 'greeter',
 )
 
 # Create the atriumdm system user and home directory. These hooks are run by

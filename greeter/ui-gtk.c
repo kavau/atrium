@@ -6,6 +6,7 @@
 #include <glib-unix.h>
 #include <gtk/gtk.h>
 
+#include "config.h"
 #include "defs.h"
 #include "ipc.h"
 #include "lib/log.h"
@@ -128,7 +129,12 @@ static gboolean on_blank_timeout(gpointer user_data) {
 static void reset_blank_timer(void) {
     if (g_blank_timer_id != 0)
         g_source_remove(g_blank_timer_id);
-    g_blank_timer_id = g_timeout_add_seconds(GREETER_BLANK_TIMEOUT, on_blank_timeout, NULL);
+    int timeout = greeter_config_blank_timeout();
+    if (timeout <= 0) {
+        g_blank_timer_id = 0;
+        return;
+    }
+    g_blank_timer_id = g_timeout_add_seconds((guint)timeout, on_blank_timeout, NULL);
 }
 
 static void unblank_screen(void) {
@@ -306,6 +312,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     theme_apply();
 
+    GtkSettings *gtk_settings = gtk_settings_get_default();
+    g_object_set(gtk_settings,
+                 "gtk-cursor-theme-name", greeter_config_cursor_theme(),
+                 "gtk-cursor-theme-size", greeter_config_cursor_size(),
+                 NULL);
+
     GtkWidget *window = gtk_application_window_new(app);
     g_window = GTK_WINDOW(window);
     gtk_window_set_title(GTK_WINDOW(window), "atrium");
@@ -334,7 +346,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_add_css_class(users_box, "card");
     gtk_stack_add_named(g_stack, users_box, "users");
 
-    GtkWidget *heading = gtk_label_new("Log in");
+    GtkWidget *heading = gtk_label_new(greeter_config_login_label());
     gtk_widget_add_css_class(heading, "heading");
     gtk_widget_set_halign(heading, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(users_box), heading);
