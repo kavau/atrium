@@ -14,7 +14,7 @@
 #define DEFAULT_SEAT_DISCOVERY_DELAY 2000 /* ms */
 #define DEFAULT_CRASH_RESTART_DELAY  1000 /* ms */
 #define DEFAULT_CRASH_COUNT_LIMIT       5
-#define DEFAULT_CRASH_WINDOW        60000 /* ms */
+#define DEFAULT_CRASH_WINDOW           60 /* seconds */
 #define MAX_IGNORE_SEATS 16
 #define MAX_SEAT_NAME_LEN 64
 
@@ -25,7 +25,7 @@ static struct {
     int seat_discovery_delay;
     int crash_restart_delay;
     int crash_count_limit;
-    int crash_window; /* ms */
+    int crash_window; /* seconds */
     char ignore_seats[MAX_IGNORE_SEATS][MAX_SEAT_NAME_LEN];
     int ignore_seat_count;
 } g_cfg = {
@@ -64,7 +64,7 @@ static int handle_key(void *userdata, const char *section, const char *name, con
     } else if (strcmp(name, "crash-count-limit") == 0) {
         conf_parse_int("config", name, value, 100, &g_cfg.crash_count_limit);
     } else if (strcmp(name, "crash-window") == 0) {
-        conf_parse_int("config", name, value, 3600000, &g_cfg.crash_window);
+        conf_parse_int("config", name, value, 3600, &g_cfg.crash_window);
     } else if (strcmp(name, "ignore-seat") == 0) {
         conf_append_strlist("config", name, value, g_cfg.ignore_seats[0], &g_cfg.ignore_seat_count,
                             MAX_IGNORE_SEATS, MAX_SEAT_NAME_LEN);

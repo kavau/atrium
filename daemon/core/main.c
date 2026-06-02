@@ -29,7 +29,7 @@ static int seat_should_retry(seat *s) {
         /* Fixed time window anchored at the first crash - not as accurate as a
         sliding window, but simpler and good enough for our purpose. */
         elapsed_ms = timediff_ms(s->crash_window_start, now);
-        if (elapsed_ms > config_crash_window()) {
+        if (elapsed_ms > (long)config_crash_window() * 1000) {
             s->crash_count = 1; /* Window expired - start a new window. */
         }
     }
