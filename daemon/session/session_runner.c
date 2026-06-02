@@ -9,7 +9,6 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <systemd/sd-login.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "auth.h"
@@ -22,6 +21,7 @@
 #include "lib/ipc.h"
 #include "lib/log.h"
 #include "lib/proc.h"
+#include "lib/time_util.h"
 #include "sessions.h"
 
 /* PID of the runner's current child (greeter or compositor). Cleared after the
@@ -143,7 +143,7 @@ static void wait_udev_settle(const char *seat_name) {
         int wstatus = 0;
         waitpid(settle_pid, &wstatus, 0);
         clock_gettime(CLOCK_MONOTONIC, &t1);
-        long ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
+        long ms = timediff_ms(t0, t1);
         if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0)
             log_warn("%s: udevadm settle failed with status %d after %ld ms", seat_name,
                      WEXITSTATUS(wstatus), ms);

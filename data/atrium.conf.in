@@ -21,6 +21,13 @@ seat-discovery-delay = 2000
 # Milliseconds to wait before restarting the greeter after a crash.
 crash-restart-delay = 1000
 
+# Maximum number of crashes within crash-window before giving up on a seat.
+# The seat will remain inactive until the daemon is restarted.
+crash-count-limit = 5
+
+# Time window in milliseconds over which crashes are counted.
+crash-window = 60000
+
 # Greeter command. Must honour the CREDENTIALS_FD and RESULT_FD environment
 # variables set by the daemon. Two greeters are provided:
 #   atrium-gtk-greeter  GTK4 graphical greeter (default)
