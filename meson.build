@@ -42,10 +42,12 @@ add_project_arguments('-DATRIUM_GREETER_DIR="' + greeter_install_dir + '"', lang
 
 # Dependencies
 
-cc = meson.get_compiler('c')
-dep_libpam     = cc.find_library('pam')  # libpam does not ship a .pc file on some distros
 dep_libsystemd = dependency('libsystemd')
 dep_gtk4       = dependency('gtk4')
+# Use find_library rather than dependency('pam') to avoid pkg-config pulling in
+# unrelated transitive deps (e.g. pam.pc on Debian Testing requires audit.pc).
+cc = meson.get_compiler('c')
+dep_libpam     = cc.find_library('pam')
 
 # Feature detection
 
