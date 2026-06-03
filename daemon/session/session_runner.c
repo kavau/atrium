@@ -14,6 +14,7 @@
 #include "auth.h"
 #include "compositor.h"
 #include "daemon/core/bus.h"
+#include "daemon/core/config.h"
 #include "daemon/core/seat.h"
 #include "daemon/core/vt.h"
 #include "greeter.h"
@@ -22,6 +23,7 @@
 #include "lib/log.h"
 #include "lib/proc.h"
 #include "lib/time_util.h"
+#include "lock.h"
 #include "sessions.h"
 
 /* PID of the runner's current child (greeter or compositor). Cleared after the
@@ -315,6 +317,29 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             continue;
         }
 
+        /* Check for duplicate login */
+        if (!config_allow_duplicate_login()) {
+            struct passwd *pw = getpwnam(username);
+            if (!pw) {
+                log_syserr("session_runner: getpwnam(%s)", username);
+                ipc_send_str(parent_end, "fail:system error\n");
+                auth_close_session(&pam_result);
+                continue;
+            }
+
+            login_lock_status lock_status = acquire_login_lock(pw->pw_uid);
+            if (lock_status == LOGIN_LOCK_DUPLICATE) {
+                log_info("session_runner: user %s already logged in elsewhere", username);
+                ipc_send_str(parent_end, "fail:User already logged in on another seat\n");
+                auth_close_session(&pam_result);
+                continue;
+            }
+            if (lock_status == LOGIN_LOCK_ERROR) {
+                /* System error acquiring lock; allow login with warning */
+                log_warn("session_runner: couldn't acquire login lock for %s (allowing anyway)", username);
+            }
+        }
+
         log_info("session_runner: auth ok for '%s' on seat '%s'", username, s->name);
         if (chosen_session && chosen_session[0] != '\0')
             sessions_save_seat(s->name, chosen_session);
@@ -375,6 +400,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         vt_suppress_keyboard(s->vtnr, NULL);
 
     auth_close_session(&pam_result);
+    release_login_lock();
     log_debug("session lifecycle complete on seat '%s'", s->name);
     _exit(EXIT_SUCCESS);
 }

@@ -34,6 +34,12 @@ crash-window = 60
 greeter = /usr/bin/cage -s -- @greeter_dir@/atrium-gtk-greeter
 # greeter = /usr/bin/cage -s -- /usr/bin/foot @greeter_dir@/atrium-txt-greeter
 
+# Allow the same user to log in on more than one seat at the same time.
+# If false, a user is restricted to one active session. If true, multiple active
+# sessions are allowed, but expect IPC cross-talk if the desktops share a
+# session bus across seats.
+allow-duplicate-login = false
+
 # Seats to ignore during enumeration. Repeat for multiple seats.
 # Useful for seats with no connected display that would crash-loop the greeter.
 #
