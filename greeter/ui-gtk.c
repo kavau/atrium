@@ -12,6 +12,13 @@
 #include "lib/log.h"
 #include "theme.h"
 
+/* Layout constants */
+#define CARD_SPACING_USERS     16           /* vertical gap between items on the users page */
+#define CARD_SPACING_PASSWORD  20           /* vertical gap between items on the password page */
+#define USER_BUTTONS_SPACING   8            /* vertical gap between user buttons */
+#define ACTION_BUTTONS_SPACING 4            /* vertical gap between login and back buttons */
+#define BLANK_MOTION_GUARD_US  (200 * 1000) /* ignore motion events for 200 ms after blanking */
+
 /* The different pages in the UI stack. */
 typedef enum {
     PAGE_USERS = 0, /* zero so static g_pre_blank_page defaults to it */
@@ -110,8 +117,6 @@ static void show_error(const char *message) {
 /* GTK fires a synthetic motion event immediately after blanking, in order to
 re-evaluate which widget is under the cursor. Therefore we ignore motion events
 within this window after blanking starts. */
-#define BLANK_MOTION_GUARD_US (200 * 1000) /* 200 ms in microseconds */
-
 static gboolean on_blank_timeout(gpointer user_data) {
     (void)user_data;
     g_blank_timer_id = 0;
@@ -338,7 +343,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     /* User selection page */
 
-    GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+    GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_USERS);
     gtk_widget_set_halign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(users_box, "card");
@@ -386,7 +391,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
         }
     }
 
-    GtkWidget *user_buttons_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    GtkWidget *user_buttons_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, USER_BUTTONS_SPACING);
     gtk_box_append(GTK_BOX(users_box), user_buttons_box);
 
     for (int i = 0; i < g_num_users; i++) {
@@ -398,7 +403,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     /* Password entry page */
 
-    GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 20);
+    GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_PASSWORD);
     gtk_widget_set_halign(password_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(password_box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(password_box, "card");
@@ -432,7 +437,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(password_box), password_error_label);
     g_password_error_label = GTK_LABEL(password_error_label);
 
-    GtkWidget *action_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    GtkWidget *action_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, ACTION_BUTTONS_SPACING);
     gtk_box_append(GTK_BOX(password_box), action_box);
 
     GtkWidget *login_btn = gtk_button_new_with_label("Log In");
