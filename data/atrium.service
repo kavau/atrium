@@ -3,6 +3,7 @@ Description=Atrium Display Manager
 After=systemd-logind.service
 Requires=systemd-logind.service
 Conflicts=getty@tty1.service
+Before=getty@tty1.service
 
 [Service]
 Type=simple
