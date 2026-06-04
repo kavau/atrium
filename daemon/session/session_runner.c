@@ -195,8 +195,8 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     }
 
     /* Do as much as possible before the fork so error cleanup is easier. */
-    struct passwd *pw = getpwnam(GREETER_USERNAME);
-    if (!pw) {
+    struct passwd *greeter_pw = getpwnam(GREETER_USERNAME);
+    if (!greeter_pw) {
         log_error("session_runner: getpwnam failed for '%s'", GREETER_USERNAME);
         _exit(EXIT_FAILURE);
     }
@@ -228,9 +228,9 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         _exit(EXIT_FAILURE);
     }
 
-    if (bus_create_session(s->name, (uint32_t)s->vtnr, pw->pw_uid, greeter_pid, "", "greeter",
-                           session_id, sizeof(session_id), session_obj, sizeof(session_obj),
-                           runtime_path, sizeof(runtime_path), &fifo_fd) < 0) {
+    if (bus_create_session(s->name, (uint32_t)s->vtnr, greeter_pw->pw_uid, greeter_pid, "",
+                           "greeter", session_id, sizeof(session_id), session_obj,
+                           sizeof(session_obj), runtime_path, sizeof(runtime_path), &fifo_fd) < 0) {
         kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
@@ -307,37 +307,47 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             continue;
         }
 
-        int auth_r = auth_open_session(username, password, (const char **)pam_env, pam_conf_path,
+        /* Phase 1: verify user credentials. */
+        int auth_r = auth_authenticate(username, password, (const char **)pam_env, pam_conf_path,
                                        "atrium", &pam_result);
-
         if (auth_r != PAM_SUCCESS) {
-            /* auth_open_session already logged the PAM error. */
             log_warn("session_runner: auth failed for '%s' on seat '%s'", username, s->name);
             ipc_send_str(parent_end, "fail:authentication failed\n");
             continue;
         }
 
-        /* Check for duplicate login */
+        /* Duplicate login check: between authenticate and open_session so the
+        password is verified before we reveal the duplicate status. */
         if (!config_allow_duplicate_login()) {
             struct passwd *pw = getpwnam(username);
             if (!pw) {
                 log_syserr("session_runner: getpwnam(%s)", username);
                 ipc_send_str(parent_end, "fail:system error\n");
-                auth_close_session(&pam_result);
+                auth_cancel(&pam_result);
                 continue;
             }
 
             login_lock_status lock_status = acquire_login_lock(pw->pw_uid);
             if (lock_status == LOGIN_LOCK_DUPLICATE) {
-                log_info("session_runner: user %s already logged in elsewhere", username);
+                log_info("session_runner: user '%s' already logged in on another seat", username);
                 ipc_send_str(parent_end, "fail:User already logged in on another seat\n");
-                auth_close_session(&pam_result);
+                auth_cancel(&pam_result);
                 continue;
             }
             if (lock_status == LOGIN_LOCK_ERROR) {
                 /* System error acquiring lock; allow login with warning */
-                log_warn("session_runner: couldn't acquire login lock for %s (allowing anyway)", username);
+                log_warn("session_runner: couldn't acquire login lock for '%s' (allowing anyway)",
+                         username);
             }
+        }
+
+        /* Phase 2: open the logind session. */
+        if (auth_open_session(&pam_result) != PAM_SUCCESS) {
+            log_warn("session_runner: failed to open session for '%s' on seat '%s'", username,
+                     s->name);
+            ipc_send_str(parent_end, "fail:session error\n");
+            release_login_lock();
+            continue;
         }
 
         log_info("session_runner: auth ok for '%s' on seat '%s'", username, s->name);

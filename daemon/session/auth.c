@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <security/pam_appl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -64,7 +63,7 @@ err:
     return r;
 }
 
-int auth_open_session(const char *username, const char *password, const char **env,
+int auth_authenticate(const char *username, const char *password, const char **env,
                       const char *pam_conf_path, const char *service_name, auth_result *result) {
     assert(username);
     assert(password);
@@ -80,12 +79,12 @@ int auth_open_session(const char *username, const char *password, const char **e
 #ifdef HAVE_PAM_START_CONFDIR
     /* pam_start_confdir() is equivalent to pam_start() but allows setting a
      * configuration directory other than /etc/pam.d - useful for testing. */
-    log_info("starting PAM session with config path %s",
+    log_info("starting PAM auth with config path %s",
              pam_conf_path ? pam_conf_path : "(default)");
     int r = pam_start_confdir(service_name, username, &conv, pam_conf_path, &pamh);
 #else
     if (pam_conf_path)
-        log_warn("auth_open_session: ignoring pam_conf_path %s", pam_conf_path);
+        log_warn("auth_authenticate: ignoring pam_conf_path %s", pam_conf_path);
     int r = pam_start(service_name, username, &conv, &pamh);
 #endif
     if (r != PAM_SUCCESS) {
@@ -95,18 +94,17 @@ int auth_open_session(const char *username, const char *password, const char **e
     }
 
     /* Set up the PAM environment so PAM knows for which seat to open the session */
-    for (const char **p = env; p && *p; p++) {
+    for (const char **p = env; p && *p; p++)
         pam_putenv(pamh, *p);
-    }
 
-    r = pam_authenticate(pamh, 0); /* authenticate the user */
+    r = pam_authenticate(pamh, 0);
     if (r != PAM_SUCCESS) {
         log_error("pam_authenticate failed: %s", pam_strerror(pamh, r));
         pam_end(pamh, r);
         return r;
     }
 
-    r = pam_acct_mgmt(pamh, 0); /* check if account is valid */
+    r = pam_acct_mgmt(pamh, 0);
     if (r != PAM_SUCCESS) {
         log_error("pam_acct_mgmt failed: %s", pam_strerror(pamh, r));
         pam_end(pamh, r);
@@ -114,25 +112,44 @@ int auth_open_session(const char *username, const char *password, const char **e
     }
     log_info("PAM authentication successful");
 
-    r = pam_setcred(pamh, PAM_ESTABLISH_CRED); /* set user credentials */
+    result->pam_handle = pamh;
+    result->env = NULL;
+    return PAM_SUCCESS;
+}
+
+int auth_open_session(auth_result *result) {
+    assert(result);
+    assert(result->pam_handle);
+
+    pam_handle_t *pamh = result->pam_handle;
+
+    int r = pam_setcred(pamh, PAM_ESTABLISH_CRED);
     if (r != PAM_SUCCESS) {
         log_error("pam_setcred failed: %s", pam_strerror(pamh, r));
         pam_end(pamh, r);
+        result->pam_handle = NULL;
         return r;
     }
 
-    r = pam_open_session(pamh, 0); /* establish the user session */
+    r = pam_open_session(pamh, 0);
     if (r != PAM_SUCCESS) {
         log_error("pam_open_session failed: %s", pam_strerror(pamh, r));
         pam_setcred(pamh, PAM_DELETE_CRED);
         pam_end(pamh, r);
+        result->pam_handle = NULL;
         return r;
     }
     log_info("PAM session started successfully");
 
     result->env = pam_getenvlist(pamh);
-    result->pam_handle = pamh;
     return PAM_SUCCESS;
+}
+
+void auth_cancel(auth_result *result) {
+    assert(result);
+    assert(result->pam_handle);
+    pam_end(result->pam_handle, PAM_SUCCESS);
+    result->pam_handle = NULL;
 }
 
 void auth_close_session(auth_result *result) {

@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     const char *username = argv[1];
     const char *pam_conf_path = argc == 3 ? argv[2] : NULL;
     const char *seat = "seat1";
-    int vtnr = 0;
+    int         vtnr = 0;
 
     const char *password = getpass("Password: ");
     if (!password) {
@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     auth_result result;
 
     /* Build PAM environment. Intentionally not freed. */
-    int n_env = 4 + (vtnr > 0 ? 1 : 0);
+    int    n_env = 4 + (vtnr > 0 ? 1 : 0);
     char **env = calloc(n_env, sizeof(*env));
     if (!env)
         abort();
@@ -58,7 +58,13 @@ int main(int argc, char *argv[]) {
     assert(i == n_env);
 
     int r =
-        auth_open_session(username, password, (const char **)env, pam_conf_path, "atrium", &result);
+        auth_authenticate(username, password, (const char **)env, pam_conf_path, "atrium", &result);
+    if (r != PAM_SUCCESS) {
+        fprintf(stderr, "auth_authenticate failed: %d\n", r);
+        return 1;
+    }
+
+    r = auth_open_session(&result);
     if (r != PAM_SUCCESS) {
         fprintf(stderr, "auth_open_session failed: %d\n", r);
         return 1;
