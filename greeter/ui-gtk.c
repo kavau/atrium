@@ -25,8 +25,8 @@ static GtkStack              *g_stack;
 static GtkWindow             *g_window;
 static GtkLabel              *g_user_label;
 static GtkEntry              *g_password_entry;
-static greeter_user    const *g_selected_user;
-static greeter_user    const *g_users;
+static greeter_user const    *g_selected_user;
+static greeter_user const    *g_users;
 static int                    g_num_users;
 static greeter_session const *g_sessions;
 static int                    g_num_sessions;
@@ -313,10 +313,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     theme_apply();
 
     GtkSettings *gtk_settings = gtk_settings_get_default();
-    g_object_set(gtk_settings,
-                 "gtk-cursor-theme-name", greeter_config_cursor_theme(),
-                 "gtk-cursor-theme-size", greeter_config_cursor_size(),
-                 NULL);
+    g_object_set(gtk_settings, "gtk-cursor-theme-name", greeter_config_cursor_theme(),
+                 "gtk-cursor-theme-size", greeter_config_cursor_size(), NULL);
 
     GtkWidget *window = gtk_application_window_new(app);
     g_window = GTK_WINDOW(window);
@@ -359,6 +357,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *users_error_label = gtk_label_new("");
     gtk_widget_add_css_class(users_error_label, "error-label");
     gtk_widget_set_visible(users_error_label, FALSE);
+    gtk_label_set_wrap(GTK_LABEL(users_error_label), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(users_error_label), 0);
+    gtk_label_set_justify(GTK_LABEL(users_error_label), GTK_JUSTIFY_CENTER);
     gtk_box_append(GTK_BOX(users_box), users_error_label);
     g_users_error_label = GTK_LABEL(users_error_label);
 
@@ -425,6 +426,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *password_error_label = gtk_label_new("");
     gtk_widget_add_css_class(password_error_label, "error-label");
     gtk_widget_set_visible(password_error_label, FALSE);
+    gtk_label_set_wrap(GTK_LABEL(password_error_label), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(password_error_label), 0);
+    gtk_label_set_justify(GTK_LABEL(password_error_label), GTK_JUSTIFY_CENTER);
     gtk_box_append(GTK_BOX(password_box), password_error_label);
     g_password_error_label = GTK_LABEL(password_error_label);
 
@@ -456,14 +460,13 @@ static void activate(GtkApplication *app, gpointer user_data) {
     reset_blank_timer();
 }
 
-int run_ui(const greeter_user *users, int num_users,
-           const greeter_session *sessions, int num_sessions,
-           ipc_channel *ch) {
-    g_users        = users;
-    g_num_users    = num_users;
-    g_sessions     = sessions;
+int run_ui(const greeter_user *users, int num_users, const greeter_session *sessions,
+           int num_sessions, ipc_channel *ch) {
+    g_users = users;
+    g_num_users = num_users;
+    g_sessions = sessions;
     g_num_sessions = num_sessions;
-    g_ch           = ch;
+    g_ch = ch;
 
     GtkApplication *app = gtk_application_new("com.kavau.atrium", G_APPLICATION_NON_UNIQUE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
