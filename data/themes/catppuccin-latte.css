@@ -1,0 +1,11 @@
+/* atrium theme - catppuccin latte (light) */
+
+@define-color atrium-bg           #eff1f5; /* off-white base */
+@define-color atrium-card         #e6e9ef; /* slightly darker surface */
+@define-color atrium-text         #4c4f69; /* dark blue-grey */
+@define-color atrium-border       #bcc0cc; /* soft grey-blue */
+@define-color atrium-accent       #1e66f5; /* vivid blue */
+@define-color atrium-accent-hover #4d84f7; /* lighter blue */
+@define-color atrium-accent-fg    #eff1f5; /* same as bg - text on accent */
+@define-color atrium-subtle       #8c8fa1; /* muted grey-violet */
+@define-color atrium-error        #d20f39; /* deep red */

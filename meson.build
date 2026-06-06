@@ -309,6 +309,12 @@ install_data(
   install_tag: 'greeter',
 )
 
+install_data(
+  'data/themes/catppuccin-latte.css',
+  install_dir: get_option('prefix') / 'share' / 'atrium' / 'themes',
+  install_tag: 'greeter',
+)
+
 # Create the atriumdm system user and home directory. These hooks are run by
 # the package manager on supported distros.
 install_data(

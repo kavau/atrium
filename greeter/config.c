@@ -18,12 +18,14 @@ static struct {
     char login_label[128];
     char cursor_theme[128];
     int  cursor_size;
+    char theme[512];
 } g_cfg = {
     .blank_timeout  = DEFAULT_BLANK_TIMEOUT,
     .base_font_size = DEFAULT_BASE_FONT_SIZE,
     .login_label    = DEFAULT_LOGIN_LABEL,
     .cursor_theme   = DEFAULT_CURSOR_THEME,
     .cursor_size    = DEFAULT_CURSOR_SIZE,
+    .theme          = "",
 };
 
 static int handle_key(void *userdata, const char *section, const char *name,
@@ -51,6 +53,8 @@ static int handle_key(void *userdata, const char *section, const char *name,
                       sizeof(g_cfg.cursor_theme));
     } else if (strcmp(name, "cursor-size") == 0) {
         conf_parse_int("greeter-config", name, value, 256, &g_cfg.cursor_size);
+    } else if (strcmp(name, "theme") == 0) {
+        conf_copy_str("greeter-config", name, value, g_cfg.theme, sizeof(g_cfg.theme));
     } else {
         log_warn("greeter-config: unknown key '%s', ignoring", name);
     }
@@ -72,3 +76,4 @@ int         greeter_config_base_font_size(void) { return g_cfg.base_font_size; }
 const char *greeter_config_login_label(void)    { return g_cfg.login_label; }
 const char *greeter_config_cursor_theme(void)   { return g_cfg.cursor_theme; }
 int         greeter_config_cursor_size(void)    { return g_cfg.cursor_size; }
+const char *greeter_config_theme(void)          { return g_cfg.theme; }
