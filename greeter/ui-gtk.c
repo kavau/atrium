@@ -370,13 +370,20 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     /* Session dropdown — only shown when there are two or more sessions. */
     if (g_num_sessions > 1) {
+        GtkWidget *session_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_widget_add_css_class(session_row, "session-row");
+        gtk_box_append(GTK_BOX(users_box), session_row);
+
+        GtkWidget *session_label = gtk_label_new("Session:");
+        gtk_box_append(GTK_BOX(session_row), session_label);
+
         const char *names[MAX_NUM_SESSIONS + 1];
         for (int i = 0; i < g_num_sessions; i++)
             names[i] = g_sessions[i].name;
         names[g_num_sessions] = NULL;
         GtkWidget *dropdown = gtk_drop_down_new_from_strings(names);
         gtk_widget_add_css_class(dropdown, "session-dropdown");
-        gtk_box_append(GTK_BOX(users_box), dropdown);
+        gtk_box_append(GTK_BOX(session_row), dropdown);
         g_session_dropdown = GTK_DROP_DOWN(dropdown);
 
         /* Preselect the last-used session if available. */
@@ -419,7 +426,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_entry_set_input_purpose(GTK_ENTRY(password_entry), GTK_INPUT_PURPOSE_PASSWORD);
     gtk_entry_set_visibility(GTK_ENTRY(password_entry), FALSE);
     gtk_entry_set_placeholder_text(GTK_ENTRY(password_entry), "Password");
-    gtk_widget_add_css_class(password_entry, "password-entry");
+    gtk_widget_add_css_class(password_entry, "password-field");
     gtk_box_append(GTK_BOX(password_box), password_entry);
     g_password_entry = GTK_ENTRY(password_entry);
 
@@ -441,6 +448,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_box_append(GTK_BOX(password_box), action_box);
 
     GtkWidget *login_btn = gtk_button_new_with_label("Log In");
+    gtk_widget_add_css_class(login_btn, "suggested-action");
     g_signal_connect(login_btn, "clicked", G_CALLBACK(on_login_clicked), NULL);
     g_signal_connect(password_entry, "activate", G_CALLBACK(on_login_clicked), NULL);
     gtk_box_append(GTK_BOX(action_box), login_btn);

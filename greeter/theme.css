@@ -9,6 +9,7 @@
 @define-color atrium-accent-fg    #1e1e2e; /* same as bg - text on accent */
 @define-color atrium-subtle       #6c7086; /* muted grey-violet */
 @define-color atrium-error        #f38ba8; /* soft red */
+@define-color atrium-dropdown     #bac2de; /* light lavender */
 
 window {
   background-color: @atrium-bg;
@@ -29,28 +30,35 @@ window {
   margin-bottom: 8px;
 }
 
-.card button {
+button.suggested-action {
   font-size: 1em;
   background-image: none;
   background-color: @atrium-accent;
   color: @atrium-accent-fg;
   border: none;
   box-shadow: none;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 8px 16px;
 }
 
-.card button:hover {
+button.suggested-action:hover {
   background-image: none;
   background-color: @atrium-accent-hover;
   box-shadow: none;
 }
 
-.card .user-button {
+.user-button {
+  background-image: none;
+  background-color: transparent;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  border-radius: 8px;
   padding: 12px 16px;
 }
 
-.card button:active {
+.user-button:hover {
+  background-image: none;
+  background-color: @atrium-border;
   box-shadow: none;
 }
 
@@ -67,42 +75,72 @@ spinner {
   font-size: 0.9em;
 }
 
-.card .back-button {
+.back-button {
   background-image: none;
   background-color: transparent;
   color: @atrium-text;
   box-shadow: none;
 }
 
-.card .back-button:hover {
+.back-button:hover {
   background-image: none;
   background-color: @atrium-border;
   box-shadow: none;
 }
 
 /* Strip Adwaita's padding/background from the outer entry container. */
-.password-entry {
+.password-field {
   background-color: transparent;
   border: none;
   box-shadow: none;
+  outline: none;
   padding: 0;
   min-height: 0;
 }
 
 /* Border and colors on the inner GtkText node. */
-.password-entry > text {
+.password-field > text {
   font-size: 1em;
   background-color: @atrium-bg;
   color: @atrium-text;
   border: 1px solid @atrium-border;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 6px 10px;
 }
 
-.password-entry > text > placeholder {
+.password-field > text > placeholder {
   color: @atrium-subtle;
 }
 
-.password-entry > text:focus {
+.password-field > text:focus {
   border: 2px solid @atrium-accent;
+}
+
+
+.session-row {
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
+.session-row > label {
+  color: @atrium-text;
+  font-size: 0.8em;
+  margin-right: 12px;
+}
+
+dropdown.session-dropdown > button {
+  background-image: none;
+  background-color: @atrium-dropdown;
+  color: @atrium-accent-fg;
+  border: 1px solid @atrium-border;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.8em;
+  box-shadow: none;
+}
+
+dropdown.session-dropdown > button:hover {
+  background-image: none;
+  background-color: @atrium-border;
+  box-shadow: none;
 }
