@@ -16,3 +16,4 @@ const char *greeter_config_login_label(void);
 const char *greeter_config_cursor_theme(void);
 int         greeter_config_cursor_size(void);    /* px */
 const char *greeter_config_theme(void);
+const char *greeter_config_background_image(void);
