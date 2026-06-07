@@ -16,15 +16,11 @@ static void load_css_string(GtkCssProvider *provider, const char *css) {
 #endif
 }
 
-static void add_provider_at(GtkCssProvider *provider, guint priority) {
+static void add_provider(GtkCssProvider *provider) {
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(provider),
-                                               priority);
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
-}
-
-static void add_provider(GtkCssProvider *provider) {
-    add_provider_at(provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
 /* Read path into a heap-allocated NUL-terminated string.
@@ -97,61 +93,50 @@ static char *resolve_background_path(const char *path) {
 }
 
 void theme_apply(void) {
-    /* Get the built-in CSS as a NUL-terminated string. */
-    GBytes *bytes = g_resources_lookup_data("/com/kavau/atrium/theme.css",
-                                            G_RESOURCE_LOOKUP_FLAGS_NONE, NULL);
-    const char *base_css = bytes ? (const char *)g_bytes_get_data(bytes, NULL) : "";
-
-    GtkCssProvider *provider   = gtk_css_provider_new();
-    const char     *theme_path = greeter_config_theme();
-
-    if (*theme_path) {
-        char *overrides = read_file(theme_path);
-        if (overrides) {
-            /* Append the theme file to the base CSS. @define-color declarations
-            in the theme override the defaults; direct CSS rules win via normal
-            cascade. */
-            char *combined = g_strconcat(base_css, "\n", overrides, NULL);
-            load_css_string(provider, combined);
-            g_free(combined);
-            g_free(overrides);
-        } else {
-            load_css_string(provider, base_css);
-        }
-    } else {
-        load_css_string(provider, base_css);
-    }
-
-    if (bytes)
-        g_bytes_unref(bytes);
-    add_provider(provider);
-
-    /* Inject base font size as a separate provider so it takes precedence over
-    any font-size set in the theme. */
-    char font_css[48];
-    snprintf(font_css, sizeof(font_css), "window { font-size: %dpx; }",
+    /* Build combined CSS in precedence order (later declarations win):
+       (1) base font-size from config,
+       (2) default background-image from config,
+       (3) built-in base CSS, 
+       (4) external theme file, if set */
+    char font_css[64];
+    snprintf(font_css, sizeof(font_css), "window { font-size: %dpx; }\n",
              greeter_config_base_font_size());
-    GtkCssProvider *font_provider = gtk_css_provider_new();
-    load_css_string(font_provider, font_css);
-    add_provider(font_provider);
 
-    /* Apply background image if configured. Loaded at APPLICATION+2 so it
-    takes precedence over any background set in theme files. */
+    char *bg_css = NULL;
     char *bg_path = resolve_background_path(greeter_config_background_image());
     if (bg_path) {
-        char *uri    = g_filename_to_uri(bg_path, NULL, NULL);
-        char *bg_css = g_strdup_printf(
+        char *uri = g_filename_to_uri(bg_path, NULL, NULL);
+        bg_css = g_strdup_printf(
             "window { background-image: url(\"%s\");"
             " background-size: cover;"
             " background-position: center;"
-            " background-repeat: no-repeat; }",
+            " background-repeat: no-repeat; }\n",
             uri ? uri : bg_path);
         g_free(uri);
-        GtkCssProvider *bg_provider = gtk_css_provider_new();
-        load_css_string(bg_provider, bg_css);
-        g_free(bg_css);
-        add_provider_at(bg_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2);
         log_info("theme: background image: %s", bg_path);
         g_free(bg_path);
     }
+
+    GBytes *bytes    = g_resources_lookup_data("/com/kavau/atrium/theme.css",
+                                                    G_RESOURCE_LOOKUP_FLAGS_NONE, NULL);
+    const char *base_css = bytes ? (const char *)g_bytes_get_data(bytes, NULL) : "";
+
+    const char *theme_path = greeter_config_theme();
+    char *overrides  = *theme_path ? read_file(theme_path) : NULL;
+
+    char *combined = g_strconcat(font_css,
+                                 bg_css    ? bg_css    : "",
+                                 base_css,
+                                 overrides ? "\n"      : "",
+                                 overrides ? overrides : "",
+                                 NULL);
+    g_free(bg_css);
+    g_free(overrides);
+    if (bytes)
+        g_bytes_unref(bytes);
+
+    GtkCssProvider *provider = gtk_css_provider_new();
+    load_css_string(provider, combined);
+    g_free(combined);
+    add_provider(provider);
 }
