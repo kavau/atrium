@@ -43,6 +43,7 @@ add_project_arguments('-DATRIUM_GREETER_DIR="' + greeter_install_dir + '"', lang
 # Dependencies
 
 dep_libsystemd = dependency('libsystemd')
+dep_libudev    = dependency('libudev')
 dep_gtk4       = dependency('gtk4')
 # Use find_library rather than dependency('pam') to avoid pkg-config pulling in
 # unrelated transitive deps (e.g. pam.pc on Debian Testing requires audit.pc).
@@ -108,6 +109,7 @@ executable('atrium',
     dep_inih,
     dep_libpam,
     dep_libsystemd,
+    dep_libudev,
   ],
   install: true,
   install_tag: 'daemon',

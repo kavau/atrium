@@ -54,3 +54,10 @@ seat *seat_find_by_pid(pid_t pid) {
             return s;
     return NULL;
 }
+
+seat *seat_find_by_name(const char *name) {
+    for (seat *s = seat_first(); s; s = seat_next(s))
+        if (strcmp(s->name, name) == 0)
+            return s;
+    return NULL;
+}

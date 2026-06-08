@@ -45,6 +45,22 @@ static int seat_should_retry(seat *s) {
     return 1;
 }
 
+/* Check whether seat has a connected display and start its runner if yes. */
+static void start_runner_if_display(seat *s) {
+#if !HEADLESS
+    int r = drm_seat_has_display(s->name);
+    if (r == 0) {
+        log_info("seat '%s': no connected display, deferring seat", s->name);
+        return;
+    }
+    if (r < 0)
+        log_warn("seat '%s': DRM display check failed, starting anyway", s->name);
+#endif
+    log_info("starting session runner on seat '%s'", s->name);
+    if (runner_start(PAM_CONF_PATH, s) != 0)
+        log_error("failed to start runner on seat '%s'", s->name); /* TODO: retry */
+}
+
 static void on_seat_discovered(const char *seat_id, void *userdata) {
     if (config_is_seat_ignored(seat_id)) {
         log_info("ignoring seat '%s' (listed in config)", seat_id);
@@ -119,30 +135,41 @@ int main(int argc, char *argv[]) {
     }
 
     /* Start a session runner on each seat. */
-    for (seat *s = seat_first(); s; s = seat_next(s)) {
-#if !HEADLESS
-        int has_display = drm_seat_has_display(s->name);
-        if (has_display == 0) {
-            log_info("seat '%s': no connected display, deferring seat", s->name);
-            continue;
-        }
-        if (has_display < 0)
-            log_warn("seat '%s': DRM display check failed, proceeding anyway", s->name);
-#endif
-        log_info("starting session runner on seat '%s'", s->name);
-        if (runner_start(PAM_CONF_PATH, s) != 0)
-            log_error("failed to launch runner on seat '%s'", s->name); /* TODO: retry */
-    }
+    for (seat *s = seat_first(); s; s = seat_next(s))
+        start_runner_if_display(s);
 
-    /* Event loop: wait for SIGCHLD (child exited) or SIGTERM (shutdown). */
-    struct pollfd pfd = {.fd = sfd, .events = POLLIN};
+    /* Monitor DRM connector-change events in order to start runners on seats
+    that acquired a display after boot. */
+    drm_monitor *drm_mon = NULL;
+    if (drm_monitor_init(&drm_mon) < 0)
+        log_warn("DRM monitor init failed, hotplug will not work");
+
+    /* Event loop: wait for SIGCHLD (child exited), SIGTERM (shutdown), or a DRM
+    connector-change event. */
+    struct pollfd pfds[2] = {
+        {.fd = sfd, .events = POLLIN},
+        {.fd = drm_mon ? drm_monitor_fd(drm_mon) : -1, .events = POLLIN},
+    };
+
     while (1) {
-        if (poll(&pfd, 1, -1) < 0) {
+        if (poll(pfds, 2, -1) < 0) {
             if (errno == EINTR)
                 continue;
             log_syserr("main: poll");
             break;
         }
+
+        if ((pfds[1].revents & POLLIN) && drm_mon) {
+            char seat_name[MAX_LEN_SEAT];
+            if (drm_monitor_read_seat(drm_mon, seat_name, sizeof(seat_name)) == 1) {
+                seat *s = seat_find_by_name(seat_name);
+                if (s && s->state == SEAT_IDLE)
+                    start_runner_if_display(s);
+            }
+        }
+
+        if (!(pfds[0].revents & POLLIN))
+            continue;
 
         struct signalfd_siginfo si;
         if (read(sfd, &si, sizeof(si)) != (ssize_t)sizeof(si)) {
@@ -196,6 +223,8 @@ int main(int argc, char *argv[]) {
     }
 
     close(sfd);
+    if (drm_mon)
+        drm_monitor_close(drm_mon);
 
     /* Shutdown: stop all session runners before releasing the VT. */
     for (seat *s = seat_first(); s; s = seat_next(s))
