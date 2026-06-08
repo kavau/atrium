@@ -11,6 +11,7 @@
 
 #include "bus.h"
 #include "config.h"
+#include "drm.h"
 #include "lib/defs.h"
 #include "lib/log.h"
 #include "lib/time_util.h"
@@ -37,8 +38,8 @@ static int seat_should_retry(seat *s) {
         s->crash_window_start = now; /* First crash - start a new window. */
     }
     if (s->crash_count >= config_crash_count_limit()) {
-        log_error("seat '%s': %d crashes in %ld ms, giving up", s->name,
-                  s->crash_count, elapsed_ms);
+        log_error("seat '%s': %d crashes in %ld ms, giving up", s->name, s->crash_count,
+                  elapsed_ms);
         return 0;
     }
     return 1;
@@ -119,6 +120,15 @@ int main(int argc, char *argv[]) {
 
     /* Start a session runner on each seat. */
     for (seat *s = seat_first(); s; s = seat_next(s)) {
+#if !HEADLESS
+        int has_display = drm_seat_has_display(s->name);
+        if (has_display == 0) {
+            log_info("seat '%s': no connected display, deferring seat", s->name);
+            continue;
+        }
+        if (has_display < 0)
+            log_warn("seat '%s': DRM display check failed, proceeding anyway", s->name);
+#endif
         log_info("starting session runner on seat '%s'", s->name);
         if (runner_start(PAM_CONF_PATH, s) != 0)
             log_error("failed to launch runner on seat '%s'", s->name); /* TODO: retry */
@@ -169,8 +179,8 @@ int main(int argc, char *argv[]) {
                 if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0) { /* Normal exit */
                     log_info("restarting session runner on seat '%s'", s->name);
                 } else if (seat_should_retry(s)) {
-                    log_info("seat '%s': crash %d/%d, restarting after %d ms",
-                             s->name, s->crash_count, config_crash_count_limit(),
+                    log_info("seat '%s': crash %d/%d, restarting after %d ms", s->name,
+                             s->crash_count, config_crash_count_limit(),
                              config_crash_restart_delay());
                 } else {
                     continue; /* crash limit reached - leave seat idle */

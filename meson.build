@@ -88,6 +88,7 @@ executable('atrium',
   sources: [
     'daemon/core/bus.c',
     'daemon/core/config.c',
+    'daemon/core/drm.c',
     'daemon/core/main.c',
     'daemon/core/runner.c',
     'daemon/core/seat.c',
