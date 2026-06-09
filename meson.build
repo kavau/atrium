@@ -237,6 +237,20 @@ executable('atrium-greeter-test',
   install: false,
 )
 
+executable('atrium-drm-test',
+  sources: [
+    'daemon/core/bus.c',
+    'daemon/core/drm.c',
+    'daemon/core/seat.c',
+    'tools/drm-test.c',
+  ],
+  dependencies: [
+    dep_libsystemd,
+    dep_libudev,
+  ],
+  install: false,
+)
+
 # Data
 
 install_data(
