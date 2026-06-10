@@ -327,3 +327,23 @@ meson.add_install_script('systemd-sysusers', '/usr/lib/sysusers.d/atrium.conf',
   skip_if_destdir: true)
 meson.add_install_script('systemd-tmpfiles', '--create', '/usr/lib/tmpfiles.d/atrium.conf',
   skip_if_destdir: true)
+
+# SELinux setup (Fedora only). Must run after the tmpfiles script above so
+# /var/lib/atrium exists when the setup script relabels it.
+if dist == 'fedora'
+  configure_file(
+    input:         'data/selinux/atrium.fc.in',
+    output:        'atrium.fc',
+    configuration: {'daemon_bin': daemon_bin},
+    install:       true,
+    install_dir:   get_option('datadir') / 'atrium' / 'selinux',
+    install_tag:   'daemon',
+  )
+  install_data(
+    'data/selinux/atrium-local.te',
+    install_dir: get_option('datadir') / 'atrium' / 'selinux',
+    install_tag: 'daemon',
+  )
+  meson.add_install_script('tools/selinux-setup-fedora.sh', daemon_bin,
+    skip_if_destdir: true)
+endif

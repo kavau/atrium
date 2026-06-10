@@ -1,0 +1,19 @@
+module atrium-local 1.0;
+
+require {
+    type xdm_t;
+    type udev_exec_t;
+    type udev_t;
+    type udev_var_run_t;
+    class file { execute execute_no_trans map open read };
+    class sock_file write;
+    class dir watch;
+    class unix_stream_socket connectto;
+}
+
+# Allow xdm_t to exec udevadm (udev_exec_t) without domain transition and
+# connect to the udev socket.
+allow xdm_t udev_exec_t:file { execute execute_no_trans map open read };
+allow xdm_t udev_t:unix_stream_socket connectto;
+allow xdm_t udev_var_run_t:dir watch;
+allow xdm_t udev_var_run_t:sock_file write;

@@ -46,7 +46,7 @@ and distributions, so expect some rough edges.
 | --- | --- |
 | Arch / CachyOS | Tested |
 | Debian / Ubuntu | Tested |
-| Fedora | PAM config supplied but yet untested |
+| Fedora | PAM config and SELinux context supplied but yet untested |
 
 Other systemd-based distros should work - the only distro-specific piece is the
 PAM stack. Adapt one of the provided PAM configs as needed.
@@ -79,8 +79,12 @@ sudo pacman -S systemd pam gtk4 cage meson ninja
 On Fedora:
 
 ```sh
-sudo dnf install systemd-devel pam-devel gtk4-devel cage gcc meson ninja-build
+sudo dnf install systemd-devel pam-devel gtk4-devel cage gcc meson ninja-build \
+    policycoreutils-python-utils checkpolicy
 ```
+
+(`policycoreutils-python-utils` and `checkpolicy` are needed to set up the
+SELinux contexts and policy module.)
 
 ### 2. Configure
 

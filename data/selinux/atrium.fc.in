@@ -1,0 +1,10 @@
+# SELinux file contexts for atrium (Fedora). The install script registers
+# these via semanage fcontext so they persist across system relabels.
+# Also serves as reference for RPM packaging.
+#
+# The daemon binary is labelled xdm_exec_t so systemd starts it in the xdm_t
+# display-manager domain. /var/lib/atrium (the atriumdm home and seat-state
+# directory) is labelled xdm_var_lib_t, mirroring GDM's /var/lib/gdm, so
+# xdm_t can manage seat-state files.
+@daemon_bin@           --    system_u:object_r:xdm_exec_t:s0
+/var/lib/atrium(/.*)?        system_u:object_r:xdm_var_lib_t:s0
