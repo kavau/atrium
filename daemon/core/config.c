@@ -11,12 +11,12 @@
 #endif
 
 #define DEFAULT_GREETER "/usr/bin/cage -s -- " ATRIUM_GREETER_PATH
-#define DEFAULT_SEAT_DISCOVERY_DELAY 2000 /* ms */
+#define DEFAULT_SEAT_DISCOVERY_DELAY    0 /* ms; 0 = disabled */
 #define DEFAULT_CRASH_RESTART_DELAY  1000 /* ms */
 #define DEFAULT_CRASH_COUNT_LIMIT       5
 #define DEFAULT_CRASH_WINDOW           60 /* seconds */
-#define MAX_IGNORE_SEATS 16
-#define MAX_SEAT_NAME_LEN 64
+#define MAX_IGNORE_SEATS               16
+#define MAX_SEAT_NAME_LEN              64
 
 static struct {
     char greeter[512];

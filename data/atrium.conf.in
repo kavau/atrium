@@ -14,9 +14,10 @@
 # Example:
 #   desktop = sway
 
-# Milliseconds to wait before seat discovery at daemon startup. Increase if
-# seats are missed at boot due to slow device enumeration.
-seat-discovery-delay = 2000
+# Milliseconds to wait before seat discovery at daemon startup. Default is 0
+# (disabled) - seats that arrive after boot are detected via SeatNew monitoring.
+# Increase if seats are missed at boot despite this.
+# seat-discovery-delay = 0
 
 # Milliseconds to wait before restarting the greeter after a crash.
 crash-restart-delay = 1000
