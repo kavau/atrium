@@ -11,6 +11,9 @@
 #include "lib/log.h"
 
 static sd_bus *g_bus = NULL;
+static sd_bus_slot *g_seat_new_slot = NULL;
+static bus_on_seat_new_fn g_seat_new_cb = NULL;
+static void *g_seat_new_userdata = NULL;
 
 int bus_open(void) {
     int r = sd_bus_open_system(&g_bus);
@@ -26,8 +29,63 @@ void bus_close(void) {
     if (!g_bus)
         return;
     log_debug("bus_close: closing system bus");
+    g_seat_new_slot = sd_bus_slot_unref(g_seat_new_slot);
     sd_bus_unref(g_bus);
     g_bus = NULL;
+}
+
+static int on_seat_new_signal(sd_bus_message *msg, void *userdata, sd_bus_error *err) {
+    (void)userdata;
+    (void)err;
+    const char *seat_id = NULL, *obj_path = NULL;
+    int r = sd_bus_message_read(msg, "so", &seat_id, &obj_path);
+    if (r < 0) {
+        log_error("on_seat_new_signal: read: %s", strerror(-r));
+        return r;
+    }
+    if (g_seat_new_cb)
+        g_seat_new_cb(seat_id, g_seat_new_userdata);
+    return 1;
+}
+
+int bus_subscribe_seat_new(bus_on_seat_new_fn cb, void *userdata) {
+    assert(g_bus);
+    g_seat_new_cb = cb;
+    g_seat_new_userdata = userdata;
+    int r = sd_bus_add_match(g_bus, &g_seat_new_slot,
+                             "type='signal',"
+                             "sender='org.freedesktop.login1',"
+                             "interface='org.freedesktop.login1.Manager',"
+                             "member='SeatNew',"
+                             "path='/org/freedesktop/login1'",
+                             on_seat_new_signal, NULL);
+    if (r < 0) {
+        log_error("bus_subscribe_seat_new: sd_bus_add_match: %s", strerror(-r));
+        return -1;
+    }
+    log_debug("bus_subscribe_seat_new: subscribed to SeatNew");
+    return 0;
+}
+
+int bus_get_fd(void) {
+    assert(g_bus);
+    int fd = sd_bus_get_fd(g_bus);
+    if (fd < 0)
+        log_error("bus_get_fd: %s", strerror(-fd));
+    return fd < 0 ? -1 : fd;
+}
+
+int bus_process(void) {
+    assert(g_bus);
+    int r;
+    do {
+        r = sd_bus_process(g_bus, NULL);
+    } while (r > 0);
+    if (r < 0) {
+        log_error("bus_process: %s", strerror(-r));
+        return -1;
+    }
+    return 0;
 }
 
 int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,

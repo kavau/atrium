@@ -61,6 +61,7 @@ static void start_runner_if_display(seat *s) {
         log_error("failed to start runner on seat '%s'", s->name); /* TODO: retry */
 }
 
+/* Called from bus_enumerate_seats() for each seat discovered at startup. */
 static void on_seat_discovered(const char *seat_id, void *userdata) {
     if (config_is_seat_ignored(seat_id)) {
         log_info("ignoring seat '%s' (listed in config)", seat_id);
@@ -76,6 +77,26 @@ static void on_seat_discovered(const char *seat_id, void *userdata) {
         log_info("discovered seat '%s'", seat_id);
     if (!seat_add(seat_id, vtnr))
         log_error("on_seat_discovered: seat_add failed for '%s'", seat_id);
+}
+
+/* Called from bus_process() when a SeatNew signal arrives at runtime (after boot). */
+static void on_seat_arrived(const char *seat_id, void *userdata) {
+    if (config_is_seat_ignored(seat_id)) {
+        log_info("ignoring seat '%s'", seat_id);
+        return;
+    }
+    if (seat_find_by_name(seat_id)) {
+        log_debug("seat '%s': SeatNew received but seat already known, ignoring", seat_id);
+        return;
+    }
+    int vtnr = strcmp(seat_id, "seat0") == 0 ? *(int *)userdata : 0;
+    log_info("seat arrived: '%s'", seat_id);
+    seat *s = seat_add(seat_id, vtnr);
+    if (!s) {
+        log_error("on_seat_arrived: seat_add failed for '%s'", seat_id);
+        return;
+    }
+    start_runner_if_display(s);
 }
 
 int main(int argc, char *argv[]) {
@@ -109,16 +130,22 @@ int main(int argc, char *argv[]) {
     if (bus_open() < 0)
         return EXIT_FAILURE;
 
-    /* SHORTCUT: allow hardware initialization to complete before seat discovery */
+    /* Subscribe before enumerating seats so no SeatNew signal is lost in the gap. */
+    int vtnr = 0;
+    if (bus_subscribe_seat_new(on_seat_arrived, &vtnr) < 0)
+        log_warn("SeatNew subscription failed; hotplugged seats will not be detected");
+
+    /* Optional startup delay before seat discovery. Default is 0 (disabled).
+    Increase via seat-discovery-delay in atrium.conf if seats are missed at boot
+    despite the SeatNew subscription. */
     if (config_seat_discovery_delay() > 0)
         usleep((useconds_t)config_seat_discovery_delay() * 1000);
 
     /* Allocate a VT for seat0. SHORTCUT: needs to be done after seat0 is discovered. */
 #if HEADLESS
     log_info("headless mode enabled, skipping VT allocation");
-    int vtnr = 0;
 #else
-    int vtnr = vt_alloc();
+    vtnr = vt_alloc();
     if (vtnr < 0) {
         log_error("failed to allocate VT for seat0: %d", vtnr);
         bus_close();
@@ -144,21 +171,28 @@ int main(int argc, char *argv[]) {
     if (drm_monitor_init(&drm_mon) < 0)
         log_warn("DRM monitor init failed, hotplug will not work");
 
-    /* Event loop: wait for SIGCHLD (child exited), SIGTERM (shutdown), or a DRM
-    connector-change event. */
-    struct pollfd pfds[2] = {
-        {.fd = sfd, .events = POLLIN},
+    /* Event loop: wait for SIGCHLD (child exited), SIGTERM (shutdown), a DRM
+    connector-change event, or an incoming D-Bus signal (SeatNew). */
+    int bus_fd = bus_get_fd();
+    struct pollfd pfds[3] = {
+        {.fd = sfd,                                    .events = POLLIN},
         {.fd = drm_mon ? drm_monitor_fd(drm_mon) : -1, .events = POLLIN},
+        {.fd = bus_fd,                                 .events = POLLIN},
     };
 
     while (1) {
-        if (poll(pfds, 2, -1) < 0) {
+        if (poll(pfds, 3, -1) < 0) {
             if (errno == EINTR)
                 continue;
             log_syserr("main: poll");
             break;
         }
 
+        /* Process D-Bus SeatNew signals */
+        if ((pfds[2].revents & POLLIN) && bus_fd >= 0)
+            bus_process();
+
+        /* Process DRM connector-change events */
         if ((pfds[1].revents & POLLIN) && drm_mon) {
             char seat_name[MAX_LEN_SEAT];
             if (drm_monitor_read_seat(drm_mon, seat_name, sizeof(seat_name)) == 1) {
@@ -168,6 +202,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* Process signal events (SIGCHLD and SIGTERM) */
         if (!(pfds[0].revents & POLLIN))
             continue;
 

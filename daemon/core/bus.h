@@ -34,3 +34,18 @@ typedef void (*bus_on_seat_fn)(const char *seat_id, void *userdata);
 /* Enumerate seats via logind's ListSeats() and invoke on_seat for each result.
  * Returns 0 on success, -1 on error. */
 int bus_enumerate_seats(bus_on_seat_fn on_seat, void *userdata);
+
+/* Callback invoked when a new seat is announced via SeatNew. */
+typedef void (*bus_on_seat_new_fn)(const char *seat_id, void *userdata);
+
+/* Subscribe to the D-Bus SeatNew signal. cb is invoked from bus_process() for
+ * each arriving seat. Returns 0 on success, -1 on error. */
+int bus_subscribe_seat_new(bus_on_seat_new_fn cb, void *userdata);
+
+/* Return the file descriptor that should be polled for bus activity (POLLIN).
+ * Returns -1 on error. Valid until bus_close(). */
+int bus_get_fd(void);
+
+/* Drain all pending bus messages. Call whenever bus_get_fd() is readable.
+ * Returns 0 on success, -1 on error (error is logged). */
+int bus_process(void);
