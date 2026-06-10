@@ -7,7 +7,7 @@
 @define-color atrium-accent       #89b4fa; /* soft blue */
 @define-color atrium-accent-hover #b4d0ff; /* lighter blue */
 @define-color atrium-accent-fg    #1e1e2e; /* same as bg - text on accent */
-@define-color atrium-subtle       #6c7086; /* muted grey-violet */
+@define-color atrium-subtle       #a6adc8; /* muted grey-violet */
 @define-color atrium-error        #f38ba8; /* soft red */
 @define-color atrium-dropdown     #bac2de; /* light lavender */
 
@@ -48,17 +48,20 @@ button.suggested-action:hover {
 }
 
 .user-button {
+  font-size: 1em;
   background-image: none;
-  background-color: transparent;
-  color: @atrium-text;
-  border: 1px solid @atrium-border;
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
+  border: none;
+  box-shadow: none;
   border-radius: 8px;
-  padding: 12px 16px;
+  padding: 8px 16px;
+  margin-bottom: 8px;
 }
 
 .user-button:hover {
   background-image: none;
-  background-color: @atrium-border;
+  background-color: @atrium-accent-hover;
   box-shadow: none;
 }
 
@@ -78,6 +81,7 @@ spinner {
 .back-button {
   background-image: none;
   background-color: transparent;
+  border: none;
   color: @atrium-text;
   box-shadow: none;
 }

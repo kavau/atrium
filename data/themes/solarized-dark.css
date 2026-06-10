@@ -1,0 +1,34 @@
+/* Solarized Dark */
+@define-color atrium-bg           #002b36; /* dark blue-grey */
+@define-color atrium-card         #073642; /* slightly lighter blue-grey */
+@define-color atrium-text         #93a1a1; /* muted cyan-grey */
+@define-color atrium-border       #586e75; /* medium grey-blue */
+@define-color atrium-accent       #268bd2; /* bright blue */
+@define-color atrium-accent-hover #2aa198; /* cyan */
+@define-color atrium-accent-fg    #002b36; /* dark blue-grey text */
+@define-color atrium-subtle       #657b83; /* soft grey-blue */
+@define-color atrium-error        #dc322f; /* bright red */
+@define-color atrium-dropdown     #0d4f5c; /* teal blue */
+
+.card {
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.50),
+              inset 0 0 0 1px rgba(88, 110, 117, 0.40);
+}
+
+.password-field {
+  border-radius: 2px;
+}
+
+.user-button {
+  border-radius: 2px;
+}
+
+button.suggested-action {
+  border-radius: 2px;
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 2px;
+  color: @atrium-text;
+}

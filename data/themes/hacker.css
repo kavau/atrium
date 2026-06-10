@@ -1,0 +1,50 @@
+/* Hacker -- classic phosphor green terminal */
+@define-color atrium-bg           #000000; /* pure black */
+@define-color atrium-card         #0a1a0a; /* very dark green */
+@define-color atrium-text         #00ff00; /* neon green */
+@define-color atrium-border       #003300; /* dark green */
+@define-color atrium-accent       #00ff00; /* neon green */
+@define-color atrium-accent-hover #00cc00; /* darker green */
+@define-color atrium-accent-fg    #000000; /* black text */
+@define-color atrium-subtle       #006600; /* medium green */
+@define-color atrium-error        #ff3300; /* orange-red */
+@define-color atrium-dropdown     #003300; /* dark green */
+
+/* Sharp corners and phosphor glow -- no rounded UI allowed in the terminal. */
+.card {
+  border-radius: 0;
+  border: 2px solid @atrium-border;
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.25),
+              0 0 60px rgba(0, 255, 0, 0.08),
+              inset 0 0 20px rgba(0, 255, 0, 0.04);
+}
+
+.password-field {
+  border-radius: 0;
+}
+
+.user-button {
+  background-color: transparent;
+  color: @atrium-text;
+  border: 2px solid @atrium-border;
+  border-radius: 0;
+}
+
+.user-button:hover {
+  background-color: @atrium-border;
+}
+
+button.suggested-action {
+  border-radius: 0;
+}
+
+.session-row > label {
+  color: @atrium-accent-hover; /* darker green */
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 0;
+  color: @atrium-accent-hover; /* darker green */
+  border: 2px solid @atrium-border;
+  box-shadow: 0 0 8px rgba(0, 255, 0, 0.3);
+}

@@ -1,0 +1,52 @@
+/* High Contrast -- for accessibility */
+@define-color atrium-bg           #000000; /* pure black */
+@define-color atrium-card         #1a1a1a; /* dark grey */
+@define-color atrium-text         #ffffff; /* pure white */
+@define-color atrium-border       #ffffff; /* pure white */
+@define-color atrium-accent       #ffff00; /* bright yellow */
+@define-color atrium-accent-hover #ffffaa; /* pale yellow */
+@define-color atrium-accent-fg    #000000; /* black text */
+@define-color atrium-subtle       #cccccc; /* light grey */
+@define-color atrium-error        #ff4444; /* bright red */
+@define-color atrium-dropdown     #ffff00; /* bright yellow */
+
+/* No decoration that could reduce legibility. */
+.card {
+  border-radius: 0;
+  border: 2px solid @atrium-border;
+  box-shadow: none;
+}
+
+.password-field {
+  border-radius: 0;
+}
+
+.user-button {
+  border: 2px solid @atrium-accent;
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
+}
+
+.user-button:hover {
+  border: 2px solid @atrium-accent;
+  background-color: @atrium-bg;
+  color: @atrium-text;
+}
+
+button.suggested-action {
+  border-radius: 0;
+}
+
+button.suggested-action:hover {
+  background-color: @atrium-text;
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 0;
+  color: @atrium-accent-fg;
+}
+
+.back-button:hover {
+  background-color: @atrium-text;
+  color: @atrium-accent-fg;
+}

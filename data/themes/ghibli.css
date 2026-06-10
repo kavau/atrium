@@ -1,0 +1,41 @@
+/* Ghibli -- warm, semi-transparent card, works well with landscape backgrounds. */
+@define-color atrium-bg           rgba(235, 218, 185, 0.75); /* warm beige */
+@define-color atrium-card         rgba(255, 248, 215, 0.8); /* soft cream */
+@define-color atrium-text         #1e0e04; /* dark brown */
+@define-color atrium-border       rgba(130, 85, 30, 0.65); /* soft brown */
+@define-color atrium-accent       #8f4c10; /* warm brown */
+@define-color atrium-accent-hover #a85c18; /* lighter brown */
+@define-color atrium-accent-fg    #fdf6e3; /* light cream */
+@define-color atrium-subtle       #5c3a1a; /* dark brown-grey */
+@define-color atrium-error        #7d1a1a; /* dark red */
+@define-color atrium-dropdown     rgba(185, 140, 80, 0.90); /* tan brown */
+
+.card {
+  border-radius: 32px;
+  box-shadow: 0 8px 40px rgba(80, 50, 20, 0.35),
+              inset 0 0 0 2px rgba(200, 170, 110, 0.50);
+}
+
+.password-field {
+  border-radius: 16px;
+}
+
+.user-button {
+  background-color: transparent;
+  color: @atrium-text;
+  border: 2px solid @atrium-border;
+  border-radius: 16px;
+}
+
+.user-button:hover {
+  background-color: @atrium-border;
+}
+
+button.suggested-action {
+  border-radius: 16px;
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 12px;
+}
+

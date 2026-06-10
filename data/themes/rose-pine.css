@@ -1,0 +1,34 @@
+/* Rose Pine */
+@define-color atrium-bg           #191724; /* very dark purple */
+@define-color atrium-card         #1f1d2e; /* slightly lighter purple */
+@define-color atrium-text         #e0def4; /* light lavender */
+@define-color atrium-border       #403d52; /* muted purple-grey */
+@define-color atrium-accent       #c4a7e7; /* soft lavender */
+@define-color atrium-accent-hover #d5bdf0; /* lighter lavender */
+@define-color atrium-accent-fg    #191724; /* dark purple text */
+@define-color atrium-subtle       #908caa; /* grey-lavender */
+@define-color atrium-error        #eb6f92; /* rose pink */
+@define-color atrium-dropdown     #524f67; /* dark purple-grey */
+
+.card {
+  border-radius: 24px;
+  box-shadow: 0 8px 40px rgba(25, 23, 36, 0.70),
+              inset 0 0 0 1px rgba(196, 167, 231, 0.12);
+}
+
+.password-field {
+  border-radius: 12px;
+}
+
+.user-button {
+  border-radius: 12px;
+}
+
+button.suggested-action {
+  border-radius: 12px;
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 10px;
+  color: @atrium-text;
+}

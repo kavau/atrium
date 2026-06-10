@@ -1,0 +1,33 @@
+/* Catppuccin Mocha (dark) -- this is the built-in default. */
+@define-color atrium-bg           #1e1e2e; /* very dark navy base */
+@define-color atrium-card         #313244; /* slightly darker surface */
+@define-color atrium-text         #cdd6f4; /* pale lavender text */
+@define-color atrium-border       #45475a; /* dim grey-blue border */
+@define-color atrium-accent       #89b4fa; /* soft blue accent */
+@define-color atrium-accent-hover #b4d0ff; /* lighter blue hover (adapted for greeter UI) */
+@define-color atrium-accent-fg    #1e1e2e; /* dark text on accent */
+@define-color atrium-subtle       #a6adc8; /* muted grey-violet */
+@define-color atrium-error        #f38ba8; /* soft red error */
+@define-color atrium-dropdown     #bac2de; /* light lavender dropdown */
+
+.card {
+  border-radius: 20px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.40),
+              inset 0 0 0 1px rgba(69, 71, 90, 0.50);
+}
+
+.password-field {
+  border-radius: 10px;
+}
+
+.user-button {
+  border-radius: 10px;
+}
+
+button.suggested-action {
+  border-radius: 10px;
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 8px;
+}

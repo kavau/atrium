@@ -1,0 +1,64 @@
+/* Tron -- on the grid. */
+@define-color atrium-bg           #000a14; /* deep blue-black */
+@define-color atrium-card         rgba(0, 26, 46, 0.7); /* semi-transparent dark blue */
+@define-color atrium-text         #7ef7ff; /* bright cyan */
+@define-color atrium-border       #0088cc; /* bright blue */
+@define-color atrium-accent       #00c8ff; /* electric cyan */
+@define-color atrium-accent-hover #44ddff; /* lighter cyan */
+@define-color atrium-accent-fg    #000a14; /* dark blue-black text */
+@define-color atrium-subtle       #005588; /* medium blue */
+@define-color atrium-error        #ff6600; /* orange */
+@define-color atrium-dropdown     #0088cc; /* bright blue */
+
+.card {
+  border-radius: 2px;
+  border: 1px solid @atrium-border;
+  box-shadow: 0 0  6px   2px rgba(0, 200, 255, 0.70),     /* tight bright bloom */
+              0 0 25px   4px rgba(0, 200, 255, 0.40),     /* mid glow */
+              0 0 80px  16px rgba(0, 200, 255, 0.25),     /* wide ambient halo */
+              inset 0 0 20px rgba(0, 200, 255, 0.15);     /* inner glow */
+}
+
+.password-field {
+  border-radius: 0;
+}
+
+.password-field > text > placeholder {
+  color: @atrium-accent;
+}
+
+.user-button {
+  background-color: transparent;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  border-radius: 0;
+  box-shadow: 0 0 8px rgba(0, 136, 204, 0.20);
+}
+
+.user-button:hover {
+  box-shadow: 0 0 6px rgba(0, 200, 255, 0.80),
+              0 0 14px rgba(0, 200, 255, 0.50);
+  color: @atrium-subtle;
+}
+
+button.suggested-action {
+  border-radius: 0;
+  box-shadow: 0 0 6px rgba(0, 200, 255, 0.80),
+              0 0 14px rgba(0, 200, 255, 0.50);
+}
+
+button.suggested-action:hover {
+  box-shadow: 0 0 8px rgba(0, 200, 255, 0.90),
+              0 0 20px rgba(0, 200, 255, 0.70);
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 0;
+  color: @atrium-accent-fg;
+}
+
+dropdown.session-dropdown > button:hover {
+  background-color: @atrium-accent-hover;
+  box-shadow: 0 0 6px rgba(0, 200, 255, 0.80),
+              0 0 14px rgba(0, 200, 255, 0.50);
+}
