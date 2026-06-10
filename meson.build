@@ -55,6 +55,8 @@ else
 endif
 add_project_arguments('-DATRIUM_GREETER_DIR="' + greeter_install_dir + '"', language: 'c')
 
+daemon_bin = get_option('prefix') / 'bin' / 'atrium'
+
 # Dependencies
 
 dep_libsystemd = dependency('libsystemd')
@@ -277,10 +279,13 @@ executable('atrium-version-test',
 
 # Data
 
-install_data(
-  'data/atrium.service',
-  install_dir: '/usr/lib/systemd/system',
-  install_tag: 'daemon',
+configure_file(
+  input:         'data/atrium.service.in',
+  output:        'atrium.service',
+  configuration: {'daemon_bin': daemon_bin},
+  install:       true,
+  install_dir:   '/usr/lib/systemd/system',
+  install_tag:   'daemon',
 )
 
 install_data(

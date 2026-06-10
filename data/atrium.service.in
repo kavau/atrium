@@ -7,7 +7,7 @@ Before=getty@tty1.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/atrium
+ExecStart=@daemon_bin@
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal
