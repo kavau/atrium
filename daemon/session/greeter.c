@@ -80,11 +80,8 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
         _exit(EXIT_FAILURE);
     }
 
-    /* TODO: running the greeter via a shell is unnecessary overhead. */
-    char *argv[] = {"sh", "-c", (char *)config_greeter(), NULL};
-
     log_debug("child_exec_greeter: exec: %s", config_greeter());
-    drop_privs_and_exec(pw, "/bin/sh", argv, env);
+    drop_privs_and_run(pw, config_greeter(), env);
 
 oom:
     log_error("child_exec_greeter: out of memory");

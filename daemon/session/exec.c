@@ -45,6 +45,20 @@ static void redirect_stderr_to_journal(void) {
     }
 }
 
+_Noreturn void drop_privs_and_run(struct passwd *pw, const char *cmd, char *const env[]) {
+    /* sh is non-interactive and non-login. "exec" replaces sh with the target
+    process so the child PID is the real process and SIGTERM reaches it
+    directly. SHORTCUT: sh interprets shell metacharacters in cmd, which is an
+    acceptable violation of the Desktop Entry spec. */
+    char *exec_str;
+    if (asprintf(&exec_str, "exec %s", cmd) < 0) {
+        log_error("drop_privs_and_run: out of memory");
+        _exit(EXIT_FAILURE);
+    }
+    char *argv[] = {"sh", "-c", exec_str, NULL};
+    drop_privs_and_exec(pw, "/bin/sh", argv, env);
+}
+
 _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *const argv[],
                                    char *const env[]) {
     /* Privilege drop order: supplementary groups -> gid -> uid.

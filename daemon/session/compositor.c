@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #include "auth.h"
@@ -75,19 +74,10 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     env[i++] = NULL;
     assert(i == n_env);
 
-    /* Build "exec <compositor>" for the login shell to run. */
-    char *exec_str;
-    if (asprintf(&exec_str, "exec %s", compositor_cmd) < 0)
-        goto oom;
-
-    /* Prepend '-' to argv[0] to force a login shell (reads .profile, sets PATH). */
-    char argv0[64];
-    const char *base = strrchr(pw->pw_shell, '/');
-    snprintf(argv0, sizeof(argv0), "-%s", base ? base + 1 : pw->pw_shell);
-    char *argv[] = {argv0, "-c", exec_str, NULL};
-
     log_debug("child_exec_compositor: exec '%s' for user '%s'", compositor_cmd, username);
-    drop_privs_and_exec(pw, pw->pw_shell, argv, env);
+    for (int j = 0; env[j]; j++)
+        log_debug("  env[%d]: %s", j, env[j]);
+    drop_privs_and_run(pw, compositor_cmd, env);
 
 oom:
     log_error("child_exec_compositor: out of memory");

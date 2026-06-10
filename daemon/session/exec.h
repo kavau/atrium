@@ -12,6 +12,11 @@ SHELL, and PATH entries to env[i..]. Sets *pw_out on success. Returns the
 updated index, or -1 on error (getpwnam failure or OOM). */
 int env_append_passwd(const char *username, char **env, int i, struct passwd **pw_out);
 
+/* Drop privileges and run cmd via "sh -c exec ...". This is a thin wrapper
+around drop_privs_and_exec, sufficient for running the compositor and greeter.
+Must be called after fork(). Never returns. */
+_Noreturn void drop_privs_and_run(struct passwd *pw, const char *cmd, char *const env[]);
+
 /* Drop privileges to the given user and exec the program. Must be called after
 fork(). Never returns. */
 _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *const argv[],
