@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "version.h"
 #include "bus.h"
 #include "config.h"
 #include "drm.h"
@@ -97,7 +98,8 @@ static void on_seat(const char *seat_id, void *userdata) {
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
-    log_info("starting");
+    log_info("starting atrium v%s (commit=%s, built " __DATE__ " " __TIME__ ")",
+             ATRIUM_VERSION, ATRIUM_COMMIT);
     log_debug("debug logging enabled");
     config_load("/etc/atrium.conf");
 

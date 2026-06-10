@@ -1,0 +1,8 @@
+#pragma once
+
+/*
+ * version.h - version information
+ */
+
+#define ATRIUM_VERSION "@VERSION@"
+#define ATRIUM_COMMIT  "%VCS_TAG%"

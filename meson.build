@@ -7,6 +7,21 @@ project('atrium', 'c',
   ],
 )
 
+_version_conf = configuration_data()
+_version_conf.set('VERSION', meson.project_version())
+_version_h_tmp = configure_file(
+  input: 'lib/version.h.in',
+  output: 'version.h.tmp',
+  configuration: _version_conf,
+)
+version_h = vcs_tag(
+  command: ['git', 'rev-parse', '--short', 'HEAD'],
+  input: _version_h_tmp,
+  output: 'version.h',
+  replace_string: '%VCS_TAG%',
+  fallback: 'unknown',
+)
+
 add_project_arguments(
   '-D_GNU_SOURCE',
   '-Wcast-align',
@@ -87,6 +102,7 @@ greeter_resources = gnome.compile_resources(
 
 executable('atrium',
   sources: [
+    version_h,
     'daemon/core/bus.c',
     'daemon/core/config.c',
     'daemon/core/drm.c',
@@ -247,6 +263,14 @@ executable('atrium-drm-test',
   dependencies: [
     dep_libsystemd,
     dep_libudev,
+  ],
+  install: false,
+)
+
+executable('atrium-version-test',
+  sources: [
+    version_h,
+    'tools/version-test.c',
   ],
   install: false,
 )
