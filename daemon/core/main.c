@@ -61,39 +61,34 @@ static void start_runner_if_display(seat *s) {
         log_error("failed to start runner on seat '%s'", s->name); /* TODO: retry */
 }
 
-/* Called from bus_enumerate_seats() for each seat discovered at startup. */
-static void on_seat_discovered(const char *seat_id, void *userdata) {
+struct seat_ctx {
+    int         vtnr; /* allocated VT for seat0; 0 for other seats */
+    const char *mode; /* for logging: "discovered" or "arrived" */
+};
+
+/* Shared handler for bus_enumerate_seats() and SeatNew signal. Registers the
+seat and starts a session runner on it. */
+static void on_seat(const char *seat_id, void *userdata) {
+    assert(seat_id);
+    assert(userdata);
+
+    struct seat_ctx *ctx = userdata;
     if (config_is_seat_ignored(seat_id)) {
         log_info("ignoring seat '%s' (listed in config)", seat_id);
         return;
     }
-
-    int seat0_vtnr = *(int *)userdata;
-    /* Only seat0 is associated with a VT. */
-    int vtnr = strcmp(seat_id, "seat0") == 0 ? seat0_vtnr : 0;
-    if (vtnr > 0)
-        log_info("discovered seat '%s' (vtnr=%d)", seat_id, vtnr);
-    else
-        log_info("discovered seat '%s'", seat_id);
-    if (!seat_add(seat_id, vtnr))
-        log_error("on_seat_discovered: seat_add failed for '%s'", seat_id);
-}
-
-/* Called from bus_process() when a SeatNew signal arrives at runtime (after boot). */
-static void on_seat_arrived(const char *seat_id, void *userdata) {
-    if (config_is_seat_ignored(seat_id)) {
-        log_info("ignoring seat '%s'", seat_id);
-        return;
-    }
     if (seat_find_by_name(seat_id)) {
-        log_debug("seat '%s': SeatNew received but seat already known, ignoring", seat_id);
+        log_debug("seat '%s': already known, ignoring", seat_id);
         return;
     }
-    int vtnr = strcmp(seat_id, "seat0") == 0 ? *(int *)userdata : 0;
-    log_info("seat arrived: '%s'", seat_id);
+    int vtnr = strcmp(seat_id, "seat0") == 0 ? ctx->vtnr : 0;
+    if (vtnr > 0)
+        log_info("seat %s: '%s' (vtnr=%d)", ctx->mode, seat_id, vtnr);
+    else
+        log_info("seat %s: '%s'", ctx->mode, seat_id);
     seat *s = seat_add(seat_id, vtnr);
     if (!s) {
-        log_error("on_seat_arrived: seat_add failed for '%s'", seat_id);
+        log_error("on_seat: seat_add failed for '%s'", seat_id);
         return;
     }
     start_runner_if_display(s);
@@ -130,22 +125,12 @@ int main(int argc, char *argv[]) {
     if (bus_open() < 0)
         return EXIT_FAILURE;
 
-    /* Subscribe before enumerating seats so no SeatNew signal is lost in the gap. */
-    int vtnr = 0;
-    if (bus_subscribe_seat_new(on_seat_arrived, &vtnr) < 0)
-        log_warn("SeatNew subscription failed; hotplugged seats will not be detected");
-
-    /* Optional startup delay before seat discovery. Default is 0 (disabled).
-    Increase via seat-discovery-delay in atrium.conf if seats are missed at boot
-    despite the SeatNew subscription. */
-    if (config_seat_discovery_delay() > 0)
-        usleep((useconds_t)config_seat_discovery_delay() * 1000);
-
-    /* Allocate a VT for seat0. SHORTCUT: needs to be done after seat0 is discovered. */
+    /* Allocate a VT for seat0. */
 #if HEADLESS
     log_info("headless mode enabled, skipping VT allocation");
+    int vtnr = 0;
 #else
-    vtnr = vt_alloc();
+    int vtnr = vt_alloc();
     if (vtnr < 0) {
         log_error("failed to allocate VT for seat0: %d", vtnr);
         bus_close();
@@ -155,21 +140,27 @@ int main(int argc, char *argv[]) {
     vt_suppress_keyboard(vtnr, &vt_kb_mode);
 #endif
 
-    if (bus_enumerate_seats(on_seat_discovered, &vtnr) < 0) {
+    /* Subscribe before enumerating seats so no SeatNew signal is lost in the gap. */
+    struct seat_ctx arrive_ctx = {vtnr, "arrived"};
+    if (bus_subscribe_seat_new(on_seat, &arrive_ctx) < 0)
+        log_warn("SeatNew subscription failed; hotplugged seats will not be detected");
+
+    /* Monitor DRM connector-change events in order to start runners on seats
+    that acquired a display after boot. */
+     drm_monitor *drm_mon = NULL;
+    if (drm_monitor_init(&drm_mon) < 0)
+        log_warn("DRM monitor init failed, hotplug will not work");
+
+    /* Optional startup delay before seat discovery. Default is 0 (disabled).*/
+    if (config_seat_discovery_delay() > 0)
+        usleep((useconds_t)config_seat_discovery_delay() * 1000);
+
+    struct seat_ctx discover_ctx = {vtnr, "discovered"};
+    if (bus_enumerate_seats(on_seat, &discover_ctx) < 0) {
         log_error("failed to enumerate seats");
         bus_close();
         return EXIT_FAILURE;
     }
-
-    /* Start a session runner on each seat. */
-    for (seat *s = seat_first(); s; s = seat_next(s))
-        start_runner_if_display(s);
-
-    /* Monitor DRM connector-change events in order to start runners on seats
-    that acquired a display after boot. */
-    drm_monitor *drm_mon = NULL;
-    if (drm_monitor_init(&drm_mon) < 0)
-        log_warn("DRM monitor init failed, hotplug will not work");
 
     /* Event loop: wait for SIGCHLD (child exited), SIGTERM (shutdown), a DRM
     connector-change event, or an incoming D-Bus signal (SeatNew). */
