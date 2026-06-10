@@ -14,6 +14,10 @@ int bus_open(void);
 /* Close the system bus connection. */
 void bus_close(void);
 
+/* Stop the named systemd unit (mode "replace"). Returns 0 on success. Logs a
+warning and returns -1 on error. */
+int bus_stop_unit(const char *unit);
+
 /* Call logind's CreateSession() to create a session for the given seat. pid is
  * the session leader process (typically the compositor child). Returns 0 on
  * success and fills the out parameters. The fifo fd must be kept open for the

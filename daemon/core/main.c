@@ -9,7 +9,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "version.h"
 #include "bus.h"
 #include "config.h"
 #include "drm.h"
@@ -18,6 +17,7 @@
 #include "lib/time_util.h"
 #include "runner.h"
 #include "seat.h"
+#include "version.h"
 #include "vt.h"
 
 /* Records an abnormal runner exit for s and returns 1 if the seat should be
@@ -98,8 +98,8 @@ static void on_seat(const char *seat_id, void *userdata) {
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
-    log_info("starting atrium v%s (commit=%s, built " __DATE__ " " __TIME__ ")",
-             ATRIUM_VERSION, ATRIUM_COMMIT);
+    log_info("starting atrium v%s (commit=%s, built " __DATE__ " " __TIME__ ")", ATRIUM_VERSION,
+             ATRIUM_COMMIT);
     log_debug("debug logging enabled");
     config_load("/etc/atrium.conf");
 
@@ -128,6 +128,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
 
     /* Allocate a VT for seat0. */
+    int vt_fd = -1;
 #if HEADLESS
     log_info("headless mode enabled, skipping VT allocation");
     int vtnr = 0;
@@ -138,8 +139,15 @@ int main(int argc, char *argv[]) {
         bus_close();
         return EXIT_FAILURE;
     }
+    vt_fd = vt_open(vtnr);      /* persistent hold on /dev/ttyN; blocks VT_DISALLOCATE */
     int vt_kb_mode = K_UNICODE; /* saved keyboard mode; restored at shutdown */
-    vt_suppress_keyboard(vtnr, &vt_kb_mode);
+    vt_suppress_keyboard_fd(vt_fd, &vt_kb_mode);
+
+    /* Stop getty on our VT so it does not race with the greeter or compositor
+    and cannot trigger VT_DISALLOCATE + keyboard-mode-reset. */
+    char getty_unit[32];
+    snprintf(getty_unit, sizeof(getty_unit), "getty@tty%d.service", vtnr);
+    bus_stop_unit(getty_unit);
 #endif
 
     /* Subscribe before enumerating seats so no SeatNew signal is lost in the gap. */
@@ -149,7 +157,7 @@ int main(int argc, char *argv[]) {
 
     /* Monitor DRM connector-change events in order to start runners on seats
     that acquired a display after boot. */
-     drm_monitor *drm_mon = NULL;
+    drm_monitor *drm_mon = NULL;
     if (drm_monitor_init(&drm_mon) < 0)
         log_warn("DRM monitor init failed, hotplug will not work");
 
@@ -166,11 +174,11 @@ int main(int argc, char *argv[]) {
 
     /* Event loop: wait for SIGCHLD (child exited), SIGTERM (shutdown), a DRM
     connector-change event, or an incoming D-Bus signal (SeatNew). */
-    int bus_fd = bus_get_fd();
+    int           bus_fd = bus_get_fd();
     struct pollfd pfds[3] = {
-        {.fd = sfd,                                    .events = POLLIN},
+        {.fd = sfd, .events = POLLIN},
         {.fd = drm_mon ? drm_monitor_fd(drm_mon) : -1, .events = POLLIN},
-        {.fd = bus_fd,                                 .events = POLLIN},
+        {.fd = bus_fd, .events = POLLIN},
     };
 
     while (1) {
@@ -259,7 +267,9 @@ int main(int argc, char *argv[]) {
         runner_stop(s);
 
     if (vtnr > 0) {
-        vt_restore_keyboard(vtnr, vt_kb_mode);
+        vt_restore_keyboard_fd(vt_fd, vt_kb_mode);
+        if (vt_fd >= 0)
+            close(vt_fd);
         vt_release(vtnr);
     }
     bus_close();

@@ -10,10 +10,10 @@
 
 #include "lib/log.h"
 
-static sd_bus *g_bus = NULL;
-static sd_bus_slot *g_seat_new_slot = NULL;
+static sd_bus            *g_bus = NULL;
+static sd_bus_slot       *g_seat_new_slot = NULL;
 static bus_on_seat_new_fn g_seat_new_cb = NULL;
-static void *g_seat_new_userdata = NULL;
+static void              *g_seat_new_userdata = NULL;
 
 int bus_open(void) {
     int r = sd_bus_open_system(&g_bus);
@@ -34,11 +34,29 @@ void bus_close(void) {
     g_bus = NULL;
 }
 
+int bus_stop_unit(const char *unit) {
+    assert(g_bus);
+    assert(unit);
+
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+    int r = sd_bus_call_method(g_bus, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+                               "org.freedesktop.systemd1.Manager", "StopUnit", &error, &reply, "ss",
+                               unit, "replace");
+    sd_bus_message_unref(reply);
+    if (r < 0)
+        log_warn("bus_stop_unit(%s): %s", unit, error.message ? error.message : strerror(-r));
+    else
+        log_info("bus_stop_unit: requested stop of %s", unit);
+    sd_bus_error_free(&error);
+    return (r < 0) ? -1 : 0;
+}
+
 static int on_seat_new_signal(sd_bus_message *msg, void *userdata, sd_bus_error *err) {
     (void)userdata;
     (void)err;
     const char *seat_id = NULL, *obj_path = NULL;
-    int r = sd_bus_message_read(msg, "so", &seat_id, &obj_path);
+    int         r = sd_bus_message_read(msg, "so", &seat_id, &obj_path);
     if (r < 0) {
         log_error("on_seat_new_signal: read: %s", strerror(-r));
         return r;
@@ -100,7 +118,7 @@ int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,
     log_debug("bus_create_session: seat=%s vtnr=%u uid=%u pid=%d class=%s", seat_id, vtnr,
               (unsigned)uid, (int)pid, session_class);
 
-    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
     sd_bus_message *msg = NULL;
     sd_bus_message *reply = NULL;
 
@@ -148,10 +166,10 @@ int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,
     }
 
     const char *session_id, *obj_path, *runtime_path;
-    int fifo_fd;
-    uint32_t ret_uid, ret_vtnr;
+    int         fifo_fd;
+    uint32_t    ret_uid, ret_vtnr;
     const char *ret_seat;
-    int existing;
+    int         existing;
     r = sd_bus_message_read(reply, "soshusub", &session_id, &obj_path, &runtime_path, &fifo_fd,
                             &ret_uid, &ret_seat, &ret_vtnr, &existing);
     if (r < 0) {
@@ -184,13 +202,11 @@ int bus_enumerate_seats(bus_on_seat_fn on_seat, void *userdata) {
     assert(g_bus);
     log_debug("bus_enumerate_seats: calling ListSeats");
 
-    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
     sd_bus_message *reply = NULL;
 
-    int r = sd_bus_call_method(g_bus, "org.freedesktop.login1",
-                               "/org/freedesktop/login1",
-                               "org.freedesktop.login1.Manager",
-                               "ListSeats", &error, &reply, "");
+    int r = sd_bus_call_method(g_bus, "org.freedesktop.login1", "/org/freedesktop/login1",
+                               "org.freedesktop.login1.Manager", "ListSeats", &error, &reply, "");
     if (r < 0) {
         log_error("bus_enumerate_seats: ListSeats: %s",
                   error.message ? error.message : strerror(-r));
