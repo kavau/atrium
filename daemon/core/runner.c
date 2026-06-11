@@ -22,11 +22,11 @@ int runner_start(const char *pam_conf_path, seat *s) {
         /* Child process -- run the full session lifecycle. */
         log_debug("starting session runner on seat '%s'", s->name);
 
-        /* Unblock SIGTERM inherited from the daemon so runner_stop() reaches us. */
-        sigset_t unblock;
-        sigemptyset(&unblock);
-        sigaddset(&unblock, SIGTERM);
-        sigprocmask(SIG_UNBLOCK, &unblock, NULL);
+        /* Restore the default signal mask so runner_stop() reaches us and
+        children inherit a clean mask. */
+        sigset_t empty;
+        sigemptyset(&empty);
+        sigprocmask(SIG_SETMASK, &empty, NULL);
 
         session_runner(pam_conf_path, s);
         /* unreachable */

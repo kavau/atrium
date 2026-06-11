@@ -1,6 +1,7 @@
 #include "exec.h"
 
 #include <grp.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <syslog.h>
@@ -87,6 +88,9 @@ _Noreturn void drop_privs_and_exec(struct passwd *pw, const char *exe, char *con
         log_syserr("drop_privs_and_exec: chdir"); /* not fatal */
 
     redirect_stderr_to_journal();
+
+    /* Reset SIGPIPE so the child gets the default disposition. */
+    signal(SIGPIPE, SIG_DFL);
 
     execvpe(exe, argv, env);
     log_syserr("drop_privs_and_exec: execvpe");
