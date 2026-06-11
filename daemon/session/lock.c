@@ -24,7 +24,7 @@ login_lock_status acquire_login_lock(uid_t uid) {
     char lockpath[256];
     snprintf(lockpath, sizeof(lockpath), "%s/uid-%u.lock", LOCK_DIR, uid);
 
-    int fd = open(lockpath, O_CREAT | O_WRONLY, 0600);
+    int fd = open(lockpath, O_CREAT | O_WRONLY | O_CLOEXEC, 0600);
     if (fd < 0) {
         log_syserr("open login lock %s", lockpath);
         return LOGIN_LOCK_ERROR;
