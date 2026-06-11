@@ -36,7 +36,7 @@ see [doc/multiseat-setup.md](doc/multiseat-setup.md).
 
 ### Status
 
-**v0.2 - fully functional but still in early development.**
+**v0.3 - fully functional but still in early development.**
 
 atrium runs well as a daily-driver display manager. The core workflow (seat
 discovery, user authentication, session lifecycle management) is fully
@@ -44,6 +44,18 @@ operational. That said, atrium has been tested on a limited range of hardware
 and distributions, so expect some rough edges.
 
 See [doc/architecture.md](doc/architecture.md) for a **detailed design overview**.
+
+#### What' new since v0.2
+
+- **Runtime config files** - `/etc/atrium.conf` and `/etc/atrium-greeter.conf`
+  replace the compile-time `src/defs.h`.
+- **Session discovery** - atrium scans `/usr/share/wayland-sessions/` and
+  `/usr/local/share/wayland-sessions/` for desktop sessions; the `compositor=`
+  and `desktop=` settings are now optional overrides. The greeter shows a
+  dropdown of discovered sessions (if there is more than one and no override is
+  set).
+- **Wallet/keyring auto-unlock** - KWallet and GNOME Keyring are unlocked
+  automatically at login if the relevant PAM module packages are installed.
 
 ### Supported Distros
 
