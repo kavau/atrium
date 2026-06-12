@@ -31,6 +31,9 @@ own separate desktop and a fully isolated user session. Great for co-working or
 multiplayer gaming. Each seat requires its own GPU (integrated graphics, a
 discrete card, or a USB graphics adapter all work).
 
+For instructions how to **configure your hardware for multiseat**,
+see [doc/multiseat-setup.md](doc/multiseat-setup.md).
+
 ### Status
 
 **v0.2 - fully functional but still in early development.**
@@ -40,13 +43,15 @@ discovery, user authentication, session lifecycle management) is fully
 operational. That said, atrium has been tested on a limited range of hardware
 and distributions, so expect some rough edges.
 
+See [doc/architecture.md](doc/architecture.md) for a **detailed design overview**.
+
 ### Supported Distros
 
 | Distro | Status |
 | --- | --- |
 | Arch / CachyOS | Tested |
 | Debian / Ubuntu | Tested |
-| Fedora | PAM config and SELinux context supplied but yet untested |
+| Fedora | Tested (wallet/keyring auto-unlock currently not working) |
 
 Other systemd-based distros should work - the only distro-specific piece is the
 PAM stack. Adapt one of the provided PAM configs as needed.
@@ -86,15 +91,7 @@ sudo dnf install systemd-devel pam-devel gtk4-devel cage gcc meson ninja-build \
 (`policycoreutils-python-utils` and `checkpolicy` are needed to set up the
 SELinux contexts and policy module.)
 
-### 2. Configure
-
-> This step can usually be skipped - the defaults work for a standard
-> single-seat or multiseat setup.
-
-atrium's config is currently hardcoded in lib/defs.h (daemon) and greeter/defs.h
-(greeter). If needed, these files must be edited before build and install.
-
-### 3. Build and install
+### 2. Build and install
 
 ```shell
 meson setup build -Ddist=<your-distro>   # arch, debian, fedora
@@ -104,9 +101,25 @@ sudo ninja -C build install
 
 The `-Ddist` option (required) selects the correct PAM stack for the target distribution. Possible values for `dist` are: `arch` (for Arch/CachyOS), `debian` (for Debian/Ubuntu), or `fedora` (for Fedora).
 
+### 3. Configure
+
+> This step can usually be skipped - the defaults work for a standard
+> single-seat or multiseat setup.
+
+- **`/etc/atrium.conf`** — daemon settings: greeter command, ignored seats,
+  optional compositor override, among others.
+- **`/etc/atrium-greeter.conf`** — greeter UI settings: idle blanking timeout,
+  background image, theming etc.
+
+Each config file is heavily commented; consult them for the full set of
+available keys and their meaning. Missing config files or keys fall back onto
+compiled-in defaults.
+
 ### 4. Enable and start
 
-> **Multiseat setups:** seat assignment must be configured with `loginctl attach` before starting atrium - without this step only a single seat exists (TODO: link multiseat setup guide).
+> **Multiseat setups:** seat assignment must be configured with `loginctl
+> attach` before starting atrium. Without this step only a single seat exists.
+> See [doc/multiseat-setup.md](doc/multiseat-setup.md) for a step-by-step guide.
 
 Disable the current display manager, and enable atrium:
 
@@ -119,30 +132,24 @@ Then reboot. atrium will start on boot and launch a greeter on every seat.
 
 ---
 
-## Development
+## Further Reading
 
-### Remote deployment
+- [Multiseat Setup Guide](doc/multiseat-setup.md)
+- [Configuration](doc/configuration.md)
+- [Architecture](doc/architecture.md)
+- [Development](doc/development.md)
 
-To copy the source to a remote machine and build remotely:
+## Community
 
-```shell
-./tools/deploy.sh
-```
+- **GitHub Discussions** - questions, ideas, and atrium-specific topics: [github.com/kavau/atrium/discussions](https://github.com/kavau/atrium/discussions)
+- **r/linux_multiseat** - general Linux multiseat discussion: [reddit.com/r/linux_multiseat](https://www.reddit.com/r/linux_multiseat/)
 
-### Local testing
+## Reporting Issues
 
-To test atrium from within a user session:
+Bug reports and feature requests are welcome. Please open an issue on
+[GitHub](https://github.com/kavau/atrium/issues) and include:
 
-```shell
-sudo systemd-run --scope build/atrium-dev
-```
-
-`systemd-run --scope` is needed to run atrium in a fresh scope, not in
-the scope of the existing session.
-
-To install only the daemon or only the greeter, use
-
-```shell
-sudo meson install -C build --tags daemon
-sudo meson install -C build --tags greeter
-```
+- A description of the problem or request.
+- Relevant journal output (`sudo journalctl -u atrium -b`).
+- Your distro, kernel version, and hardware configuration (incl. graphics
+  drivers; especially for multiseat-related issues).

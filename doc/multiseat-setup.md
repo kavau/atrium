@@ -1,8 +1,3 @@
----
-Created: April 20, 2026
-Last Updated: May 31, 2026
----
-
 # Multiseat Setup Guide
 
 This guide covers how to set up a Linux multiseat system using `loginctl` and
