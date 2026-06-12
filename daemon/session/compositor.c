@@ -25,19 +25,24 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     }
 #endif
 
-    /* Resolve compositor command and desktop name from the chosen session. */
-    const char *compositor_cmd  = config_compositor();
-    const char *desktop         = config_desktop();
-    const session_entry *e = (*session_id) ? sessions_find(session_id) : NULL;
-    if (e) {
-        compositor_cmd = e->exec;
-        desktop  = e->desktop_names ? e->desktop_names : e->id;
-        log_info("child_exec_compositor: session '%s' (%s)", e->id, e->name);
-    } else if (*session_id) {
-        log_warn("child_exec_compositor: session '%s' not found, falling back to config",
-                 session_id);
+    /* Resolve compositor command and desktop name. Configured compositor
+    override has priority over user-selected sessions. */
+    const char *compositor_cmd = config_compositor();
+    const char *desktop = config_desktop();
+    log_debug("child_exec_compositor: config compositor '%s', desktop '%s'", compositor_cmd,
+              desktop);
+    if (!compositor_cmd || !*compositor_cmd) {
+        log_debug("child_exec_compositor: no compositor override, looking up session '%s'",
+                  session_id);
+        const session_entry *e = (*session_id) ? sessions_find(session_id) : NULL;
+        if (e) {
+            compositor_cmd = e->exec;
+            desktop = e->desktop_names ? e->desktop_names : e->id;
+            log_info("child_exec_compositor: session '%s' (%s)", e->id, e->name);
+        } else if (*session_id) {
+            log_warn("child_exec_compositor: session '%s' not found", session_id);
+        }
     }
-
     if (!compositor_cmd || !*compositor_cmd) {
         log_error("child_exec_compositor: no compositor configured");
         _exit(EXIT_FAILURE);
@@ -49,7 +54,7 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
         n_pam++;
 
     /* passwd fields + PAM env entries + DBUS + XDG desktop (x2) + NULL */
-    int n_env = 5 + n_pam + 4;
+    int    n_env = 5 + n_pam + 4;
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("child_exec_compositor: calloc");
@@ -57,7 +62,7 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     }
 
     struct passwd *pw;
-    int i = 0;
+    int            i = 0;
     /* Passwd fields come first so they are authoritative over PAM duplicates. */
     i = env_append_passwd(username, env, i, &pw);
     if (i < 0)

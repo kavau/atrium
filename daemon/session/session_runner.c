@@ -170,10 +170,14 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     /* ---- GREETER PHASE ---- */
 
-    /* Scan available Wayland sessions and serialize for the greeter. */
-    char session_list[4096] = "";
-    char preselect[64] = "";
-    if (sessions_scan() > 0) {
+    /* Scan available Wayland sessions and serialize for greeter (skip if a
+    compositor override is configured). */
+    char        session_list[4096] = "";
+    char        preselect[64] = "";
+    const char *compositor_cmd = config_compositor();
+    log_debug("session_runner: config compositor '%s'", compositor_cmd);
+    if ((!compositor_cmd || !*compositor_cmd) && sessions_scan() > 0) {
+        log_debug("session_runner: no compositor override, building session list for greeter");
         size_t pos = 0;
         for (const session_entry *e = sessions_first(); e; e = sessions_next(e)) {
             int w = snprintf(session_list + pos, sizeof(session_list) - pos, "%s\x1f%s\x1e", e->id,
