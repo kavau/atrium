@@ -19,6 +19,8 @@ Set `background-image` in `/etc/atrium-greeter.conf` to an image path, or to a
 directory to pick a random image on each launch. Available formats are JPEG and
 PNG (always), and WebP, GIF, BMP, SVG, TIFF (on most systems).
 
+Set `theme` to a CSS file to change the color scheme and widget styling. Several themes ship with atrium and are installed under /usr/local/share/atrium/themes/, or you can write your own.
+
 ### Session discovery and compositor override
 
 By default, atrium reads session `.desktop` files from
@@ -31,7 +33,7 @@ and the specified command is used for every login on every seat.
 
 X11 sessions (`/usr/share/xsessions/`) are not supported.
 
-#### Wallet and keyring auto-unlock
+### Wallet and keyring auto-unlock
 
 atrium's PAM configuration already includes optional entries for KWallet
 and GNOME Keyring. If the corresponding packages are installed, the wallet

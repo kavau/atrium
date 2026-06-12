@@ -8,12 +8,12 @@ off to an independent user session per seat.
 ### Why atrium?
 <!-- markdownlint-enable MD001 -->
 
-The Linux kernel and low-level system stack have had solid multiseat support for
-years: udev handles device assignment, logind manages independent user sessions
-per seat, and Wayland compositors work with whatever devices logind gives them.
-The weak link has always been the display manager. Existing ones usually treat
-multiseat as an afterthought, with implementations that are brittle and
-difficult to get working reliably.
+The Linux kernel and low-level system stack are fully capable of multiseat
+operation: udev handles device assignment, logind manages independent user
+sessions per seat, and Wayland compositors work with whatever devices logind
+gives them. The weak link has always been the display manager. Existing ones
+usually treat multiseat as an afterthought, with implementations that are
+brittle and difficult to get working reliably.
 
 atrium is designed around multiseat from the start, focusing on correct seat
 discovery, VT handling, and isolated session management. The project targets a
@@ -36,7 +36,7 @@ see [doc/multiseat-setup.md](doc/multiseat-setup.md).
 
 ### Status
 
-**v0.3 - fully functional but still in early development.**
+**post-v0.3 - fully functional but still in early development.**
 
 atrium runs well as a daily-driver display manager. The core workflow (seat
 discovery, user authentication, session lifecycle management) is fully
@@ -45,6 +45,19 @@ and distributions, so expect some rough edges.
 
 See [doc/architecture.md](doc/architecture.md) for a **detailed design overview**.
 
+#### What's new since the v0.3 release
+
+- **Support for greeter background images** - set `background-image` in
+  `/etc/atrium-greeter.conf` to an image path, or to a directory to pick a
+  random image on each greeter launch.
+- **Greeter themes** - set `theme` in `/etc/atrium-greeter.conf` to a theme
+  `.css` file in order to override built-in colors and styles. A handful of
+  themes are shipped with atrium and installed in
+  `/usr/local/share/atrium/themes`.
+- **Architectural redesign** - making atrium's core architecture simpler and
+  more robust. The changes are purely internal and should not be visible to the
+  user.
+
 #### What' new since v0.2
 
 - **Runtime config files** - `/etc/atrium.conf` and `/etc/atrium-greeter.conf`
@@ -52,8 +65,8 @@ See [doc/architecture.md](doc/architecture.md) for a **detailed design overview*
 - **Session discovery** - atrium scans `/usr/share/wayland-sessions/` and
   `/usr/local/share/wayland-sessions/` for desktop sessions; the `compositor=`
   and `desktop=` settings are now optional overrides. The greeter shows a
-  dropdown of discovered sessions (if there is more than one and no override is
-  set).
+  dropdown with discovered sessions (if there is more than one, and no override
+  is set).
 - **Wallet/keyring auto-unlock** - KWallet and GNOME Keyring are unlocked
   automatically at login if the relevant PAM module packages are installed.
 
@@ -125,7 +138,8 @@ The `-Ddist` option (required) selects the correct PAM stack for the target dist
 
 Each config file is heavily commented; consult them for the full set of
 available keys and their meaning. Missing config files or keys fall back onto
-compiled-in defaults.
+compiled-in defaults. More information can be found in the
+[Configuration](doc/configuration.md) doc.
 
 ### 4. Enable and start
 
@@ -133,14 +147,27 @@ compiled-in defaults.
 > attach` before starting atrium. Without this step only a single seat exists.
 > See [doc/multiseat-setup.md](doc/multiseat-setup.md) for a step-by-step guide.
 
-Disable the current display manager, and enable atrium:
+First note which display manager is currently active, so you can restore it if needed:
+
+```sh
+readlink /etc/systemd/system/display-manager.service
+```
+
+This will output a path such as `/usr/lib/systemd/system/gdm.service`, which
+means `gdm` is running, and can be re-enabled with `systemctl enable gdm`.
+
+Now disable the current display manager, and enable atrium:
 
 ```sh
 sudo systemctl disable gdm   # substitute your current display manager
 sudo systemctl enable atrium
 ```
 
-Then reboot. atrium will start on boot and launch a greeter on every seat.
+Then reboot. atrium will start on boot and launch a greeter on every configured
+seat.
+
+If things go wrong, please take a look a the
+[Troubleshooting](doc/troubleshooting.md) doc.
 
 ---
 
@@ -148,6 +175,8 @@ Then reboot. atrium will start on boot and launch a greeter on every seat.
 
 - [Multiseat Setup Guide](doc/multiseat-setup.md)
 - [Configuration](doc/configuration.md)
+- [Known Limitations](doc/limitations.md)
+- [Troubleshooting / FAQ](doc/troubleshooting.md)
 - [Architecture](doc/architecture.md)
 - [Development](doc/development.md)
 
