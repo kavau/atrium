@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <signal.h>
-#include <stdio.h>
 #include <sys/prctl.h>
 #include <unistd.h>
 
@@ -38,6 +37,10 @@ int runner_start(const char *pam_conf_path, seat *s) {
         snprintf(proc_name, sizeof(proc_name), "atrium-%s", s->name);
 #pragma GCC diagnostic pop
         prctl(PR_SET_NAME, proc_name);
+
+        char log_prefix_buf[sizeof("atrium[]") + MAX_LEN_SEAT];
+        snprintf(log_prefix_buf, sizeof(log_prefix_buf), "atrium[%s]", s->name);
+        log_set_prefix(log_prefix_buf);
 
         session_runner(pam_conf_path, s);
         /* unreachable */

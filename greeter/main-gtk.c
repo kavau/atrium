@@ -43,6 +43,7 @@ static int parse_session_list(greeter_session *sessions, int max) {
 }
 
 int main(void) {
+    log_set_prefix("atrium-greeter");
     greeter_config_load("/etc/atrium-greeter.conf");
 
     greeter_user users[MAX_NUM_USERS];

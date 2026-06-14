@@ -39,7 +39,7 @@ static void redirect_stderr_to_journal(void) {
     terminal instead of the journal when testing interactively. */
     if (getenv("ATRIUM_LOG_STDERR"))
         return;
-    int jfd = sd_journal_stream_fd("atrium", LOG_DEBUG, 0);
+    int jfd = sd_journal_stream_fd("atrium", LOG_DEBUG, 1);
     if (jfd >= 0) {
         dup2(jfd, STDERR_FILENO);
         close(jfd);

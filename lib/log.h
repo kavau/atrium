@@ -10,15 +10,17 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef LOG_PREFIX
-#define LOG_PREFIX "atrium"
-#endif
+/* Set the prefix for every log line (default: "atrium"; max 31 chars). */
+void log_set_prefix(const char *prefix);
+
+/* Internal: used only by the _log macro below. */
+extern const char *_log_prefix;
 
 /* Internal helper macro. The prio prefix (e.g. "<3>") is parsed by the systemd
 journal to set the PRIORITY field; it is stripped from the message. */
-#define _log(prio, level, fmt, ...)                                               \
-    do {                                                                          \
-        fprintf(stderr, prio LOG_PREFIX " [" level "] " fmt "\n", ##__VA_ARGS__); \
+#define _log(prio, level, fmt, ...)                                                   \
+    do {                                                                              \
+        fprintf(stderr, prio "%s [" level "] " fmt "\n", _log_prefix, ##__VA_ARGS__); \
     } while (0)
 
 #define log_info(...)  _log("<6>", "info", __VA_ARGS__)

@@ -120,7 +120,7 @@ static int parse_desktop_file(const char *path, const char *id, session_entry *e
         return -1;
     }
     if (ctx.skip || !entry->name || !entry->exec) {
-        log_info("sessions: skipping '%s' from %s", id, path);
+        log_debug("sessions: skipping '%s' from %s", id, path);
         free_entry(entry);
         return -1;
     }
@@ -177,8 +177,8 @@ int sessions_scan(void) {
             session_entry entry;
             if (parse_desktop_file(path, id, &entry) == 0) {
                 g_sessions[g_session_count++] = entry;
-                log_info("sessions: loaded '%s' (id='%s' exec='%s')", entry.name, entry.id,
-                         entry.exec);
+                log_debug("sessions: loaded '%s' (id='%s' exec='%s')", entry.name, entry.id,
+                          entry.exec);
             }
         }
 
@@ -271,8 +271,8 @@ void sessions_load_seat(const char *seat_name, char *buf, size_t buflen) {
     if (buf[0] == '\0')
         return;
     if (!sessions_find(buf)) {
-        log_info("sessions_load_seat: saved session '%s' for seat '%s' is no longer installed",
-                 buf, seat_name);
+        log_info("sessions_load_seat: saved session '%s' for seat '%s' is no longer installed", buf,
+                 seat_name);
         buf[0] = '\0';
         return;
     }
