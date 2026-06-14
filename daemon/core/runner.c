@@ -2,6 +2,8 @@
 
 #include <assert.h>
 #include <signal.h>
+#include <stdio.h>
+#include <sys/prctl.h>
 #include <unistd.h>
 
 #include "daemon/session/session_runner.h"
@@ -27,6 +29,15 @@ int runner_start(const char *pam_conf_path, seat *s) {
         sigset_t empty;
         sigemptyset(&empty);
         sigprocmask(SIG_SETMASK, &empty, NULL);
+
+        /* Rename ourselves to "atrium-<seat_name>" to distinguish from daemon.
+        Truncation to 15 chars is intentional. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+        char proc_name[16];
+        snprintf(proc_name, sizeof(proc_name), "atrium-%s", s->name);
+#pragma GCC diagnostic pop
+        prctl(PR_SET_NAME, proc_name);
 
         session_runner(pam_conf_path, s);
         /* unreachable */
