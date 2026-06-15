@@ -53,7 +53,7 @@ if dist == 'arch'
 else
   greeter_install_dir = get_option('prefix') / get_option('libexecdir')
 endif
-add_project_arguments('-DATRIUM_GREETER_DIR="' + greeter_install_dir + '"', language: 'c')
+add_project_arguments('-DATRIUM_GREETER_PATH="' + greeter_install_dir / 'atrium-gtk-greeter' + '"', language: 'c')
 
 daemon_bin = get_option('prefix') / 'bin' / 'atrium'
 
