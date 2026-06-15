@@ -286,7 +286,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     pam_env[i++] = NULL;
     assert(i == n_env);
 
-    char        cred_buf[256]; /* must remain valid outside the loop */
+    char        cred_buf[MAX_LEN_IPC_MSG]; /* must remain valid outside the loop */
     auth_result pam_result;
     const char *username = NULL;
     const char *chosen_session = NULL; /* points into cred_buf; valid after loop */

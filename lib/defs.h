@@ -2,7 +2,12 @@
  * defs.h - compile-time constants
  */
 
+/* Maximum length for seat names. */
 #define MAX_LEN_SEAT 64
+
+/* Max size of messages (e.g. credentials) passed between greeter and daemon.
+Must stay below PIPE_BUF (4096 on Linux) to guarantee atomic writes. */
+#define MAX_LEN_IPC_MSG 512
 
 /* PAM configuration directory. */
 #define PAM_CONF_PATH "/etc/pam.d"

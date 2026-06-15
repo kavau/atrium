@@ -3,13 +3,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "lib/defs.h"
 #include "lib/log.h"
 
 ipc_status ipc_read_result(ipc_channel *ch, char *reason, size_t reason_len) {
     /* FRAGILE: assumes the reply fits in a single read(). This holds because
     the daemon writes <= PIPE_BUF bytes atomically; if messages ever exceed
     PIPE_BUF, this needs a read loop. */
-    char    buf[512];
+    char    buf[MAX_LEN_IPC_MSG];
     ssize_t n = ipc_recv(ch, buf, sizeof(buf) - 1);
     if (n <= 0) {
         log_error("greeter: failed to receive response from daemon");
@@ -56,7 +57,7 @@ static int build_credentials_str(char *buf, size_t buflen, const char *username,
 
 int ipc_send_credentials(ipc_channel *ch, const char *username, const char *password,
                          const char *session_id) {
-    char buf[512];
+    char buf[MAX_LEN_IPC_MSG];
     int  n = build_credentials_str(buf, sizeof(buf), username, password, session_id);
     if (n < 0)
         return -1;
