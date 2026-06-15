@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/signalfd.h>
+#include <sys/timerfd.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -172,17 +173,27 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* Event loop: wait for SIGCHLD (child exited), SIGTERM (shutdown), a DRM
-    connector-change event, or an incoming D-Bus signal (SeatNew). */
-    int           bus_fd = bus_get_fd();
-    struct pollfd pfds[3] = {
-        {.fd = sfd, .events = POLLIN},
-        {.fd = drm_mon ? drm_monitor_fd(drm_mon) : -1, .events = POLLIN},
-        {.fd = bus_fd, .events = POLLIN},
-    };
+    int bus_fd = bus_get_fd();
 
+    /* Event loop */
     while (1) {
-        if (poll(pfds, 3, -1) < 0) {
+        /* Assemble fds to watch: POSIX signals (SIGCHLD and SIGTERM), DRM
+        connector-change events, D-Bus events (SeatNew), plus one restart timer
+        fd for each seat currently pending. */
+        int nfds = 3;
+        for (seat *s = seat_first(); s; s = seat_next(s))
+            if (s->restart_tfd >= 0)
+                nfds++;
+        struct pollfd pfds[nfds];
+        pfds[0] = (struct pollfd){.fd = sfd,    .events = POLLIN};
+        pfds[1] = (struct pollfd){.fd = drm_mon ? drm_monitor_fd(drm_mon) : -1, .events = POLLIN};
+        pfds[2] = (struct pollfd){.fd = bus_fd, .events = POLLIN};
+        int slot = 3;
+        for (seat *s = seat_first(); s; s = seat_next(s))
+            if (s->restart_tfd >= 0)
+                pfds[slot++] = (struct pollfd){.fd = s->restart_tfd, .events = POLLIN};
+
+        if (poll(pfds, nfds, -1) < 0) {
             if (errno == EINTR)
                 continue;
             log_syserr("main: poll");
@@ -200,6 +211,20 @@ int main(int argc, char *argv[]) {
                 seat *s = seat_find_by_name(seat_name);
                 if (s && s->state == SEAT_IDLE)
                     start_runner_if_display(s);
+            }
+        }
+
+        /* Process seat restart timers */
+        for (int i = 3; i < nfds; i++) {
+            if (!(pfds[i].revents & POLLIN))
+                continue;
+            for (seat *s = seat_first(); s; s = seat_next(s)) {
+                if (s->restart_tfd != pfds[i].fd)
+                    continue;
+                close(s->restart_tfd);
+                s->restart_tfd = -1;
+                start_runner_if_display(s);
+                break;
             }
         }
 
@@ -238,19 +263,32 @@ int main(int argc, char *argv[]) {
                 s->runner_pid = 0;
                 s->state = SEAT_IDLE;
 
-                /* Crash-loop detection */
+                /* If the last session exited cleanly, simply restart the seat. Otherwise restart
+                after a delay, unless the seat crashed too frequently, in which case we give up on
+                the seat. */
                 if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0) { /* Normal exit */
                     log_info("restarting session runner on seat '%s'", s->name);
-                } else if (seat_should_retry(s)) {
+                    start_runner_if_display(s);
+                } else if (seat_should_retry(s)) { /* Crash-loop detection */
                     log_info("seat '%s': crash %d/%d, restarting after %d ms", s->name,
                              s->crash_count, config_crash_count_limit(),
                              config_crash_restart_delay());
+                    int delay_ms = config_crash_restart_delay();
+                    if (delay_ms <= 0) {
+                        start_runner_if_display(s);
+                    } else {
+                        int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+                        if (tfd < 0) {
+                            log_syserr("seat '%s': timerfd_create, leaving seat idle", s->name);
+                        } else {
+                            struct itimerspec ts = itimerspec_ms(delay_ms);
+                            timerfd_settime(tfd, 0, &ts, NULL);
+                            s->restart_tfd = tfd;
+                        }
+                    }
                 } else {
-                    continue; /* crash limit reached - leave seat idle */
+                    /* crash limit reached - leave seat idle */
                 }
-                usleep((useconds_t)config_crash_restart_delay() * 1000);
-                if (runner_start(PAM_CONF_PATH, s) != 0)
-                    log_error("failed to restart runner on seat '%s'", s->name);
             }
         } else if ((int)si.ssi_signo == SIGTERM) {
             log_info("received SIGTERM, shutting down");
@@ -263,8 +301,11 @@ int main(int argc, char *argv[]) {
         drm_monitor_close(drm_mon);
 
     /* Shutdown: stop all session runners before releasing the VT. */
-    for (seat *s = seat_first(); s; s = seat_next(s))
+    for (seat *s = seat_first(); s; s = seat_next(s)) {
+        if (s->restart_tfd >= 0)
+            close(s->restart_tfd);
         runner_stop(s);
+    }
 
     if (vtnr > 0) {
         vt_restore_keyboard_fd(vt_fd, vt_kb_mode);

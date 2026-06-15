@@ -22,6 +22,7 @@ typedef struct seat {
     int vtnr;         /* allocated VT number; 0 for non-seat0 seats */
     seat_state state; /* current state: SEAT_IDLE or SEAT_RUNNING */
     pid_t runner_pid; /* PID of the session runner, or 0 if none */
+    int restart_tfd;  /* Timer for pending restarts; -1 if none */
     /* Crash-loop detection */
     int             crash_count;        /* Number of abnormal runner exits... */
     struct timespec crash_window_start; /* ...since start of crash window */
