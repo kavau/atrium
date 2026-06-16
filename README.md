@@ -72,19 +72,28 @@ See [doc/architecture.md](doc/architecture.md) for a **detailed design overview*
 
 ### Supported Distros
 
-| Distro | Status |
-| --- | --- |
-| Arch / CachyOS | Tested |
-| Debian / Ubuntu | Tested |
-| Fedora | Tested (wallet/keyring auto-unlock currently not working) |
+- Arch-based (Arch, CachyOS, EndeavourOS, Manjaro)
+- Debian-based (Debian, Ubuntu, Linux Mint, Pop!_OS)
+- Fedora¹ (SELinux accomodation included)
+
+_¹ On Fedora, wallet/keyring auto-unlock is currently not working._
 
 Other systemd-based distros should work - the only distro-specific piece is the
 PAM stack. Adapt one of the provided PAM configs as needed.
 
-If atrium works on your setup, please cast a vote on the [AUR
-package](https://aur.archlinux.org/packages/atrium) and drop a comment on the
-[compatibility reports issue](https://github.com/kavau/atrium/issues/112) - it
-takes only 10 seconds and helps others.
+The following desktop environments have been tested:
+
+- GNOME
+- KDE Plasma
+- COSMIC
+- Sway
+
+Any Wayland compositor with a session file in `/usr/share/wayland-sessions`
+should work - the list above reflects what has been verified.
+
+If atrium works on your setup, please consider adding a quick note to the
+[Compatibility Reports](https://github.com/kavau/atrium/issues/112) issue. If it
+doesn't, please file a [bug report](https://github.com/kavau/atrium/issues/new).
 
 ---
 
