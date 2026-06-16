@@ -81,6 +81,11 @@ See [doc/architecture.md](doc/architecture.md) for a **detailed design overview*
 Other systemd-based distros should work - the only distro-specific piece is the
 PAM stack. Adapt one of the provided PAM configs as needed.
 
+If atrium works on your setup, please cast a vote on the [AUR
+package](https://aur.archlinux.org/packages/atrium) and drop a comment on the
+[compatibility reports issue](https://github.com/kavau/atrium/issues/112) - it
+takes only 10 seconds and helps others.
+
 ---
 
 ## Installation
