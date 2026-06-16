@@ -199,3 +199,7 @@ Bug reports and feature requests are welcome. Please open an issue on
 - Relevant journal output (`sudo journalctl -u atrium -b`).
 - Your distro, kernel version, and hardware configuration (incl. graphics
   drivers; especially for multiseat-related issues).
+
+## License
+
+GPL-2.0 — see [LICENSE](LICENSE).
