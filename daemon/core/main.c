@@ -21,6 +21,8 @@
 #include "version.h"
 #include "vt.h"
 
+static int g_shutting_down = 0; /* Set if SIGTERM has been received */
+
 /* Records an abnormal runner exit for s and returns 1 if the seat should be
 retried, or 0 if the crash limit has been reached. */
 static int seat_should_retry(seat *s) {
@@ -49,6 +51,8 @@ static int seat_should_retry(seat *s) {
 
 /* Check whether seat has a connected display and start its runner if yes. */
 static void start_runner_if_display(seat *s) {
+    if (g_shutting_down)
+        return;
 #if !HEADLESS
     int r = drm_seat_has_display(s->name);
     if (r == 0) {
@@ -185,7 +189,7 @@ int main(int argc, char *argv[]) {
             if (s->restart_tfd >= 0)
                 nfds++;
         struct pollfd pfds[nfds];
-        pfds[0] = (struct pollfd){.fd = sfd,    .events = POLLIN};
+        pfds[0] = (struct pollfd){.fd = sfd, .events = POLLIN};
         pfds[1] = (struct pollfd){.fd = drm_mon ? drm_monitor_fd(drm_mon) : -1, .events = POLLIN};
         pfds[2] = (struct pollfd){.fd = bus_fd, .events = POLLIN};
         int slot = 3;
@@ -291,6 +295,7 @@ int main(int argc, char *argv[]) {
                 }
             }
         } else if ((int)si.ssi_signo == SIGTERM) {
+            g_shutting_down = 1;
             log_info("received SIGTERM, shutting down");
             break;
         }
@@ -300,7 +305,7 @@ int main(int argc, char *argv[]) {
     if (drm_mon)
         drm_monitor_close(drm_mon);
 
-    /* Shutdown: stop all session runners before releasing the VT. */
+    /* Shutdown: stop all session runners. */
     for (seat *s = seat_first(); s; s = seat_next(s)) {
         if (s->restart_tfd >= 0)
             close(s->restart_tfd);
