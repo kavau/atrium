@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "ini.h"
 #include "lib/log.h"
@@ -47,6 +48,23 @@ static char *convert_semicolons(const char *input) {
     return out;
 }
 
+/* Checks whether cmd exists and is executable. Returns 1 on success. */
+static int try_exec_ok(const char *cmd) {
+    if (cmd[0] == '/') /* Handle absolute path. */
+        return access(cmd, X_OK) == 0;
+
+    /* Handle relative path. */
+    for (const char *p = getenv("PATH"), *end = p; p && *p; p = end ? end + 1 : NULL) {
+        end = strchr(p, ':');
+        size_t dirlen = end ? (size_t)(end - p) : strlen(p);
+        char   full[dirlen + 1 + strlen(cmd) + 1];
+        snprintf(full, sizeof(full), "%.*s/%s", (int)dirlen, p, cmd);
+        if (access(full, X_OK) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 /* inih callback for parsing a .desktop file entry. */
 static int on_desktop_key(void *userdata, const char *section, const char *name,
                           const char *value) {
@@ -55,27 +73,21 @@ static int on_desktop_key(void *userdata, const char *section, const char *name,
 
     parse_ctx *ctx = userdata;
 
-    if (strcmp(name, "Name") == 0) {
-        free(ctx->entry->name);
+    if (strcmp(name, "Name") == 0 && !ctx->entry->name) {
         ctx->entry->name = strdup(value);
-        if (!ctx->entry->name) {
-            ctx->oom = 1;
-            return 0;
-        }
-    } else if (strcmp(name, "Exec") == 0) {
-        free(ctx->entry->exec);
+        if (!ctx->entry->name)
+            goto oom;
+    } else if (strcmp(name, "Exec") == 0 && !ctx->entry->exec) {
         ctx->entry->exec = strdup(value);
-        if (!ctx->entry->exec) {
-            ctx->oom = 1;
-            return 0;
-        }
-    } else if (strcmp(name, "DesktopNames") == 0) {
-        free(ctx->entry->desktop_names);
+        if (!ctx->entry->exec)
+            goto oom;
+    } else if (strcmp(name, "DesktopNames") == 0 && !ctx->entry->desktop_names) {
         ctx->entry->desktop_names = convert_semicolons(value);
-        if (!ctx->entry->desktop_names) {
-            ctx->oom = 1;
-            return 0;
-        }
+        if (!ctx->entry->desktop_names)
+            goto oom;
+    } else if (strcmp(name, "TryExec") == 0 && !try_exec_ok(value)) {
+        log_info("sessions: TryExec '%s' not found", value);
+        ctx->skip = 1;
     } else if ((strcmp(name, "Hidden") == 0 || strcmp(name, "NoDisplay") == 0) &&
                strcmp(value, "true") == 0) {
         ctx->skip = 1;
@@ -84,6 +96,10 @@ static int on_desktop_key(void *userdata, const char *section, const char *name,
     }
     /* Locale-suffixed keys (e.g. Name[de]=) are silently ignored. */
     return 1;
+
+oom:
+    ctx->oom = 1;
+    return 0;
 }
 
 static void free_entry(session_entry *e) {
@@ -108,24 +124,25 @@ static int parse_desktop_file(const char *path, const char *id, session_entry *e
     int r = ini_parse(path, on_desktop_key, &ctx);
     if (r < 0) {
         log_syserr("sessions: open %s", path);
-        free_entry(entry);
-        return -1;
+        goto err;
     }
     if (r > 0)
         log_warn("sessions: parse error in %s at line %d", path, r);
 
     if (ctx.oom) {
         log_error("sessions: out of memory parsing %s", path);
-        free_entry(entry);
-        return -1;
+        goto err;
     }
     if (ctx.skip || !entry->name || !entry->exec) {
         log_debug("sessions: skipping '%s' from %s", id, path);
-        free_entry(entry);
-        return -1;
+        goto err;
     }
 
     return 0;
+
+err:
+    free_entry(entry);
+    return -1;
 }
 
 void sessions_free(void) {
