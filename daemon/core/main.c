@@ -248,7 +248,8 @@ int main(int argc, char *argv[]) {
                     continue;
                 close(s->restart_tfd);
                 s->restart_tfd = -1;
-                start_runner_if_display(s);
+                if (s->state == SEAT_IDLE)
+                    start_runner_if_display(s);
                 break;
             }
         }
