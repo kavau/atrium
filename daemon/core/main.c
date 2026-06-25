@@ -49,6 +49,25 @@ static int seat_should_retry(seat *s) {
     return 1;
 }
 
+/* Schedule a delayed retry, or leave the seat idle if the crash limit has been
+reached. */
+static void schedule_retry_or_give_up(seat *s) {
+    if (!seat_should_retry(s))
+        return; /* crash limit reached - seat stays idle */
+    int delay_ms = config_crash_restart_delay();
+    log_info("seat '%s': crash %d/%d, restarting after %d ms", s->name, s->crash_count,
+             config_crash_count_limit(), delay_ms);
+    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (tfd < 0) {
+        log_syserr("seat '%s': timerfd_create, leaving seat idle", s->name);
+        return;
+    }
+    /* itimerspec_ms(0) disarms the timer, hence we clamp to 1 ms. */
+    struct itimerspec ts = itimerspec_ms(delay_ms > 0 ? delay_ms : 1);
+    timerfd_settime(tfd, 0, &ts, NULL);
+    s->restart_tfd = tfd;
+}
+
 /* Check whether seat has a connected display and start its runner if yes. */
 static void start_runner_if_display(seat *s) {
     if (g_shutting_down)
@@ -63,8 +82,10 @@ static void start_runner_if_display(seat *s) {
         log_warn("seat '%s': DRM display check failed, starting anyway", s->name);
 #endif
     log_info("starting session runner on seat '%s'", s->name);
-    if (runner_start(PAM_CONF_PATH, s) != 0)
-        log_error("failed to start runner on seat '%s'", s->name); /* TODO: retry */
+    if (runner_start(PAM_CONF_PATH, s) != 0) {
+        log_warn("seat '%s': runner_start failed (fork error), scheduling retry", s->name);
+        schedule_retry_or_give_up(s);
+    }
 }
 
 struct seat_ctx {
@@ -273,25 +294,8 @@ int main(int argc, char *argv[]) {
                 if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0) { /* Normal exit */
                     log_info("restarting session runner on seat '%s'", s->name);
                     start_runner_if_display(s);
-                } else if (seat_should_retry(s)) { /* Crash-loop detection */
-                    log_info("seat '%s': crash %d/%d, restarting after %d ms", s->name,
-                             s->crash_count, config_crash_count_limit(),
-                             config_crash_restart_delay());
-                    int delay_ms = config_crash_restart_delay();
-                    if (delay_ms <= 0) {
-                        start_runner_if_display(s);
-                    } else {
-                        int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
-                        if (tfd < 0) {
-                            log_syserr("seat '%s': timerfd_create, leaving seat idle", s->name);
-                        } else {
-                            struct itimerspec ts = itimerspec_ms(delay_ms);
-                            timerfd_settime(tfd, 0, &ts, NULL);
-                            s->restart_tfd = tfd;
-                        }
-                    }
                 } else {
-                    /* crash limit reached - leave seat idle */
+                    schedule_retry_or_give_up(s);
                 }
             }
         } else if ((int)si.ssi_signo == SIGTERM) {
