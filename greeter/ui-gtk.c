@@ -312,6 +312,55 @@ static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     submit_credentials(widget, gtk_editable_get_text(GTK_EDITABLE(g_password_entry)));
 }
 
+typedef struct card_margins {
+    int start;
+    int end;
+    int top;
+    int bottom;
+} card_margins;
+
+/* Compute margins to center the login card on the primary display. */
+static card_margins compute_card_margins(GListModel *monitors, guint n_monitors) {
+    if (n_monitors <= 1)
+        return (card_margins){0};
+
+    card_margins margins = {0};
+    GdkRectangle primary_geo = {0};
+    for (guint i = 0; i < n_monitors; i++) {
+        GdkMonitor  *mon = GDK_MONITOR(g_list_model_get_item(monitors, i));
+        GdkRectangle geo;
+        gdk_monitor_get_geometry(mon, &geo);
+        g_object_unref(mon);
+        log_debug("greeter: monitor[%u] %dx%d+%d+%d%s", i, geo.width, geo.height, geo.x, geo.y,
+                  i == 0 ? " (primary)" : "");
+
+        if (i == 0) {
+            /* this is the primary display */
+            primary_geo = geo;
+            margins.start = geo.x;
+            margins.top = geo.y;
+        } else {
+            /* secondary display - adjust bottom/right margins if required */
+            int req_margin_end = geo.x + geo.width - (primary_geo.x + primary_geo.width);
+            if (req_margin_end > margins.end)
+                margins.end = req_margin_end;
+            int req_margin_bottom = geo.y + geo.height - (primary_geo.y + primary_geo.height);
+            if (req_margin_bottom > margins.bottom)
+                margins.bottom = req_margin_bottom;
+        }
+    }
+    log_debug("greeter: card margins start=%d end=%d top=%d bottom=%d", margins.start, margins.end,
+              margins.top, margins.bottom);
+    return margins;
+}
+
+static void set_card_margins(GtkWidget *card, const card_margins *margins) {
+    gtk_widget_set_margin_start(card, margins->start);
+    gtk_widget_set_margin_end(card, margins->end);
+    gtk_widget_set_margin_top(card, margins->top);
+    gtk_widget_set_margin_bottom(card, margins->bottom);
+}
+
 static void activate(GtkApplication *app, gpointer user_data) {
     (void)user_data;
 
@@ -320,6 +369,14 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkSettings *gtk_settings = gtk_settings_get_default();
     g_object_set(gtk_settings, "gtk-cursor-theme-name", greeter_config_cursor_theme(),
                  "gtk-cursor-theme-size", greeter_config_cursor_size(), NULL);
+
+    /* Detect number of displays on this seat, so we can center the card correctly. */
+    GdkDisplay *display = gdk_display_get_default();
+    GListModel *monitors = gdk_display_get_monitors(display);
+    guint       n_monitors = g_list_model_get_n_items(monitors);
+    log_info("greeter: %u monitor(s) detected", n_monitors);
+    card_margins margins =
+        n_monitors > 1 ? compute_card_margins(monitors, n_monitors) : (card_margins){0};
 
     GtkWidget *window = gtk_application_window_new(app);
     g_window = GTK_WINDOW(window);
@@ -346,6 +403,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_USERS);
     gtk_widget_set_halign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(users_box, GTK_ALIGN_CENTER);
+    if (n_monitors > 1) {
+        set_card_margins(users_box, &margins);
+    }
     gtk_widget_add_css_class(users_box, "card");
     gtk_stack_add_named(g_stack, users_box, "users");
 
@@ -413,6 +473,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_PASSWORD);
     gtk_widget_set_halign(password_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(password_box, GTK_ALIGN_CENTER);
+    if (n_monitors > 1) {
+        set_card_margins(password_box, &margins);
+    }
     gtk_widget_add_css_class(password_box, "card");
     gtk_stack_add_named(g_stack, password_box, "password");
 
