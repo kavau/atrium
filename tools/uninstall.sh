@@ -14,7 +14,7 @@ if [ "$1" = "--force" ] || [ "$1" = "-f" ]; then
 fi
 
 BUILD_DIR="${1:-build}"
-SERVICE="atrium-dev"
+SERVICE="atrium"
 GREETER_USER="atriumdm"
 
 if [ "$(id -u)" -ne 0 ]; then

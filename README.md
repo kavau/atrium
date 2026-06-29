@@ -183,6 +183,17 @@ seat.
 If things go wrong, please take a look a the
 [Troubleshooting](doc/troubleshooting.md) doc.
 
+### 5. Uninstall
+
+To fully remove atrium, switch to another display manager first (so the next
+boot still has a graphical login), then run the provided script.
+
+```sh
+sudo systemctl disable atrium
+sudo systemctl enable gdm   # substitute your previous display manager
+sudo tools/uninstall.sh
+```
+
 ---
 
 ## Further Reading
