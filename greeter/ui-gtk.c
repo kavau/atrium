@@ -361,41 +361,10 @@ static void set_card_margins(GtkWidget *card, const card_margins *margins) {
     gtk_widget_set_margin_bottom(card, margins->bottom);
 }
 
-static void activate(GtkApplication *app, gpointer user_data) {
-    (void)user_data;
-
-    theme_apply();
-
-    GtkSettings *gtk_settings = gtk_settings_get_default();
-    g_object_set(gtk_settings, "gtk-cursor-theme-name", greeter_config_cursor_theme(),
-                 "gtk-cursor-theme-size", greeter_config_cursor_size(), NULL);
-
-    /* Detect number of displays on this seat, so we can center the card correctly. */
-    GdkDisplay *display = gdk_display_get_default();
-    GListModel *monitors = gdk_display_get_monitors(display);
-    guint       n_monitors = g_list_model_get_n_items(monitors);
-    log_info("greeter: %u monitor(s) detected", n_monitors);
-    card_margins margins =
-        n_monitors > 1 ? compute_card_margins(monitors, n_monitors) : (card_margins){0};
-
-    GtkWidget *window = gtk_application_window_new(app);
-    g_window = GTK_WINDOW(window);
-    gtk_window_set_title(GTK_WINDOW(window), "atrium");
-    gtk_window_set_decorated(GTK_WINDOW(window), FALSE);
-    gtk_window_fullscreen(GTK_WINDOW(window));
-
-    GtkEventController *key_controller = gtk_event_controller_key_new();
-    g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), NULL);
-    gtk_widget_add_controller(window, key_controller);
-
-    GtkEventController *motion_controller = gtk_event_controller_motion_new();
-    g_signal_connect(motion_controller, "motion", G_CALLBACK(on_motion), NULL);
-    gtk_widget_add_controller(window, motion_controller);
-
-    /* Stack consisting of user selection, password entry, and blank screen pages */
-
+static void card_create(const card_margins *margins) {
+    /* Stack consisting of user selection, password entry, and blank screen page */
     GtkWidget *stack = gtk_stack_new();
-    gtk_window_set_child(GTK_WINDOW(window), stack);
+    gtk_window_set_child(g_window, stack);
     g_stack = GTK_STACK(stack);
 
     /* User selection page */
@@ -403,8 +372,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_USERS);
     gtk_widget_set_halign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(users_box, GTK_ALIGN_CENTER);
-    if (n_monitors > 1) {
-        set_card_margins(users_box, &margins);
+    if (margins) {
+        set_card_margins(users_box, margins);
     }
     gtk_widget_add_css_class(users_box, "card");
     gtk_stack_add_named(g_stack, users_box, "users");
@@ -473,8 +442,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_PASSWORD);
     gtk_widget_set_halign(password_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(password_box, GTK_ALIGN_CENTER);
-    if (n_monitors > 1) {
-        set_card_margins(password_box, &margins);
+    if (margins) {
+        set_card_margins(password_box, margins);
     }
     gtk_widget_add_css_class(password_box, "card");
     gtk_stack_add_named(g_stack, password_box, "password");
@@ -528,11 +497,44 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_widget_set_vexpand(blank_box, TRUE);
     gtk_widget_add_css_class(blank_box, "blank-page");
     gtk_stack_add_named(g_stack, blank_box, "blank");
+}
+
+static void activate(GtkApplication *app, gpointer user_data) {
+    (void)user_data;
+
+    theme_apply();
+
+    GtkSettings *gtk_settings = gtk_settings_get_default();
+    g_object_set(gtk_settings, "gtk-cursor-theme-name", greeter_config_cursor_theme(),
+                 "gtk-cursor-theme-size", greeter_config_cursor_size(), NULL);
+
+    /* Detect number of displays on this seat, so we can center the card correctly. */
+    GdkDisplay *display = gdk_display_get_default();
+    GListModel *monitors = gdk_display_get_monitors(display);
+    guint       n_monitors = g_list_model_get_n_items(monitors);
+    log_info("greeter: %u monitor(s) detected", n_monitors);
+    card_margins margins =
+        n_monitors > 1 ? compute_card_margins(monitors, n_monitors) : (card_margins){0};
+
+    g_window = GTK_WINDOW(gtk_application_window_new(app));
+    gtk_window_set_title(g_window, "atrium");
+    gtk_window_set_decorated(g_window, FALSE);
+    gtk_window_fullscreen(g_window);
+
+    GtkEventController *key_controller = gtk_event_controller_key_new();
+    g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), NULL);
+    gtk_widget_add_controller(GTK_WIDGET(g_window), key_controller);
+
+    GtkEventController *motion_controller = gtk_event_controller_motion_new();
+    g_signal_connect(motion_controller, "motion", G_CALLBACK(on_motion), NULL);
+    gtk_widget_add_controller(GTK_WIDGET(g_window), motion_controller);
+
+    /* Build the login card */
+    card_create(n_monitors > 1 ? &margins : NULL);
 
     /* Show the window and start the blank timer */
-
     switch_page(PAGE_USERS);
-    gtk_window_present(GTK_WINDOW(window));
+    gtk_window_present(g_window);
     reset_blank_timer();
 }
 
