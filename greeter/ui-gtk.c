@@ -21,13 +21,13 @@
 
 /* The different pages in the UI stack. */
 typedef enum {
-    PAGE_USERS = 0, /* zero so static g_pre_blank_page defaults to it */
+    PAGE_USERS,
     PAGE_PASSWORD,
-    PAGE_BLANK,
 } greeter_page;
 
 /* Global variables - avoid passing context around */
 static ipc_channel           *g_ch;
+static GtkFixed              *g_root;
 static GtkStack              *g_stack;
 static GtkWindow             *g_window;
 static GtkLabel              *g_user_label;
@@ -42,34 +42,19 @@ static GtkSpinner            *g_users_spinner;
 static GtkLabel              *g_users_error_label;
 static GtkSpinner            *g_password_spinner;
 static GtkLabel              *g_password_error_label;
+static GtkWidget             *g_blank_screen;
 static guint                  g_blank_timer_id;
-static greeter_page           g_pre_blank_page; /* page we were on before blanking */
 static gint64                 g_blank_start_us; /* monotonic time when blanking started */
 static guint                  g_auth_fd_source_id;
 static guint                  g_auth_timeout_id;
 
 static greeter_page current_page(void) {
     const char *name = gtk_stack_get_visible_child_name(g_stack);
-    if (strcmp(name, "password") == 0)
-        return PAGE_PASSWORD;
-    if (strcmp(name, "blank") == 0)
-        return PAGE_BLANK;
-    return PAGE_USERS;
+    return strcmp(name, "password") == 0 ? PAGE_PASSWORD : PAGE_USERS;
 }
 
 static void switch_page(greeter_page page) {
-    const char *name;
-    switch (page) {
-        case PAGE_PASSWORD:
-            name = "password";
-            break;
-        case PAGE_BLANK:
-            name = "blank";
-            break;
-        default:
-            name = "users";
-            break;
-    }
+    const char *name = page == PAGE_PASSWORD ? "password" : "users";
     gtk_stack_set_visible_child_name(g_stack, name);
 }
 
@@ -120,10 +105,9 @@ within this window after blanking starts. */
 static gboolean on_blank_timeout(gpointer user_data) {
     (void)user_data;
     g_blank_timer_id = 0;
-    g_pre_blank_page = current_page();
     g_blank_start_us = g_get_monotonic_time();
     gtk_root_set_focus(GTK_ROOT(g_window), NULL);
-    switch_page(PAGE_BLANK);
+    gtk_widget_set_visible(g_blank_screen, TRUE);
     GdkCursor *none_cursor = gdk_cursor_new_from_name("none", NULL);
     gdk_surface_set_cursor(gtk_native_get_surface(GTK_NATIVE(g_window)), none_cursor);
     g_object_unref(none_cursor);
@@ -143,11 +127,10 @@ static void reset_blank_timer(void) {
 }
 
 static void unblank_screen(void) {
-    if (current_page() != PAGE_BLANK)
+    if (!gtk_widget_get_visible(g_blank_screen))
         return;
     log_info("greeter: screen unblanked");
-    switch_page(g_pre_blank_page);
-    g_pre_blank_page = PAGE_USERS;
+    gtk_widget_set_visible(g_blank_screen, FALSE);
     gdk_surface_set_cursor(gtk_native_get_surface(GTK_NATIVE(g_window)), NULL);
     reset_blank_timer();
 }
@@ -159,7 +142,7 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, 
     (void)keycode;
     (void)state;
     (void)user_data;
-    if (current_page() == PAGE_BLANK) {
+    if (gtk_widget_get_visible(g_blank_screen)) {
         log_debug("greeter: key pressed while blank");
         unblank_screen();
     } else {
@@ -174,7 +157,7 @@ static void on_motion(GtkEventControllerMotion *controller, gdouble x, gdouble y
     (void)x;
     (void)y;
     (void)user_data;
-    if (current_page() == PAGE_BLANK) {
+    if (gtk_widget_get_visible(g_blank_screen)) {
         gint64 elapsed = g_get_monotonic_time() - g_blank_start_us;
         log_debug("greeter: motion while blank, elapsed=%ldms", (long)(elapsed / 1000));
         if (elapsed < BLANK_MOTION_GUARD_US)
@@ -312,59 +295,11 @@ static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     submit_credentials(widget, gtk_editable_get_text(GTK_EDITABLE(g_password_entry)));
 }
 
-typedef struct card_margins {
-    int start;
-    int end;
-    int top;
-    int bottom;
-} card_margins;
-
-/* Compute margins to center the login card on the primary display. */
-static card_margins compute_card_margins(GListModel *monitors, guint n_monitors) {
-    if (n_monitors <= 1)
-        return (card_margins){0};
-
-    card_margins margins = {0};
-    GdkRectangle primary_geo = {0};
-    for (guint i = 0; i < n_monitors; i++) {
-        GdkMonitor  *mon = GDK_MONITOR(g_list_model_get_item(monitors, i));
-        GdkRectangle geo;
-        gdk_monitor_get_geometry(mon, &geo);
-        g_object_unref(mon);
-        log_debug("greeter: monitor[%u] %dx%d+%d+%d%s", i, geo.width, geo.height, geo.x, geo.y,
-                  i == 0 ? " (primary)" : "");
-
-        if (i == 0) {
-            /* this is the primary display */
-            primary_geo = geo;
-            margins.start = geo.x;
-            margins.top = geo.y;
-        } else {
-            /* secondary display - adjust bottom/right margins if required */
-            int req_margin_end = geo.x + geo.width - (primary_geo.x + primary_geo.width);
-            if (req_margin_end > margins.end)
-                margins.end = req_margin_end;
-            int req_margin_bottom = geo.y + geo.height - (primary_geo.y + primary_geo.height);
-            if (req_margin_bottom > margins.bottom)
-                margins.bottom = req_margin_bottom;
-        }
-    }
-    log_debug("greeter: card margins start=%d end=%d top=%d bottom=%d", margins.start, margins.end,
-              margins.top, margins.bottom);
-    return margins;
-}
-
-static void set_card_margins(GtkWidget *card, const card_margins *margins) {
-    gtk_widget_set_margin_start(card, margins->start);
-    gtk_widget_set_margin_end(card, margins->end);
-    gtk_widget_set_margin_top(card, margins->top);
-    gtk_widget_set_margin_bottom(card, margins->bottom);
-}
-
-static void card_create(const card_margins *margins) {
-    /* Stack consisting of user selection, password entry, and blank screen page */
+static void card_create(GdkRectangle geo) {
+    /* Stack consisting of user selection page and password entry page. */
     GtkWidget *stack = gtk_stack_new();
-    gtk_window_set_child(g_window, stack);
+    gtk_widget_set_size_request(stack, geo.width, geo.height);
+    gtk_fixed_put(g_root, stack, geo.x, geo.y);
     g_stack = GTK_STACK(stack);
 
     /* User selection page */
@@ -372,9 +307,6 @@ static void card_create(const card_margins *margins) {
     GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_USERS);
     gtk_widget_set_halign(users_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(users_box, GTK_ALIGN_CENTER);
-    if (margins) {
-        set_card_margins(users_box, margins);
-    }
     gtk_widget_add_css_class(users_box, "card");
     gtk_stack_add_named(g_stack, users_box, "users");
 
@@ -442,9 +374,6 @@ static void card_create(const card_margins *margins) {
     GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_PASSWORD);
     gtk_widget_set_halign(password_box, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(password_box, GTK_ALIGN_CENTER);
-    if (margins) {
-        set_card_margins(password_box, margins);
-    }
     gtk_widget_add_css_class(password_box, "card");
     gtk_stack_add_named(g_stack, password_box, "password");
 
@@ -489,14 +418,6 @@ static void card_create(const card_margins *margins) {
     gtk_widget_add_css_class(back_btn, "back-button");
     g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_clicked), NULL);
     gtk_box_append(GTK_BOX(action_box), back_btn);
-
-    /* Blank screen page. SHORTCUT - show a black screen instead of real DPMS */
-
-    GtkWidget *blank_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_hexpand(blank_box, TRUE);
-    gtk_widget_set_vexpand(blank_box, TRUE);
-    gtk_widget_add_css_class(blank_box, "blank-page");
-    gtk_stack_add_named(g_stack, blank_box, "blank");
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
@@ -513,8 +434,6 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GListModel *monitors = gdk_display_get_monitors(display);
     guint       n_monitors = g_list_model_get_n_items(monitors);
     log_info("greeter: %u monitor(s) detected", n_monitors);
-    card_margins margins =
-        n_monitors > 1 ? compute_card_margins(monitors, n_monitors) : (card_margins){0};
 
     g_window = GTK_WINDOW(gtk_application_window_new(app));
     gtk_window_set_title(g_window, "atrium");
@@ -529,8 +448,35 @@ static void activate(GtkApplication *app, gpointer user_data) {
     g_signal_connect(motion_controller, "motion", G_CALLBACK(on_motion), NULL);
     gtk_widget_add_controller(GTK_WIDGET(g_window), motion_controller);
 
+    /* Overlay for screen blanking. */
+    GtkWidget *overlay = gtk_overlay_new();
+    gtk_window_set_child(g_window, overlay);
+
+    /* Build everything on top of a GtkFixed so we can handle multi-monitor geometries. */
+    g_root = GTK_FIXED(gtk_fixed_new());
+    gtk_overlay_set_child(GTK_OVERLAY(overlay), GTK_WIDGET(g_root));
+
+    /* Get the geometry of the default monitor. */
+    GdkRectangle default_monitor_geo = {.width = 800, .height = 600};
+    if (n_monitors > 0) {
+        GdkMonitor *mon = GDK_MONITOR(g_list_model_get_item(monitors, 0));
+        gdk_monitor_get_geometry(mon, &default_monitor_geo);
+        g_object_unref(mon);
+        log_debug("greeter: monitor[%u] geometry: %dx%d+%d+%d", 0, default_monitor_geo.width,
+                  default_monitor_geo.height, default_monitor_geo.x, default_monitor_geo.y);
+    }
+
     /* Build the login card */
-    card_create(n_monitors > 1 ? &margins : NULL);
+    card_create(default_monitor_geo);
+
+    /* SHORTCUT - show a black screen instead of real DPMS. */
+    GtkWidget *blank_screen = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_hexpand(blank_screen, TRUE);
+    gtk_widget_set_vexpand(blank_screen, TRUE);
+    gtk_widget_add_css_class(blank_screen, "blank-page");
+    gtk_widget_set_visible(blank_screen, FALSE);
+    gtk_overlay_add_overlay(GTK_OVERLAY(overlay), blank_screen);
+    g_blank_screen = blank_screen;
 
     /* Show the window and start the blank timer */
     switch_page(PAGE_USERS);
