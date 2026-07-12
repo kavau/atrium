@@ -218,6 +218,11 @@ static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer 
 
 err:
     gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
+    if (current_page() == PAGE_PASSWORD) {
+        /* Clear and refocus the password field so user can retype it. */
+        gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
+        gtk_widget_grab_focus(GTK_WIDGET(g_password_entry));
+    }
     return G_SOURCE_REMOVE;
 }
 
