@@ -36,7 +36,7 @@ see [doc/multiseat-setup.md](doc/multiseat-setup.md).
 
 ### Status
 
-**v0.4 - fully functional but still in early development.**
+**post-v0.4 - fully functional but still in early development.**
 
 atrium runs well as a daily-driver display manager. The core workflow (seat
 discovery, user authentication, session lifecycle management) is fully
@@ -44,6 +44,12 @@ operational. That said, atrium has been tested on a limited range of hardware
 and distributions, so expect some rough edges.
 
 See [doc/architecture.md](doc/architecture.md) for a **detailed design overview**.
+
+#### What's new since v0.4
+
+- **Live config reload** - `sudo systemctl reload atrium` reloads the daemon
+  configuration and restarts all idle seats. This way each greeter also picks up
+  its new config.
 
 #### What's new since v0.3
 

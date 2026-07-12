@@ -46,10 +46,12 @@ int vt_activate(int vtnr) {
         return -1;
     }
 
-    if (ioctl(tty0, VT_WAITACTIVE, vtnr) < 0) {
-        log_syserr("vt_activate: ioctl VT_WAITACTIVE");
-        close(tty0);
-        return -1;
+    while (ioctl(tty0, VT_WAITACTIVE, vtnr) < 0) {
+        if (errno != EINTR) {
+            log_syserr("vt_activate: ioctl VT_WAITACTIVE");
+            close(tty0);
+            return -1;
+        }
     }
 
     close(tty0);

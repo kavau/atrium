@@ -30,12 +30,24 @@
 child exits. 0 means no child is currently active. */
 static volatile sig_atomic_t g_child_pid = 0;
 
+static volatile sig_atomic_t user_session_active = 0; /* Set to 1 while user session is active */
+static volatile sig_atomic_t g_reload_requested = 0;  /* Set to 1 if SIGUSR1 is received */
+
 /* SIGTERM handler: kill the current child so it exits cleanly, then let the
 runner's normal wait path detect the exit and clean up. */
 static void on_sigterm(int sig) {
     (void)sig;
     if (g_child_pid > 0)
         kill((pid_t)g_child_pid, SIGTERM);
+}
+
+/* SIGUSR1 handler: quit unless a user session is active. */
+static void on_sigusr1(int sig) {
+    (void)sig;
+    if (!user_session_active && g_child_pid > 0) {
+        g_reload_requested = 1;
+        kill((pid_t)g_child_pid, SIGTERM);
+    }
 }
 
 /* Validate username: non-empty, within LOGIN_NAME_MAX, portable filename chars
@@ -163,10 +175,14 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     /* Ignore SIGPIPE to prevent a broken IPC pipe from killing this process. */
     signal(SIGPIPE, SIG_IGN);
 
-    /* Install SIGTERM handler so runner_stop() can cleanly shut us down. */
+    /* Install handlers for SIGTERM (so runner_stop() can cleanly shut us down)
+    and SIGUSR1 (shut down unless a user session is running). */
     struct sigaction sa = {.sa_handler = on_sigterm, .sa_flags = 0};
     sigemptyset(&sa.sa_mask);
     sigaction(SIGTERM, &sa, NULL);
+
+    sa.sa_handler = on_sigusr1;
+    sigaction(SIGUSR1, &sa, NULL);
 
     /* ---- GREETER PHASE ---- */
 
@@ -293,9 +309,12 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     while (1) {
         ssize_t n = ipc_recv(parent_end, cred_buf, sizeof(cred_buf) - 1);
         if (n <= 0) {
-            log_error("session_runner: greeter disconnected before auth on seat '%s'", s->name);
+            if (g_reload_requested)
+                log_info("session_runner: terminating due to reload request on seat '%s'", s->name);
+            else
+                log_error("session_runner: greeter disconnected before auth on seat '%s'", s->name);
             kill_and_wait(greeter_pid, "greeter", s->name);
-            _exit(EXIT_FAILURE);
+            _exit(g_reload_requested ? EXIT_SUCCESS : EXIT_FAILURE);
         }
 
         const char *password;
@@ -345,12 +364,15 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             }
         }
 
+        user_session_active = 1; /* greeter phase complete, user session becomes active */
+
         /* Phase 2: open the logind session. */
         if (auth_open_session(&pam_result) != PAM_SUCCESS) {
             log_warn("session_runner: failed to open session for '%s' on seat '%s'", username,
                      s->name);
             ipc_send_str(parent_end, "fail:session error\n");
             release_login_lock();
+            user_session_active = 0;
             continue;
         }
 
@@ -408,6 +430,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     wait_child(comp_pid, "compositor", s->name);
     g_child_pid = 0;
+    user_session_active = 0;
 
     /* Re-suppress VT keyboard (compositor may have re-enabled it on exit) */
     if (s->vtnr > 0)

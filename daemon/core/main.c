@@ -311,10 +311,13 @@ int main(int argc, char *argv[]) {
         } else if ((int)si.ssi_signo == SIGUSR1) {
             log_info("received SIGUSR1, reloading config and retrying idle seats");
             config_load();
-            /* Reset crash counts and retry all idle seats */
+            /* Forward the signal to all active session runners, and retry idle seats */
             reset_seat_crash_counts();
             for (seat *s = seat_first(); s; s = seat_next(s)) {
-                if (s->state == SEAT_IDLE && s->restart_tfd < 0)
+                if (s->runner_pid > 0) {
+                    if (kill(s->runner_pid, SIGUSR1) < 0)
+                        log_syserr("main: kill pid %d SIGUSR1", s->runner_pid);
+                } else if (s->state == SEAT_IDLE && s->restart_tfd < 0)
                     start_runner_if_display(s);
             }
         } else if ((int)si.ssi_signo == SIGTERM) {

@@ -13,6 +13,15 @@ Each config file is heavily commented; consult them for the full set of
 available keys and their meaning. Missing config files or keys fall back onto
 compiled-in defaults.
 
+Note: any configuration changes can be applied live with
+
+```sh
+sudo systemctl reload atrium
+```
+
+This command reloads the daemon configuration and restarts all idle seats, so
+that greeters also pick up their new config.
+  
 ### Greeter background and themes
 
 Set `background-image` in `/etc/atrium-greeter.conf` to an image path, or to a
