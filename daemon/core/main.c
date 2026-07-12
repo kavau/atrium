@@ -49,6 +49,13 @@ static int seat_should_retry(seat *s) {
     return 1;
 }
 
+static void reset_seat_crash_counts(void) {
+    for (seat *s = seat_first(); s; s = seat_next(s)) {
+        s->crash_count = 0;
+        s->crash_window_start = (struct timespec){0};
+    }
+}
+
 /* Schedule a delayed retry, or leave the seat idle if the crash limit has been
 reached. */
 static void schedule_retry_or_give_up(seat *s) {
@@ -72,6 +79,10 @@ static void schedule_retry_or_give_up(seat *s) {
 static void start_runner_if_display(seat *s) {
     if (g_shutting_down)
         return;
+    if (config_is_seat_ignored(s->name)) {
+        log_info("ignoring seat '%s' (listed in config)", s->name);
+        return;
+    }
 #if !HEADLESS
     int r = drm_seat_has_display(s->name);
     if (r == 0) {
@@ -100,10 +111,6 @@ static void on_seat(const char *seat_id, void *userdata) {
     assert(userdata);
 
     struct seat_ctx *ctx = userdata;
-    if (config_is_seat_ignored(seat_id)) {
-        log_info("ignoring seat '%s' (listed in config)", seat_id);
-        return;
-    }
     if (seat_find_by_name(seat_id)) {
         log_debug("seat '%s': already known, ignoring", seat_id);
         return;
@@ -256,7 +263,7 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Process signal events (SIGCHLD and SIGTERM) */
+        /* Process signal events (SIGCHLD, SIGTERM, and SIGUSR1) */
         if (!(pfds[0].revents & POLLIN))
             continue;
 
@@ -301,13 +308,19 @@ int main(int argc, char *argv[]) {
                     schedule_retry_or_give_up(s);
                 }
             }
+        } else if ((int)si.ssi_signo == SIGUSR1) {
+            log_info("received SIGUSR1, reloading config and retrying idle seats");
+            config_load();
+            /* Reset crash counts and retry all idle seats */
+            reset_seat_crash_counts();
+            for (seat *s = seat_first(); s; s = seat_next(s)) {
+                if (s->state == SEAT_IDLE && s->restart_tfd < 0)
+                    start_runner_if_display(s);
+            }
         } else if ((int)si.ssi_signo == SIGTERM) {
             g_shutting_down = 1;
             log_info("received SIGTERM, shutting down");
             break;
-        } else if ((int)si.ssi_signo == SIGUSR1) {
-            log_info("received SIGUSR1, reloading config");
-            config_load();
         }
     }
 
