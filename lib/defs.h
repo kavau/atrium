@@ -2,6 +2,9 @@
  * defs.h - compile-time constants
  */
 
+/* Path to daemon configuration file. */
+#define CONFIG_PATH "/etc/atrium.conf"
+
 /* Maximum length for seat names. */
 #define MAX_LEN_SEAT 64
 

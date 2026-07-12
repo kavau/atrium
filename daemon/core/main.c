@@ -127,18 +127,20 @@ int main(int argc, char *argv[]) {
     log_info("starting atrium v%s (commit=%s, built " __DATE__ " " __TIME__ ")", ATRIUM_VERSION,
              ATRIUM_COMMIT);
     log_debug("debug logging enabled");
-    config_load("/etc/atrium.conf");
+    config_load();
 
     /* Ignore SIGPIPE globally so a broken IPC pipe returns EPIPE from write()
     rather than killing the process. Inherited by all child processes. */
     signal(SIGPIPE, SIG_IGN);
 
-    /* Block SIGTERM and SIGCHLD immediately so they are delivered via signalfd
-    rather than asynchronously. Must happen before any sleep or fork. */
+    /* Block SIGTERM, SIGCHLD, and SIGUSR1 (config reload) immediately so they
+    are delivered via signalfd rather than asynchronously. Must happen before
+    any sleep or fork. */
     sigset_t mask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGTERM);
     sigaddset(&mask, SIGCHLD);
+    sigaddset(&mask, SIGUSR1);
     if (sigprocmask(SIG_BLOCK, &mask, NULL) < 0) {
         log_syserr("main: sigprocmask");
         return EXIT_FAILURE;
@@ -303,6 +305,9 @@ int main(int argc, char *argv[]) {
             g_shutting_down = 1;
             log_info("received SIGTERM, shutting down");
             break;
+        } else if ((int)si.ssi_signo == SIGUSR1) {
+            log_info("received SIGUSR1, reloading config");
+            config_load();
         }
     }
 
