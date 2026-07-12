@@ -53,14 +53,25 @@ static void reset_seat_crash_counts(void) {
     for (seat *s = seat_first(); s; s = seat_next(s)) {
         s->crash_count = 0;
         s->crash_window_start = (struct timespec){0};
+        s->backoff_until_ms = 0;
     }
 }
 
 /* Schedule a delayed retry, or leave the seat idle if the crash limit has been
 reached. */
 static void schedule_retry_or_give_up(seat *s) {
+    /* Discard any pending retry timer. */
+    if (s->restart_tfd >= 0) {
+        close(s->restart_tfd);
+        s->restart_tfd = -1;
+    }
+    /* Suppress DRM change events for a short time period. A crashing greeter
+    emits such events, which would otherwise trigger an immediate restart. */
+    s->backoff_until_ms = mono_ms() + config_drm_backoff();
+
     if (!seat_should_retry(s))
         return; /* crash limit reached - seat stays idle */
+
     int delay_ms = config_crash_restart_delay();
     log_info("seat '%s': crash %d/%d, restarting after %d ms", s->name, s->crash_count,
              config_crash_count_limit(), delay_ms);
@@ -125,6 +136,22 @@ static void on_seat(const char *seat_id, void *userdata) {
         log_error("on_seat: seat_add failed for '%s'", seat_id);
         return;
     }
+    start_runner_if_display(s);
+}
+
+/* Handle a DRM connector-change event for the specified seat. */
+static void handle_drm_event(const char *seat_name) {
+    seat *s = seat_find_by_name(seat_name);
+    /* Do not restart if a retry timer is pending, this would bypass the
+    crash-restart delay */
+    if (!s || s->state != SEAT_IDLE || s->restart_tfd >= 0)
+        return;
+    if (s->backoff_until_ms && mono_ms() < s->backoff_until_ms) {
+        log_debug("seat '%s': DRM event suppressed (backoff active)", s->name);
+        return;
+    }
+    /* We deliberately do not reset the crash history here, so that a spurious
+    event does not trigger an entire batch of attempts. */
     start_runner_if_display(s);
 }
 
@@ -241,11 +268,8 @@ int main(int argc, char *argv[]) {
         /* Process DRM connector-change events */
         if ((pfds[1].revents & POLLIN) && drm_mon) {
             char seat_name[MAX_LEN_SEAT];
-            if (drm_monitor_read_seat(drm_mon, seat_name, sizeof(seat_name)) == 1) {
-                seat *s = seat_find_by_name(seat_name);
-                if (s && s->state == SEAT_IDLE)
-                    start_runner_if_display(s);
-            }
+            if (drm_monitor_read_seat(drm_mon, seat_name, sizeof(seat_name)) == 1)
+                handle_drm_event(seat_name);
         }
 
         /* Process seat restart timers */

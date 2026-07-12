@@ -28,6 +28,11 @@ crash-restart-delay = 1000
 crash-count-limit = 5
 crash-window = 60
 
+# Time period (in milliseconds) during which to suppress DRM connector-change
+# events after a greeter crash. This is necessary since the crashing greeter's
+# teardown emits DRM events that would trigger an immediate greeter restart.
+drm-backoff = 500
+
 # Greeter command. Must honour the CREDENTIALS_FD and RESULT_FD environment
 # variables set by the daemon. Two greeters are provided:
 #   atrium-gtk-greeter  GTK4 graphical greeter (default)

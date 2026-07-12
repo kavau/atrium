@@ -15,7 +15,8 @@
 #define DEFAULT_SEAT_DISCOVERY_DELAY 0    /* ms; 0 = disabled */
 #define DEFAULT_CRASH_RESTART_DELAY  1000 /* ms */
 #define DEFAULT_CRASH_COUNT_LIMIT    5
-#define DEFAULT_CRASH_WINDOW         60 /* seconds */
+#define DEFAULT_CRASH_WINDOW         60  /* seconds */
+#define DEFAULT_DRM_BACKOFF          500 /* ms */
 #define MAX_IGNORE_SEATS             16
 #define MAX_SEAT_NAME_LEN            64
 
@@ -27,6 +28,7 @@ typedef struct config_data {
     int  crash_restart_delay;
     int  crash_count_limit;
     int  crash_window; /* seconds */
+    int  drm_backoff;  /* ms */
     int  allow_duplicate_login;
     char ignore_seats[MAX_IGNORE_SEATS][MAX_SEAT_NAME_LEN];
     int  ignore_seat_count;
@@ -41,6 +43,7 @@ static const config_data default_config = {
     .crash_restart_delay = DEFAULT_CRASH_RESTART_DELAY,
     .crash_count_limit = DEFAULT_CRASH_COUNT_LIMIT,
     .crash_window = DEFAULT_CRASH_WINDOW,
+    .drm_backoff = DEFAULT_DRM_BACKOFF,
     .allow_duplicate_login = 0,
     .ignore_seat_count = 0,
 };
@@ -73,6 +76,8 @@ static int handle_key(void *userdata, const char *section, const char *name, con
         conf_parse_int("config", name, value, 100, &cfg->crash_count_limit);
     } else if (strcmp(name, "crash-window") == 0) {
         conf_parse_int("config", name, value, 3600, &cfg->crash_window);
+    } else if (strcmp(name, "drm-backoff") == 0) {
+        conf_parse_int("config", name, value, 60000, &cfg->drm_backoff);
     } else if (strcmp(name, "allow-duplicate-login") == 0) {
         conf_parse_bool("config", name, value, &cfg->allow_duplicate_login);
     } else if (strcmp(name, "ignore-seat") == 0) {
@@ -108,6 +113,7 @@ int         config_seat_discovery_delay(void) { return g_cfg.seat_discovery_dela
 int         config_crash_restart_delay(void) { return g_cfg.crash_restart_delay; }
 int         config_crash_count_limit(void) { return g_cfg.crash_count_limit; }
 int         config_crash_window(void) { return g_cfg.crash_window; }
+int         config_drm_backoff(void) { return g_cfg.drm_backoff; }
 int         config_allow_duplicate_login(void) { return g_cfg.allow_duplicate_login; }
 
 int config_is_seat_ignored(const char *seat_id) {

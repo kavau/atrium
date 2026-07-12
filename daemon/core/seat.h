@@ -6,6 +6,7 @@
  * Keeps a list of currently active seats and their state.
  */
 
+#include <stdint.h>
 #include <sys/types.h>
 #include <time.h>
 
@@ -18,11 +19,12 @@ typedef enum {
 
 /* Holds the current state of a seat */
 typedef struct seat {
-    char name[MAX_LEN_SEAT];
-    int vtnr;         /* allocated VT number; 0 for non-seat0 seats */
-    seat_state state; /* current state: SEAT_IDLE or SEAT_RUNNING */
-    pid_t runner_pid; /* PID of the session runner, or 0 if none */
-    int restart_tfd;  /* Timer for pending restarts; -1 if none */
+    char       name[MAX_LEN_SEAT];
+    int        vtnr;             /* allocated VT number; 0 for non-seat0 seats */
+    seat_state state;            /* current state: SEAT_IDLE or SEAT_RUNNING */
+    pid_t      runner_pid;       /* PID of the session runner, or 0 if none */
+    int        restart_tfd;      /* Timer for pending restarts; -1 if none */
+    int64_t    backoff_until_ms; /* deadline until which to suppress DRM events after a crash */
     /* Crash-loop detection */
     int             crash_count;        /* Number of abnormal runner exits... */
     struct timespec crash_window_start; /* ...since start of crash window */
