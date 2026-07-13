@@ -14,7 +14,7 @@
 #include "auth.h"
 #include "compositor.h"
 #include "daemon/core/bus.h"
-#include "daemon/core/config.h"
+#include "daemon/policy/config.h"
 #include "daemon/core/seat.h"
 #include "daemon/core/vt.h"
 #include "greeter.h"

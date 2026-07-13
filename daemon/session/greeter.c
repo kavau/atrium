@@ -6,8 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "daemon/core/config.h"
 #include "daemon/core/seat.h"
+#include "daemon/policy/config.h"
 #include "exec.h"
 #include "lib/ipc.h"
 #include "lib/log.h"

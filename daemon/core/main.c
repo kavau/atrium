@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 #include "bus.h"
-#include "config.h"
+#include "daemon/policy/config.h"
 #include "drm.h"
 #include "lib/defs.h"
 #include "lib/log.h"

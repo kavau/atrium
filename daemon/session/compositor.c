@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 #include "auth.h"
-#include "daemon/core/config.h"
+#include "daemon/policy/config.h"
 #include "exec.h"
 #include "lib/log.h"
 #include "sessions.h"
