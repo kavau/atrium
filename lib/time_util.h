@@ -1,5 +1,9 @@
 #pragma once
 
+/*
+ * time_util.h - time helper functions
+ */
+
 #include <stdint.h>
 #include <time.h>
 

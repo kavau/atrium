@@ -1,7 +1,5 @@
 #pragma once
 
-#include "daemon/core/seat.h"
-
 /*
  * policy.h - policy management
  *
@@ -9,6 +7,8 @@
  * verdict; core executes the verdict. The intention is to simplify the rest of
  * the daemon code, which is now mostly mechanism.
  */
+
+#include "daemon/core/seat.h"
 
 typedef enum {
     REASON_IDLE,     /* Seat never ran, or is waiting for a scheduled restart */

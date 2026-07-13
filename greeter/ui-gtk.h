@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  * ui-gtk.h - GTK-based greeter UI
  *
@@ -5,8 +7,6 @@
  * logic should go into separate files to allow for future alternative UI
  * implementations.
  */
-
-#pragma once
 
 #include "lib/ipc.h"
 #include "users.h"

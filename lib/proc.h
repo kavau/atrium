@@ -1,5 +1,9 @@
 #pragma once
 
+/*
+ * proc.h - child process management helpers
+ */
+
 #include <unistd.h>
 
 /* Send SIGTERM to pid, poll for exit up to 5 s, then escalate to SIGKILL.

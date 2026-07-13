@@ -1,10 +1,10 @@
 #pragma once
 
-#include <stddef.h>
-
 /*
  * drm.h - DRM status and event monitoring
  */
+
+#include <stddef.h>
 
 /* Returns 1 if seat_name has at least one connected DRM display, 0 if not, or
 -1 on error. */

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <stddef.h>
-
 /*
  * sessions.h - session discovery from .desktop files
  */
+
+#include <stddef.h>
 
 typedef struct {
     char *id;            /* filename without .desktop suffix */
