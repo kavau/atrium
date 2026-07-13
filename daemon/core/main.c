@@ -12,6 +12,7 @@
 
 #include "bus.h"
 #include "daemon/policy/config.h"
+#include "daemon/policy/policy.h"
 #include "drm.h"
 #include "lib/defs.h"
 #include "lib/log.h"
@@ -23,77 +24,10 @@
 
 static int g_shutting_down = 0; /* Set if SIGTERM has been received */
 
-/* Records an abnormal runner exit for s and returns 1 if the seat should be
-retried, or 0 if the crash limit has been reached. */
-static int seat_should_retry(seat *s) {
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    long elapsed_ms = 0;
-
-    if (s->crash_count++ > 0) {
-        /* Fixed time window anchored at the first crash - not as accurate as a
-        sliding window, but simpler and good enough for our purpose. */
-        elapsed_ms = timediff_ms(s->crash_window_start, now);
-        if (elapsed_ms > (long)config_crash_window() * 1000) {
-            s->crash_count = 1; /* Window expired - start a new window. */
-        }
-    }
-    if (s->crash_count <= 1) {
-        s->crash_window_start = now; /* First crash - start a new window. */
-    }
-    if (s->crash_count >= config_crash_count_limit()) {
-        log_error("seat '%s': %d crashes in %ld ms, giving up", s->name, s->crash_count,
-                  elapsed_ms);
-        return 0;
-    }
-    return 1;
-}
-
-static void reset_seat_crash_counts(void) {
-    for (seat *s = seat_first(); s; s = seat_next(s)) {
-        s->crash_count = 0;
-        s->crash_window_start = (struct timespec){0};
-        s->backoff_until_ms = 0;
-    }
-}
-
-/* Schedule a delayed retry, or leave the seat idle if the crash limit has been
-reached. */
-static void schedule_retry_or_give_up(seat *s) {
-    /* Discard any pending retry timer. */
-    if (s->restart_tfd >= 0) {
-        close(s->restart_tfd);
-        s->restart_tfd = -1;
-    }
-    /* Suppress DRM change events for a short time period. A crashing greeter
-    emits such events, which would otherwise trigger an immediate restart. */
-    s->backoff_until_ms = mono_ms() + config_drm_backoff();
-
-    if (!seat_should_retry(s))
-        return; /* crash limit reached - seat stays idle */
-
-    int delay_ms = config_crash_restart_delay();
-    log_info("seat '%s': crash %d/%d, restarting after %d ms", s->name, s->crash_count,
-             config_crash_count_limit(), delay_ms);
-    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
-    if (tfd < 0) {
-        log_syserr("seat '%s': timerfd_create, leaving seat idle", s->name);
-        return;
-    }
-    /* itimerspec_ms(0) disarms the timer, hence we clamp to 1 ms. */
-    struct itimerspec ts = itimerspec_ms(delay_ms > 0 ? delay_ms : 1);
-    timerfd_settime(tfd, 0, &ts, NULL);
-    s->restart_tfd = tfd;
-}
+static void maybe_start_runner(seat *s, retry_reason reason); /* forward declaration */
 
 /* Check whether seat has a connected display and start its runner if yes. */
-static void start_runner_if_display(seat *s) {
-    if (g_shutting_down)
-        return;
-    if (config_is_seat_ignored(s->name)) {
-        log_info("ignoring seat '%s' (listed in config)", s->name);
-        return;
-    }
+static void start_runner_now(seat *s) {
 #if !HEADLESS
     int r = drm_seat_has_display(s->name);
     if (r == 0) {
@@ -106,7 +40,45 @@ static void start_runner_if_display(seat *s) {
     log_info("starting session runner on seat '%s'", s->name);
     if (runner_start(PAM_CONF_PATH, s) != 0) {
         log_warn("seat '%s': runner_start failed (fork error), scheduling retry", s->name);
-        schedule_retry_or_give_up(s);
+        maybe_start_runner(s, REASON_CRASHED);
+    }
+}
+
+/* Schedule a delayed seat restart. timerfd is handled by the event loop. */
+static void schedule_restart(seat *s, int delay_ms) {
+    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (tfd < 0) {
+        log_syserr("seat '%s': timerfd_create, leaving seat idle", s->name);
+        return;
+    }
+    /* itimerspec_ms(0) disarms the timer, hence we clamp to 1 ms. */
+    struct itimerspec ts = itimerspec_ms(delay_ms > 0 ? delay_ms : 1);
+    timerfd_settime(tfd, 0, &ts, NULL);
+    s->restart_tfd = tfd;
+}
+
+/* Single entry point for (re-)starting a session runner. Restarts the seat or
+leaves it idle, according to policy. */
+static void maybe_start_runner(seat *s, retry_reason reason) {
+    if (g_shutting_down)
+        return;
+    if (s->restart_tfd >= 0) {
+        log_error("seat '%s': discarding stale retry timer at seat restart (reason=%d)", s->name,
+                  (int)reason);
+        close(s->restart_tfd);
+        s->restart_tfd = -1;
+    }
+    int           delay_ms = 0;
+    retry_verdict verdict = policy_should_retry_seat(s, reason, &delay_ms);
+    switch (verdict) {
+        case RETRY_NOW:
+            start_runner_now(s);
+            break;
+        case RETRY_DELAYED:
+            schedule_restart(s, delay_ms);
+            break;
+        case RETRY_NONE:
+            break; /* nothing to do */
     }
 }
 
@@ -136,23 +108,7 @@ static void on_seat(const char *seat_id, void *userdata) {
         log_error("on_seat: seat_add failed for '%s'", seat_id);
         return;
     }
-    start_runner_if_display(s);
-}
-
-/* Handle a DRM connector-change event for the specified seat. */
-static void handle_drm_event(const char *seat_name) {
-    seat *s = seat_find_by_name(seat_name);
-    /* Do not restart if a retry timer is pending, this would bypass the
-    crash-restart delay */
-    if (!s || s->state != SEAT_IDLE || s->restart_tfd >= 0)
-        return;
-    if (s->backoff_until_ms && mono_ms() < s->backoff_until_ms) {
-        log_debug("seat '%s': DRM event suppressed (backoff active)", s->name);
-        return;
-    }
-    /* We deliberately do not reset the crash history here, so that a spurious
-    event does not trigger an entire batch of attempts. */
-    start_runner_if_display(s);
+    maybe_start_runner(s, REASON_IDLE);
 }
 
 int main(int argc, char *argv[]) {
@@ -268,8 +224,13 @@ int main(int argc, char *argv[]) {
         /* Process DRM connector-change events */
         if ((pfds[1].revents & POLLIN) && drm_mon) {
             char seat_name[MAX_LEN_SEAT];
-            if (drm_monitor_read_seat(drm_mon, seat_name, sizeof(seat_name)) == 1)
-                handle_drm_event(seat_name);
+            if (drm_monitor_read_seat(drm_mon, seat_name, sizeof(seat_name)) == 1) {
+                seat *s = seat_find_by_name(seat_name);
+                /* Do not restart if a retry timer is pending, this would bypass the
+                crash-restart delay. */
+                if (s && s->state == SEAT_IDLE && s->restart_tfd < 0)
+                    maybe_start_runner(s, REASON_DRM_EVENT);
+            }
         }
 
         /* Process seat restart timers */
@@ -282,7 +243,7 @@ int main(int argc, char *argv[]) {
                 close(s->restart_tfd);
                 s->restart_tfd = -1;
                 if (s->state == SEAT_IDLE)
-                    start_runner_if_display(s);
+                    maybe_start_runner(s, REASON_IDLE);
                 break;
             }
         }
@@ -322,27 +283,23 @@ int main(int argc, char *argv[]) {
                 s->runner_pid = 0;
                 s->state = SEAT_IDLE;
 
-                /* If the last session exited cleanly, simply restart the seat. Otherwise restart
-                after a delay, unless the seat crashed too frequently, in which case we give up on
-                the seat. */
-                if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0) { /* Normal exit */
-                    log_info("restarting session runner on seat '%s'", s->name);
-                    start_runner_if_display(s);
-                } else {
-                    schedule_retry_or_give_up(s);
-                }
+                retry_reason reason = (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0)
+                                          ? REASON_EXITED
+                                          : REASON_CRASHED;
+                maybe_start_runner(s, reason);
             }
         } else if ((int)si.ssi_signo == SIGUSR1) {
             log_info("received SIGUSR1, reloading config and retrying idle seats");
             config_load();
             /* Forward the signal to all active session runners, and retry idle seats */
-            reset_seat_crash_counts();
+            policy_reset();
             for (seat *s = seat_first(); s; s = seat_next(s)) {
                 if (s->runner_pid > 0) {
                     if (kill(s->runner_pid, SIGUSR1) < 0)
                         log_syserr("main: kill pid %d SIGUSR1", s->runner_pid);
-                } else if (s->state == SEAT_IDLE && s->restart_tfd < 0)
-                    start_runner_if_display(s);
+                } else if (s->state == SEAT_IDLE && s->restart_tfd < 0) {
+                    maybe_start_runner(s, REASON_IDLE);
+                }
             }
         } else if ((int)si.ssi_signo == SIGTERM) {
             g_shutting_down = 1;
