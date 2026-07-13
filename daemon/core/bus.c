@@ -184,7 +184,7 @@ int bus_create_session(const char *seat_id, uint32_t vtnr, uid_t uid, pid_t pid,
     snprintf(runtime_out, runtime_size, "%s", runtime_path);
 
     /* dup the fifo fd with O_CLOEXEC so it survives sd_bus_message_unref
-     * but does not leak into child processes. */
+    but does not leak into child processes. */
     *fifo_fd_out = fcntl(fifo_fd, F_DUPFD_CLOEXEC, 0);
     if (*fifo_fd_out < 0) {
         log_error("bus_create_session: dup fifo: %s", strerror(errno));

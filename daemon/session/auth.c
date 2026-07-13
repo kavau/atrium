@@ -78,7 +78,7 @@ int auth_authenticate(const char *username, const char *password, const char **e
 
 #ifdef HAVE_PAM_START_CONFDIR
     /* pam_start_confdir() is equivalent to pam_start() but allows setting a
-     * configuration directory other than /etc/pam.d - useful for testing. */
+    configuration directory other than /etc/pam.d - useful for testing. */
     log_info("starting PAM auth with config path %s",
              pam_conf_path ? pam_conf_path : "(default)");
     int r = pam_start_confdir(service_name, username, &conv, pam_conf_path, &pamh);

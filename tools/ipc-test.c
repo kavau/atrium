@@ -30,7 +30,7 @@ static _Noreturn void child_process(ipc_channel *ch) {
         perror("child: read");
         _exit(EXIT_FAILURE);
     }
-    buffer[bytes_read] = '\0'; // Null-terminate the string
+    buffer[bytes_read] = '\0'; /* null-terminate the string */
     printf("Greeter received: %s\n", buffer);
 
     ipc_close(ch);
@@ -45,7 +45,7 @@ static int parent_process(ipc_channel *ch) {
         perror("parent: read");
         return EXIT_FAILURE;
     }
-    buffer[bytes_read] = '\0'; // Null-terminate the string
+    buffer[bytes_read] = '\0'; /* null-terminate the string */
     printf("Daemon received: %s\n", buffer);
 
     /* Send response to greeter */
@@ -82,11 +82,11 @@ int main(int argc, char *argv[]) {
 
     if (pid == 0) {
         /* Child process: act as greeter */
-        ipc_close(parent_end); // Close the parent's end
+        ipc_close(parent_end); /* close the parent's end */
         child_process(child_end);
     }
 
     /* Parent process: act as daemon */
-    ipc_close(child_end); // Close the child's end
+    ipc_close(child_end); /* close the child's end */
     return parent_process(parent_end);
 }

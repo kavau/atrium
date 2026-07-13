@@ -21,5 +21,5 @@ int ipc_send_credentials(ipc_channel *ch, const char *username, const char *pass
                          const char *session_id);
 
 /* Read and parse a daemon response. On IPC_FAIL, reason is populated with a
- * user-facing message. On IPC_OK, reason is set to an empty string. */
+user-facing message. On IPC_OK, reason is set to an empty string. */
 ipc_status ipc_read_result(ipc_channel *ch, char *reason, size_t reason_len);

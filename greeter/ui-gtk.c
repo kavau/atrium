@@ -239,7 +239,7 @@ static const char *get_selected_session_id(void) {
 }
 
 /* Disable the window, send credentials, and register the IPC response watcher.
- * Re-enables the window on send failure. */
+Re-enables the window on send failure. */
 static void submit_credentials(GtkWidget *widget, const char *password) {
     reset_page();
     start_spinner();
@@ -334,7 +334,7 @@ static void card_create(GdkRectangle geo) {
     gtk_box_append(GTK_BOX(users_box), users_error_label);
     g_users_error_label = GTK_LABEL(users_error_label);
 
-    /* Session dropdown — only shown when there are two or more sessions. */
+    /* Session dropdown - only shown when there are two or more sessions. */
     if (g_num_sessions > 1) {
         GtkWidget *session_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_widget_add_css_class(session_row, "session-row");
