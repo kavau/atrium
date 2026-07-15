@@ -89,16 +89,40 @@ G_DEFINE_TYPE(GlassCard, glass_card, GTK_TYPE_WIDGET)
 static void glass_card_measure(GtkWidget *widget, GtkOrientation orientation, int for_size,
                                int *minimum, int *natural, int *min_baseline, int *nat_baseline) {
     GlassCard *self = GLASS_CARD(widget);
-    if (self->child) {
-        gtk_widget_measure(self->child, orientation, for_size, minimum, natural, min_baseline,
-                           nat_baseline);
-    } else {
+    if (!self->child) {
         *minimum = *natural = 0;
         if (min_baseline)
             *min_baseline = -1;
         if (nat_baseline)
             *nat_baseline = -1;
+        return;
     }
+
+    if (orientation == GTK_ORIENTATION_VERTICAL && for_size < 0) {
+        /* Measure the child's height for unconstrained width. This needs a
+        two-pass approach, because wrapping text (i.e. an error message) reports
+        its height at minimum width, making the card unnaturally tall.
+        The fix: first ask the child for its natural (preferred) width, then ask
+        for its height at that width. */
+        int nat_w;
+        gtk_widget_measure(self->child, GTK_ORIENTATION_HORIZONTAL, -1, NULL, &nat_w, NULL, NULL);
+        int min_w = -1;
+        gtk_widget_get_size_request(widget, &min_w, NULL);
+        /* effective width is the larger of natural width and requested minimum width */
+        int effective_w = MAX(nat_w, min_w);
+        gtk_widget_measure(self->child, GTK_ORIENTATION_VERTICAL, effective_w, minimum, natural,
+                           min_baseline, nat_baseline);
+        return;
+    }
+
+    gtk_widget_measure(self->child, orientation, for_size, minimum, natural, min_baseline,
+                       nat_baseline);
+}
+
+/* Forward the child's request mode (GtkWidget defaults to CONSTANT_SIZE). */
+static GtkSizeRequestMode glass_card_get_request_mode(GtkWidget *widget) {
+    GlassCard *self = GLASS_CARD(widget);
+    return self->child ? gtk_widget_get_request_mode(self->child) : GTK_SIZE_REQUEST_CONSTANT_SIZE;
 }
 
 static void glass_card_size_allocate(GtkWidget *widget, int width, int height, int baseline) {
@@ -121,6 +145,7 @@ static void glass_card_dispose(GObject *object) {
 
 static void glass_card_class_init(GlassCardClass *klass) {
     G_OBJECT_CLASS(klass)->dispose = glass_card_dispose;
+    GTK_WIDGET_CLASS(klass)->get_request_mode = glass_card_get_request_mode;
     GTK_WIDGET_CLASS(klass)->measure = glass_card_measure;
     GTK_WIDGET_CLASS(klass)->size_allocate = glass_card_size_allocate;
 }
