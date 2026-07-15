@@ -17,6 +17,15 @@
               0 0 40px rgba(122, 162, 247, 0.06);
 }
 
+.card-background {
+  opacity: 1;
+  filter: blur(16px) brightness(0.8);
+}
+
+.card-tint {
+  background-color: rgba(@atrium-card, 0.7);
+}
+
 .password-field {
   border-radius: 6px;
 }

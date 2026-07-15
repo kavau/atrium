@@ -1,13 +1,13 @@
 /* Hacker -- classic phosphor green terminal */
 @define-color atrium-bg           #000000; /* pure black */
-@define-color atrium-card         #0a1a0a; /* very dark green */
-@define-color atrium-text         #00ff00; /* neon green */
+@define-color atrium-card         rgba(10, 26, 10, 0.8); /* very dark green, 80% opacity */
+@define-color atrium-text         #00b000; /* mid-intensity phosphor */
 @define-color atrium-border       #003300; /* dark green */
-@define-color atrium-accent       #00ff00; /* neon green */
-@define-color atrium-accent-hover #00cc00; /* darker green */
+@define-color atrium-accent       #00aa00; /* neon green */
+@define-color atrium-accent-hover #008800; /* darker green */
 @define-color atrium-accent-fg    #000000; /* black text */
 @define-color atrium-subtle       #006600; /* medium green */
-@define-color atrium-error        #ff3300; /* orange-red */
+@define-color atrium-error        #44dd44; /* brighter phosphor */
 @define-color atrium-dropdown     #003300; /* dark green */
 
 /* Sharp corners and phosphor glow -- no rounded UI allowed in the terminal. */
@@ -17,6 +17,10 @@
   box-shadow: 0 0 20px rgba(0, 255, 0, 0.25),
               0 0 60px rgba(0, 255, 0, 0.08),
               inset 0 0 20px rgba(0, 255, 0, 0.04);
+}
+
+.wallpaper {
+  filter: brightness(0.7); /* hackers prefer darkness */
 }
 
 .password-field {

@@ -16,6 +16,15 @@
               inset 0 0 0 2px rgba(200, 170, 110, 0.50);
 }
 
+.card-background {
+  opacity: 1;
+  filter: blur(16px) contrast(1) brightness(1.08) saturate(1);
+}
+
+.card-tint {
+  background-color: rgba(@atrium-card, 0.4);
+}
+
 .password-field {
   border-radius: 16px;
 }

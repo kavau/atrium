@@ -19,6 +19,19 @@
               inset 0 0 20px rgba(0, 200, 255, 0.15);     /* inner glow */
 }
 
+.card-background {
+  opacity: 1;
+  filter: blur(16px) contrast(0.90) brightness(0.75) saturate(1.10);
+}
+
+.card-tint {
+  background-color: rgba(0, 180, 255, 0.06); /* barely-there cyan wash */
+}
+
+.wallpaper {
+  filter: brightness(0.55); /* tron grid has near-darkness */
+}
+
 .password-field {
   border-radius: 0;
 }
