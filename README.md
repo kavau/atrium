@@ -45,6 +45,28 @@ and distributions, so expect some rough edges.
 
 See [doc/architecture.md](doc/architecture.md) for a **detailed design overview**.
 
+#### Screenshots
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <a href="doc/screenshots/login.png">
+        <img src="doc/screenshots/login.png" alt="User selection"></a><br>
+      <sub>Greeter with default theme</sub>
+    </td>
+    <td align="center" width="33%">
+      <a href="doc/screenshots/password.png">
+        <img src="doc/screenshots/password.png" alt="Password entry"></a><br>
+      <sub>Password entry</sub>
+    </td>
+    <td align="center" width="33%">
+      <a href="doc/screenshots/ghibli.webp">
+        <img src="doc/screenshots/ghibli.webp" alt="Ghibli theme"></a><br>
+      <sub>Ghibli theme</sub>
+    </td>
+  </tr>
+</table>
+
 #### What's new since v0.4
 
 - **Live config reload** - `sudo systemctl reload atrium` reloads the daemon
