@@ -63,19 +63,27 @@ static void switch_page(greeter_page page) {
     gtk_stack_set_visible_child_name(g_stack, name);
 }
 
+/* Reset page's spinner and error label to their idle state. */
+static void reset_page_widgets(GtkSpinner *spinner, GtkLabel *error_label) {
+    gtk_spinner_stop(spinner);
+    gtk_widget_set_visible(GTK_WIDGET(spinner), FALSE);
+    gtk_label_set_text(error_label, "");
+    gtk_widget_set_visible(GTK_WIDGET(error_label), FALSE);
+}
+
 /* Reset the current page to its idle state: hide its spinner and error label. */
 static void reset_page(void) {
-    if (current_page() == PAGE_USERS) {
-        gtk_spinner_stop(g_users_spinner);
-        gtk_widget_set_visible(GTK_WIDGET(g_users_spinner), FALSE);
-        gtk_label_set_text(g_users_error_label, "");
-        gtk_widget_set_visible(GTK_WIDGET(g_users_error_label), FALSE);
-    } else {
-        gtk_spinner_stop(g_password_spinner);
-        gtk_widget_set_visible(GTK_WIDGET(g_password_spinner), FALSE);
-        gtk_label_set_text(g_password_error_label, "");
-        gtk_widget_set_visible(GTK_WIDGET(g_password_error_label), FALSE);
-    }
+    if (current_page() == PAGE_USERS)
+        reset_page_widgets(g_users_spinner, g_users_error_label);
+    else
+        reset_page_widgets(g_password_spinner, g_password_error_label);
+}
+
+/* Reset both pages to their idle state. Use this for all page transitions, otherwise
+the old page's content can still influence the new page's layout. */
+static void reset_all_pages(void) {
+    reset_page_widgets(g_users_spinner, g_users_error_label);
+    reset_page_widgets(g_password_spinner, g_password_error_label);
 }
 
 /* Start the spinner for the current page. */
@@ -278,7 +286,7 @@ static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
     gtk_label_set_text(g_user_label, title);
     gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
     switch_page(PAGE_PASSWORD);
-    reset_page();
+    reset_all_pages();
     gtk_widget_grab_focus(GTK_WIDGET(g_password_entry));
 }
 
@@ -288,7 +296,7 @@ static void on_back_clicked(GtkWidget *widget, gpointer user_data) {
     g_selected_user = NULL;
     gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
     switch_page(PAGE_USERS);
-    reset_page();
+    reset_all_pages();
 }
 
 static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
