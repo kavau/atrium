@@ -159,6 +159,7 @@ executable('atrium-gtk-greeter',
   sources: [
     greeter_resources,
     'greeter/config.c',
+    'greeter/glass.c',
     'greeter/ipc.c',
     'greeter/main-gtk.c',
     'greeter/theme.c',

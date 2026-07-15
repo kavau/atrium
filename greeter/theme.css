@@ -19,8 +19,16 @@ window {
 .card {
   background-color: @atrium-card;
   border-radius: 12px;
-  padding: 56px 64px;
-  min-width: 340px;
+}
+
+/* Glass bg layer is off by default; glass themes override with opacity: 1 and a filter. */
+.card-background {
+  opacity: 0;
+}
+
+/* Tint over the frosted glass background (when glass is enabled). */
+.card-tint {
+  background-color: alpha(@atrium-card, 0.6);
 }
 
 .heading {

@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "defs.h"
+#include "glass.h"
 #include "ipc.h"
 #include "lib/log.h"
 #include "theme.h"
@@ -18,6 +19,9 @@
 #define USER_BUTTONS_SPACING   8            /* vertical gap between user buttons */
 #define ACTION_BUTTONS_SPACING 4            /* vertical gap between login and back buttons */
 #define BLANK_MOTION_GUARD_US  (200 * 1000) /* ignore motion events for 200 ms after blanking */
+#define CARD_CONTENT_MIN_WIDTH 340          /* minimum content-area width */
+#define CARD_PADDING_H         64           /* horizontal inset inside the card */
+#define CARD_PADDING_V         56           /* vertical inset inside the card */
 
 /* The different pages in the UI stack. */
 typedef enum {
@@ -29,6 +33,7 @@ typedef enum {
 static ipc_channel           *g_ch;
 static GtkFixed              *g_root;
 static GtkStack              *g_stack;
+static GtkWidget             *g_card;
 static GtkWindow             *g_window;
 static GtkLabel              *g_user_label;
 static GtkEntry              *g_password_entry;
@@ -169,7 +174,7 @@ static void on_motion(GtkEventControllerMotion *controller, gdouble x, gdouble y
 }
 
 static gboolean on_auth_timeout(gpointer user_data) {
-    GtkWidget *widget = GTK_WIDGET(user_data);
+    (void)user_data;
     log_error("greeter: timed out waiting for daemon response");
     g_auth_timeout_id = 0;
     if (g_auth_fd_source_id != 0) {
@@ -178,14 +183,14 @@ static gboolean on_auth_timeout(gpointer user_data) {
     }
     unblank_screen();
     show_error(IPC_ERROR_INTERNAL);
-    gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
+    gtk_widget_set_sensitive(g_card, TRUE);
     return G_SOURCE_REMOVE;
 }
 
 /* Callback for IPC response from the daemon */
 static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer user_data) {
     (void)fd;
-    GtkWidget *widget = GTK_WIDGET(user_data);
+    (void)user_data;
 
     if (g_auth_timeout_id != 0) {
         g_source_remove(g_auth_timeout_id);
@@ -217,7 +222,7 @@ static gboolean on_ipc_response_ready(gint fd, GIOCondition condition, gpointer 
     return G_SOURCE_REMOVE;
 
 err:
-    gtk_widget_set_sensitive(GTK_WIDGET(gtk_widget_get_root(widget)), TRUE);
+    gtk_widget_set_sensitive(g_card, TRUE);
     if (current_page() == PAGE_PASSWORD) {
         /* Clear and refocus the password field so user can retype it. */
         gtk_editable_set_text(GTK_EDITABLE(g_password_entry), "");
@@ -238,34 +243,33 @@ static const char *get_selected_session_id(void) {
     return "";
 }
 
-/* Disable the window, send credentials, and register the IPC response watcher.
-Re-enables the window on send failure. */
-static void submit_credentials(GtkWidget *widget, const char *password) {
+/* Disable the window, send credentials, and register the IPC response watcher. */
+static void submit_credentials(const char *password) {
     reset_page();
     start_spinner();
 
-    GtkRoot *root = gtk_widget_get_root(widget);
-    gtk_widget_set_sensitive(GTK_WIDGET(root), FALSE);
+    gtk_widget_set_sensitive(g_card, FALSE);
     if (ipc_send_credentials(g_ch, g_selected_user->username, password,
                              get_selected_session_id()) != 0) {
         show_error(IPC_ERROR_INTERNAL);
-        gtk_widget_set_sensitive(GTK_WIDGET(root), TRUE);
+        gtk_widget_set_sensitive(g_card, TRUE);
         return;
     }
     g_auth_fd_source_id = g_unix_fd_add(ipc_get_read_fd(g_ch), G_IO_IN | G_IO_ERR | G_IO_HUP,
-                                        on_ipc_response_ready, widget);
-    g_auth_timeout_id = g_timeout_add_seconds(GREETER_AUTH_TIMEOUT, on_auth_timeout, widget);
+                                        on_ipc_response_ready, NULL);
+    g_auth_timeout_id = g_timeout_add_seconds(GREETER_AUTH_TIMEOUT, on_auth_timeout, NULL);
     log_info("greeter: sent credentials for user '%s'; waiting for response",
              g_selected_user->username);
 }
 
 static void on_user_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
     g_selected_user = user_data;
 
     if (g_selected_user->passwordless) {
         log_info("greeter: passwordless user '%s', skipping password page",
                  g_selected_user->username);
-        submit_credentials(widget, "");
+        submit_credentials("");
         return;
     }
 
@@ -297,22 +301,36 @@ static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     log_debug("greeter: login clicked for user '%s'", g_selected_user->username);
 
     gtk_root_set_focus(gtk_widget_get_root(widget), NULL);
-    submit_credentials(widget, gtk_editable_get_text(GTK_EDITABLE(g_password_entry)));
+    submit_credentials(gtk_editable_get_text(GTK_EDITABLE(g_password_entry)));
 }
 
-static void card_create(GdkRectangle geo) {
+/* Build the login card for the monitor rectangle geo. bg_file and bg_picture
+(both may be NULL) are the wallpaper the glass card samples. */
+static void card_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_picture) {
+    GtkWidget *slot = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(slot, geo.width, geo.height);
+    gtk_fixed_put(g_root, slot, geo.x, geo.y);
+
     /* Stack consisting of user selection page and password entry page. */
     GtkWidget *stack = gtk_stack_new();
-    gtk_widget_set_size_request(stack, geo.width, geo.height);
-    gtk_fixed_put(g_root, stack, geo.x, geo.y);
     g_stack = GTK_STACK(stack);
+
+    /* Glass card wrapping the stack. */
+    g_card = glass_card_new(bg_file, bg_picture, stack);
+    gtk_widget_set_halign(g_card, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(g_card, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(g_card, TRUE);
+    gtk_widget_set_vexpand(g_card, TRUE);
+    gtk_widget_set_size_request(g_card, CARD_CONTENT_MIN_WIDTH + 2 * CARD_PADDING_H, -1);
+    gtk_box_append(GTK_BOX(slot), g_card);
 
     /* User selection page */
 
     GtkWidget *users_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_USERS);
-    gtk_widget_set_halign(users_box, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(users_box, GTK_ALIGN_CENTER);
-    gtk_widget_add_css_class(users_box, "card");
+    gtk_widget_set_margin_top(users_box, CARD_PADDING_V);
+    gtk_widget_set_margin_bottom(users_box, CARD_PADDING_V);
+    gtk_widget_set_margin_start(users_box, CARD_PADDING_H);
+    gtk_widget_set_margin_end(users_box, CARD_PADDING_H);
     gtk_stack_add_named(g_stack, users_box, "users");
 
     GtkWidget *heading = gtk_label_new(greeter_config_login_label());
@@ -377,9 +395,10 @@ static void card_create(GdkRectangle geo) {
     /* Password entry page */
 
     GtkWidget *password_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, CARD_SPACING_PASSWORD);
-    gtk_widget_set_halign(password_box, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(password_box, GTK_ALIGN_CENTER);
-    gtk_widget_add_css_class(password_box, "card");
+    gtk_widget_set_margin_top(password_box, CARD_PADDING_V);
+    gtk_widget_set_margin_bottom(password_box, CARD_PADDING_V);
+    gtk_widget_set_margin_start(password_box, CARD_PADDING_H);
+    gtk_widget_set_margin_end(password_box, CARD_PADDING_H);
     gtk_stack_add_named(g_stack, password_box, "password");
 
     GtkWidget *password_title = gtk_label_new("");
@@ -453,13 +472,29 @@ static void activate(GtkApplication *app, gpointer user_data) {
     g_signal_connect(motion_controller, "motion", G_CALLBACK(on_motion), NULL);
     gtk_widget_add_controller(GTK_WIDGET(g_window), motion_controller);
 
-    /* Overlay for screen blanking. */
+    /* Overlay: wallpaper picture base, GtkFixed + blank screen on top. */
     GtkWidget *overlay = gtk_overlay_new();
     gtk_window_set_child(g_window, overlay);
 
+    /* Wallpaper picture as the base layer; the glass card samples it. */
+    char      *bg_path = theme_resolve_background_path();
+    GFile     *bg_file = NULL;
+    GtkWidget *bg_picture = NULL;
+    if (bg_path) {
+        log_info("greeter: background image: %s", bg_path);
+        bg_file = g_file_new_for_path(bg_path);
+        bg_picture = gtk_picture_new_for_filename(bg_path);
+        gtk_picture_set_content_fit(GTK_PICTURE(bg_picture), GTK_CONTENT_FIT_COVER);
+        gtk_overlay_set_child(GTK_OVERLAY(overlay), bg_picture);
+        g_free(bg_path);
+    }
+
     /* Build everything on top of a GtkFixed so we can handle multi-monitor geometries. */
     g_root = GTK_FIXED(gtk_fixed_new());
-    gtk_overlay_set_child(GTK_OVERLAY(overlay), GTK_WIDGET(g_root));
+    if (bg_picture)
+        gtk_overlay_add_overlay(GTK_OVERLAY(overlay), GTK_WIDGET(g_root));
+    else
+        gtk_overlay_set_child(GTK_OVERLAY(overlay), GTK_WIDGET(g_root));
 
     /* Get the geometry of the default monitor. */
     GdkRectangle default_monitor_geo = {.width = 800, .height = 600};
@@ -472,7 +507,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     }
 
     /* Build the login card */
-    card_create(default_monitor_geo);
+    card_create(default_monitor_geo, bg_file, bg_picture);
+    if (bg_file)
+        g_object_unref(bg_file);
 
     /* SHORTCUT - show a black screen instead of real DPMS. */
     GtkWidget *blank_screen = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
