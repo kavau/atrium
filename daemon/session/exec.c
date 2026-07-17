@@ -5,7 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <syslog.h>
+#ifdef HAVE_SD_JOURNAL
 #include <systemd/sd-journal.h>
+#endif
 #include <unistd.h>
 
 #include "lib/log.h"
@@ -39,11 +41,13 @@ static void redirect_stderr_to_journal(void) {
     terminal instead of the journal when testing interactively. */
     if (getenv("ATRIUM_LOG_STDERR"))
         return;
+#ifdef HAVE_SD_JOURNAL
     int jfd = sd_journal_stream_fd("atrium", LOG_DEBUG, 1);
     if (jfd >= 0) {
         dup2(jfd, STDERR_FILENO);
         close(jfd);
     }
+#endif
 }
 
 _Noreturn void drop_privs_and_run(struct passwd *pw, const char *cmd, char *const env[]) {

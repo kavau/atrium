@@ -106,15 +106,10 @@ _¹ On Fedora, wallet/keyring auto-unlock is currently not working._
 Other systemd-based distros should work - the only distro-specific piece is the
 PAM stack. Adapt one of the provided PAM configs as needed.
 
-The following desktop environments have been tested:
+**Non-systemd-based distros** (Artix, Void, Devuan): atrium does not directly depend on systemd init - it only needs logind for seat management. If you run elogind, it should work with some changes to `meson.build` and the PAM config, and a service file for your init system. This is entirely untested, but I'd be happy to hear how it goes if you try it.
 
-- GNOME
-- KDE Plasma
-- COSMIC
-- Sway
-
-Any Wayland compositor with a session file in `/usr/share/wayland-sessions`
-should work - the list above reflects what has been verified.
+The following desktop environments have been tested: GNOME, KDE Plasma, COSMIC, Sway, Niri. Any Wayland compositor with a session file in `/usr/share/wayland-sessions`
+should work - this list reflects what has been verified.
 
 If atrium works on your setup, please consider adding a quick note to the
 [Compatibility Reports](https://github.com/kavau/atrium/issues/112) issue. If it
@@ -126,7 +121,7 @@ doesn't, please file a [bug report](https://github.com/kavau/atrium/issues/new).
 
 ### 1. Install dependencies
 
-- `libsystemd` - logind session management
+- `libsystemd` (or `libelogind`) - logind session management
 - `libudev` - seat discovery
 - `libpam` - user authentication
 - `gtk4` - greeter UI

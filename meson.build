@@ -59,7 +59,11 @@ daemon_bin = get_option('prefix') / 'bin' / 'atrium'
 
 # Dependencies
 
-dep_libsystemd = dependency('libsystemd')
+# Fall back onto libelogind for non-systemd setups.
+dep_libsystemd = dependency('libsystemd', required: false)
+if not dep_libsystemd.found()
+  dep_libsystemd = dependency('libelogind')
+endif
 dep_libudev    = dependency('libudev')
 dep_gtk4       = dependency('gtk4')
 # Use find_library rather than dependency('pam') to avoid pkg-config pulling in
@@ -69,10 +73,13 @@ dep_libpam     = cc.find_library('pam')
 
 # Feature detection
 
-have_pam_start_confdir = cc.has_function(
-    'pam_start_confdir',
-    dependencies: dep_libpam,
-)
+# sd_journal_stream_fd is libsystemd-only.
+have_sd_journal = cc.has_function('sd_journal_stream_fd', dependencies: dep_libsystemd)
+if have_sd_journal
+  add_project_arguments('-DHAVE_SD_JOURNAL=1', language: 'c')
+endif
+
+have_pam_start_confdir = cc.has_function('pam_start_confdir',dependencies: dep_libpam)
 if have_pam_start_confdir
     add_project_arguments('-DHAVE_PAM_START_CONFDIR=1', language: 'c')
 endif
