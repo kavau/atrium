@@ -11,19 +11,19 @@ off to an independent user session per seat.
 <table align="center">
   <tr>
     <td align="center" width="33%">
-      <a href="doc/screenshots/login.png">
-        <img src="doc/screenshots/login.png" alt="User selection"></a><br>
+      <a href="doc/screenshots/login.webp">
+        <img src="doc/screenshots/login.webp" alt="User selection"></a><br>
       <sub>Greeter with default theme</sub>
     </td>
     <td align="center" width="33%">
-      <a href="doc/screenshots/password.png">
-        <img src="doc/screenshots/password.png" alt="Password entry"></a><br>
-      <sub>Password entry</sub>
+      <a href="doc/screenshots/password.webp">
+        <img src="doc/screenshots/password.webp" alt="Password entry"></a><br>
+      <sub>Password entry - <code>hacker</code> theme</sub>
     </td>
     <td align="center" width="33%">
       <a href="doc/screenshots/ghibli.webp">
         <img src="doc/screenshots/ghibli.webp" alt="Ghibli theme"></a><br>
-      <sub>Ghibli theme</sub>
+      <sub><code>ghibli</code> theme</sub>
     </td>
   </tr>
 </table>
@@ -106,10 +106,16 @@ _¹ On Fedora, wallet/keyring auto-unlock is currently not working._
 Other systemd-based distros should work - the only distro-specific piece is the
 PAM stack. Adapt one of the provided PAM configs as needed.
 
-**Non-systemd-based distros** (Artix, Void, Devuan): atrium does not directly depend on systemd init - it only needs logind for seat management. If you run elogind, it should work with some changes to `meson.build` and the PAM config, and a service file for your init system. This is entirely untested, but I'd be happy to hear how it goes if you try it.
+**Non-systemd-based distros** (Artix, Void, Devuan): atrium does not directly
+depend on systemd init - it only needs logind for seat management. If you run
+elogind, it should work with some changes to `meson.build` and the PAM config,
+and a service file for your init system. This is entirely untested, but I'd be
+happy to hear how it goes if you try it.
 
-The following desktop environments have been tested: GNOME, KDE Plasma, COSMIC, Sway, Niri. Any Wayland compositor with a session file in `/usr/share/wayland-sessions`
-should work - this list reflects what has been verified.
+The following desktop environments have been tested: GNOME, KDE Plasma, COSMIC,
+Sway, Niri. Any Wayland compositor with a session file in
+`/usr/share/wayland-sessions` should work - this list reflects what has been
+verified.
 
 If atrium works on your setup, please consider adding a quick note to the
 [Compatibility Reports](https://github.com/kavau/atrium/issues/112) issue. If it
@@ -172,8 +178,8 @@ The `-Ddist` option (required) selects the correct PAM stack for the target dist
 
 Each config file is heavily commented; consult them for the full set of
 available keys and their meaning. Missing config files or keys fall back onto
-compiled-in defaults. More information can be found in the
-[Configuration](doc/configuration.md) doc.
+compiled-in defaults. More information can be found in
+[doc/configuration.md](doc/configuration.md).
 
 ### 4. Enable and start
 
@@ -200,8 +206,8 @@ sudo systemctl enable atrium
 Then reboot. atrium will start on boot and launch a greeter on every configured
 seat.
 
-If things go wrong, please take a look a the
-[Troubleshooting](doc/troubleshooting.md) doc.
+If things go wrong, please take a look at
+[doc/troubleshooting.md](doc/troubleshooting.md).
 
 ### 5. Uninstall
 
