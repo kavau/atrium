@@ -101,8 +101,8 @@ This avoids the main difficulties inherent in asynchronous signal handlers.
 atrium's children are session-runner processes, which handle the greeter + user
 session lifecycle for a seat. When the user session ends, the session runner
 exits, causing atrium to be notified via SIGCHLD; atrium then starts a new
-session runner for this seat, ensuring that no context (PAM, env, or fds) is
-carried over from the previous session.
+session runner for this seat, ensuring that no context is carried over from the
+previous session.
 
 In addition to the signal fd above, the event loop polls various fds
 related to hotplug detection and restart delays:
@@ -121,19 +121,19 @@ related to hotplug detection and restart delays:
 
 ### 4. Session Runner (`daemon/session/session_runner.c`)
 
-As detailed below in *User Session Creation*, the PAM authentication flow must
-not be executed in the daemon process. PAM sets process-specific environment
-variables that must not pollute the daemon's environment. Furthermore, the
-process calling `CreateSession` will become the session leader. This should be a
-session-specific process, not the daemon.
-
-Hence, before creating a new session, the daemon forks a *session runner*
-process, which becomes the session leader and manages the session lifecycle
-(including the greeter) for a particular seat.
+Before creating a new session, the daemon forks a *session runner* process,
+which becomes the session leader and manages the session lifecycle (including
+the greeter) for a particular seat. The reasons the session creation and PAM
+flow must run in a dedicated child process rather than in the daemon are
+detailed below in *User Session Creation*.
 
 Once the session compositor exits, the session runner tears down the login
 session and exits as well. This signals the daemon that the session has
 completed.
+
+An additional benefit is complete isolation between consecutive sessions: since
+each session runner is a freshly forked process, no state (environment, fds, PAM
+handles, or memory) can leak into the next session.
 
 ### 5. Greeter (`daemon/session/greeter.c`)
 
@@ -158,7 +158,7 @@ for each direction. The pipe fds are passed via two environment variables
 `username\0password\0session_id\0`, to which the session runner responds with
 either `ok\n` or `fail:<reason>\n`.
 
-Atrium uses the `cage` Wayland compositor to run the greeter UI.
+atrium uses the `cage` Wayland compositor to run the greeter UI.
 
 ### 6. PAM Authentication (`daemon/session/auth.c`)
 
@@ -166,15 +166,13 @@ User authentication is handled via PAM (Pluggable Authentication Modules). The
 authentication flow proceeds through the following stages:
 
 1. `pam_start` - initializes the PAM context
-2. `pam_authenticate` - authenticate the user
+2. `pam_authenticate` - authenticates the user
 3. `pam_acct_mgmt` - verifies account validity
 4. `pam_setcred` - manages additional credentials
 5. `pam_open_session` - sets up a user session
 
-The last step, `pam_open_session`, locks the current process into a new cgroup
-and (if `pam_loginuid` is included in the PAM stack) writes to
-`/proc/self/loginuid`, and must therefore run in a dedicated child process (the
-other steps could in principle run in the daemon).
+The last step, `pam_open_session`, is the heavyweight here. It locks the current
+process into a new cgroup and must therefore run in a dedicated child process.
 
 The `pam_handle` acquired in the process must be maintained for the duration of
 the user session. On successful completion of the authentication flow, PAM
@@ -189,9 +187,9 @@ When the user session completes, the PAM session is wrapped up via
 #### Session Creation (`daemon/session/session_runner.c`)
 
 Before starting a user session, the display manager must call the logind
-`CreateSession` IPC via the D-Bus. Among other initialization tasks, this will
-grant the session access to the seat's input/output devices. atrium [does not
-execute this IPC
+`CreateSession` IPC via D-Bus. Among other initialization tasks, this will grant
+the session access to the seat's input/output devices. atrium [does not execute
+this IPC
 directly](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html),
 but instead relies on PAM (in particular the `pam_systemd` module) to perform
 this step. This simplifies the code significantly, since no direct D-Bus
@@ -200,15 +198,20 @@ communication is necessary. Some important points are:
 * The PAM authentication flow (to be precise, `pam_open_session`) must not be
   executed in the daemon process, but in a child process (the session runner).
   It determines the process's cgroup and sets process-scoped session parameters
-  (if `pam_loginuid` is included in the PAM stack) which must not leak into the
+  (if `pam_loginuid` is included in the PAM stack), which must not leak into the
   daemon.
 
-* `pam_systemd` uses the PID of the calling process as the session leader, which
-  in our case is the session runner. Hence the session runner must be kept alive
-  for the duration of the session.
+* `pam_systemd` (via `CreateSession`) makes the calling process the session
+  leader, and logind ties the session's lifetime to it. In our case this is the
+  session runner, which must therefore stay alive for the duration of the
+  session. This is a second reason why the PAM flow cannot run in the daemon:
+  the session leader must be a dedicated, session-scoped process.
 
-* Seat, session type, and session class need to be provided explicitly to the
-  PAM environment via `pam_putenv()`.
+* Seat (`XDG_SEAT`), session type (`XDG_SESSION_TYPE`), and session class
+  (`XDG_SESSION_CLASS`) are provided explicitly to the PAM environment via
+  `pam_putenv()` before `pam_open_session` runs. Here `XDG_SEAT` matters most in
+  a multiseat environment, as it connects the session to a seat, and logind
+  only grants access to the devices associated with that seat.
 
 #### Compositor launch (`daemon/session/compositor.c`)
 
