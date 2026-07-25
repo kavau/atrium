@@ -18,7 +18,7 @@ off to an independent user session per seat.
     <td align="center" width="33%">
       <a href="doc/screenshots/password.webp">
         <img src="doc/screenshots/password.webp" alt="Password entry"></a><br>
-      <sub>Password entry - <code>hacker</code> theme</sub>
+      <sub>Password entry - <code>prism</code> theme</sub>
     </td>
     <td align="center" width="33%">
       <a href="doc/screenshots/ghibli.webp">

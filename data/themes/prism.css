@@ -1,0 +1,90 @@
+/* Prism -- white light with a spectrum hidden inside it. Goes well with dark,
+cosmic backgrounds. */
+@define-color atrium-bg           #05060e; /* near-black */
+@define-color atrium-card         rgba(14, 17, 26, 0.46); /* faintly blue glass */
+@define-color atrium-text         #f8f6ef; /* warm white */
+@define-color atrium-border       rgba(235, 236, 245, 0.22); /* faint neutral edge */
+@define-color atrium-accent       #fff3d2; /* pale warm gold-white */
+@define-color atrium-accent-hover #fffdf4; /* near-white */
+@define-color atrium-accent-fg    #14130a; /* dark pale accent */
+@define-color atrium-subtle       #b7bcca; /* cool grey */
+@define-color atrium-error        #ff8f7a; /* soft red */
+@define-color atrium-dropdown     rgba(23, 27, 38, 0.90); /* cool dark */
+
+.card {
+  border-radius: 0;
+  border: 1px solid @atrium-border;
+  /* wide warm-white corona: */
+  box-shadow: 0 0 44px  8px rgba(255, 252, 236, 0.26),   /* warm-white core */
+              0 0 120px 30px rgba(255, 250, 226, 0.16),  /* mid glow */
+              0 0 220px 70px rgba(250, 248, 236, 0.09);  /* wide aura */
+}
+
+.card-background {
+  opacity: 1;
+  filter: blur(22px) brightness(0.9) saturate(1.15);
+}
+
+/* A hint of spectrum laid over the glass. */
+.card-tint {
+  background-color: rgba(56, 79, 118, 0.15);
+  background-image: linear-gradient(120deg,
+                    rgba(255, 80, 210, 0.09) 0%,
+                    rgba(120, 90, 255, 0.08) 28%,
+                    rgba(80, 220, 255, 0.09) 55%,
+                    rgba(255, 200, 90, 0.08) 80%,
+                    rgba(255, 120, 200, 0.08) 100%);
+}
+
+.heading {
+  letter-spacing: 3px;
+  color: #fffdf6;
+  text-shadow: 0 0 10px rgba(255, 252, 236, 0.70),
+               0 0 28px rgba(255, 248, 220, 0.45),
+               0 0 60px rgba(255, 244, 206, 0.28);
+}
+
+.password-field > text {
+  border-radius: 0;
+  background-color: rgba(202, 221, 242, 0.06);
+  border: 1px solid @atrium-border;
+}
+
+.password-field > text:focus {
+  border: 1px solid @atrium-accent;
+  box-shadow: 0 0 16px rgba(255, 250, 226, 0.55),
+              inset 0 0 12px rgba(255, 250, 226, 0.12);
+}
+
+button.suggested-action {
+  border-radius: 0;
+  background-image: radial-gradient(circle at 50% 40%,
+                    #fffdf4 0%, #fff2cf 55%, #f0dfa8 100%);
+  color: @atrium-accent-fg;
+  box-shadow: 0 0 24px rgba(255, 250, 226, 0.55),
+              0 0 60px rgba(255, 246, 214, 0.34);
+}
+
+button.suggested-action:hover {
+  box-shadow: 0 0 32px rgba(255, 253, 240, 0.75),
+              0 0 90px rgba(255, 248, 220, 0.48);
+}
+
+.user-button {
+  background-color: rgba(202, 221, 238, 0.055);
+  background-image: none;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  border-radius: 0;
+}
+
+.user-button:hover {
+  background-color: rgba(202, 221, 238, 0.125);
+  border-color: rgba(255, 250, 226, 0.55);
+  box-shadow: 0 0 18px rgba(255, 250, 226, 0.35);
+}
+
+dropdown.session-dropdown > button {
+  border-radius: 0;
+  color: @atrium-text;
+}

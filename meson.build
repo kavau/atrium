@@ -334,7 +334,7 @@ install_data(
   'data/themes/ghibli.css',
   'data/themes/hacker.css',
   'data/themes/high-contrast.css',
-  'data/themes/rose-pine.css',
+  'data/themes/prism.css',
   'data/themes/solarized-dark.css',
   'data/themes/solarized-light.css',
   'data/themes/tokyo-night.css',
