@@ -14,30 +14,31 @@ cosmic backgrounds. */
 .card {
   border-radius: 0;
   border: 1px solid @atrium-border;
-  /* wide warm-white corona: */
-  box-shadow: 0 0 44px  8px rgba(255, 252, 236, 0.26),   /* warm-white core */
-              0 0 120px 30px rgba(255, 250, 226, 0.16),  /* mid glow */
-              0 0 220px 70px rgba(250, 248, 236, 0.09);  /* wide aura */
+  /* wide warm-white corona with reddish fringe: */
+  box-shadow: 0 0  24px  4px rgba(255, 252, 236, 0.32),  /* warm-white core */
+              0 0  64px 16px rgba(255, 225, 210, 0.16),  /* mid glow */
+              0 0 128px 32px rgba(250, 200, 180, 0.08);  /* wide reddish aura */
 }
 
 .card-background {
   opacity: 1;
-  filter: blur(22px) brightness(0.9) saturate(1.15);
+  filter: blur(12px) brightness(0.7);
 }
 
-/* A hint of spectrum laid over the glass. */
+/* Chromatic aberration: color fringes at opposite edges, with clean white light in between. */
 .card-tint {
-  background-color: rgba(56, 79, 118, 0.15);
-  background-image: linear-gradient(120deg,
-                    rgba(255, 80, 210, 0.09) 0%,
-                    rgba(120, 90, 255, 0.08) 28%,
-                    rgba(80, 220, 255, 0.09) 55%,
-                    rgba(255, 200, 90, 0.08) 80%,
-                    rgba(255, 120, 200, 0.08) 100%);
+  opacity: 0.4;
+  background-color: rgba(56, 79, 118, 0.2);
+  background-image: linear-gradient(150deg,
+                    rgba(255, 140,  50, 1.0) 0%,    /* orange fringe */
+                    rgba(190,  30,  25, 0.2) 25%, /* deep red transition */
+                    rgba(  0,   0,   0, 0.0) 35%, /* fade to clear */
+                    rgba(  0,   0,   0, 0.0) 65%, /* clear middle */
+                    rgba(  0, 100, 100, 0.2) 75%, /* teal transition */
+                    rgba(  0,  35, 190, 1.0) 100%); /* blue fringe */
 }
 
 .heading {
-  letter-spacing: 3px;
   color: #fffdf6;
   text-shadow: 0 0 10px rgba(255, 252, 236, 0.70),
                0 0 28px rgba(255, 248, 220, 0.45),
@@ -59,15 +60,15 @@ cosmic backgrounds. */
 button.suggested-action {
   border-radius: 0;
   background-image: radial-gradient(circle at 50% 40%,
-                    #fffdf4 0%, #fff2cf 55%, #f0dfa8 100%);
+                    #f8f2e0 0%, #f2e5c2 55%, #e2d099 100%);
   color: @atrium-accent-fg;
-  box-shadow: 0 0 24px rgba(255, 250, 226, 0.55),
-              0 0 60px rgba(255, 246, 214, 0.34);
+  box-shadow: 0 0 24px rgba(255, 250, 226, 0.40),
+              0 0 60px rgba(255, 246, 214, 0.24);
 }
 
 button.suggested-action:hover {
-  box-shadow: 0 0 32px rgba(255, 253, 240, 0.75),
-              0 0 90px rgba(255, 248, 220, 0.48);
+  box-shadow: 0 0 32px rgba(255, 253, 240, 0.55),
+              0 0 90px rgba(255, 248, 220, 0.35);
 }
 
 .user-button {

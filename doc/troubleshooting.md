@@ -26,9 +26,11 @@ journalctl -u atrium -b-1  # logs from the previous boot
 
 ## Common Problems
 
-### The greeter immediately comes back after login
+### The greeter freezes or immediately comes back after login
 
-The user session failed to start. To see what went wrong, look up the compositor PID from the atrium log, then query the logs for it:
+The user session failed to start. What appears as a frozen greeter is usually
+caused by a hung desktop environment. To see what went wrong, look up the
+compositor PID from the atrium log, then query the logs for it:
 
 ```sh
 journalctl -u atrium -b | grep "started user session"
@@ -44,11 +46,15 @@ journalctl -b --since="HH:MM:SS" --until="HH:MM:SS"
 
 ### My desktop environment does not appear in the greeter's session list
 
-atrium reads `.desktop` files from `/usr/share/wayland-sessions/` and `/usr/local/share/wayland-sessions/` at greeter launch. If a session is missing from the list, check for these common causes:
+atrium reads `.desktop` files from `/usr/share/wayland-sessions/` and
+`/usr/local/share/wayland-sessions/` at greeter launch. If a session is missing
+from the list, check for these common causes:
 
-- No `.desktop` file exists in either directory. Note that atrium does not scan `/usr/share/xsessions/` or `/usr/local/share/xsessions/`.
+- No `.desktop` file exists in either directory. Note that atrium does not scan
+  `/usr/share/xsessions/` or `/usr/local/share/xsessions/`.
 - The desktop file contains `Hidden=true` or `NoDisplay=true`.
-- The `TryExec=` binary was not found on `$PATH` - atrium skips the entry when the binary is absent.
+- The `TryExec=` binary was not found on `$PATH` - atrium skips the entry when
+  the binary is absent.
 
 To add a custom session, create a `.desktop` file in
 `/usr/local/share/wayland-sessions/`:
@@ -73,7 +79,11 @@ Tracked in [#91](https://github.com/kavau/atrium/issues/91).
 
 ### Multiseat: my computer goes to sleep unexpectedly
 
-Many desktop environments are pre-configured to put the computer in sleep mode after a period of inactivity. The problem is that each seat manages its own idle state independently. If a seat is unused after login, the desktop environment may trigger a system-wide sleep even if another seat is still in active use. To the active seat this appears as a sudden, unexpected sleep.
+Many desktop environments are pre-configured to put the computer in sleep mode
+after a period of inactivity. The problem is that each seat manages its own idle
+state independently. If a seat is unused after login, the desktop environment
+may trigger a system-wide sleep even if another seat is still in active use. To
+the active seat this appears as a sudden, unexpected sleep.
 
 To fix this, disable the automatic sleep timeout in your desktop environment's power settings.
 

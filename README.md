@@ -4,9 +4,8 @@ A lightweight display manager, built for Linux multiseat setups. Discovers seats
 via logind, shows a greeter on each seat, handles user authentication, and hands
 off to an independent user session per seat.
 
-<!-- markdownlint-disable MD001 -->
+<!-- markdownlint-disable MD001 MD033 -->
 ### Screenshots
-<!-- markdownlint-disable MD001 -->
 
 <table align="center">
   <tr>
@@ -18,7 +17,7 @@ off to an independent user session per seat.
     <td align="center" width="33%">
       <a href="doc/screenshots/password.webp">
         <img src="doc/screenshots/password.webp" alt="Password entry"></a><br>
-      <sub>Password entry - <code>prism</code> theme</sub>
+      <sub>Password entry with <code>prism</code> theme</sub>
     </td>
     <td align="center" width="33%">
       <a href="doc/screenshots/ghibli.webp">
@@ -27,6 +26,7 @@ off to an independent user session per seat.
     </td>
   </tr>
 </table>
+<!-- markdownlint-enable MD001 MD033 -->
 
 ### Why atrium?
 
@@ -58,20 +58,20 @@ see [doc/multiseat-setup.md](doc/multiseat-setup.md).
 
 ### Status
 
-**post-v0.4 - fully functional but still in early development.**
+**post-v0.4 - fully functional, in active development.**
 
 atrium runs well as a daily-driver display manager. The core workflow (seat
 discovery, user authentication, session lifecycle management) is fully
-operational. That said, atrium has been tested on a limited range of hardware
-and distributions, so expect some rough edges.
+operational. So far atrium has been tested on a limited range of hardware and
+distributions. Reports from untested setups are very welcome (see below).
 
 See [doc/architecture.md](doc/architecture.md) for a **detailed design overview**.
 
 #### What's new since v0.4
 
 - **Live config reload** - `sudo systemctl reload atrium` reloads the daemon
-  configuration and restarts all idle seats. This way each greeter also picks up
-  its new config.
+  configuration and restarts all idle seats (greeters will also pick up their
+  new config).
 
 #### What's new since v0.3
 
@@ -81,7 +81,8 @@ See [doc/architecture.md](doc/architecture.md) for a **detailed design overview*
 - **Greeter themes** - set `theme` in `/etc/atrium-greeter.conf` to a theme
   `.css` file in order to override built-in colors and styles. A handful of
   themes are shipped with atrium and installed in
-  `/usr/local/share/atrium/themes`.
+  `/usr/local/share/atrium/themes` (or `/usr/share/atrium/themes` if you install
+  via package manager).
 - **Architectural redesign** - making atrium's core architecture simpler and
   more robust. The changes are purely internal and should not be visible to the
   user.
@@ -99,7 +100,7 @@ See [doc/architecture.md](doc/architecture.md) for a **detailed design overview*
 
 - Arch-based (Arch, CachyOS, EndeavourOS, Manjaro)
 - Debian-based (Debian, Ubuntu, Linux Mint, Pop!_OS)
-- Fedora¹ (SELinux accomodation included)
+- Fedora¹ (SELinux accommodation included)
 
 _¹ On Fedora, wallet/keyring auto-unlock is currently not working._
 
@@ -124,6 +125,9 @@ doesn't, please file a [bug report](https://github.com/kavau/atrium/issues/new).
 ---
 
 ## Installation
+
+> **Tip:** Arch users (Arch, CachyOS, ...) can also install from
+> [AUR](https://aur.archlinux.org/packages/atrium), e.g. `paru -S atrium`.
 
 ### 1. Install dependencies
 
@@ -158,7 +162,7 @@ SELinux contexts and policy module.)
 
 ### 2. Build and install
 
-```shell
+```sh
 meson setup build -Ddist=<your-distro>   # arch, debian, fedora
 ninja -C build
 sudo ninja -C build install
@@ -171,9 +175,9 @@ The `-Ddist` option (required) selects the correct PAM stack for the target dist
 > This step can usually be skipped - the defaults work for a standard
 > single-seat or multiseat setup.
 
-- **`/etc/atrium.conf`** — daemon settings: greeter command, ignored seats,
+- **`/etc/atrium.conf`** - daemon settings: greeter command, ignored seats,
   optional compositor override, among others.
-- **`/etc/atrium-greeter.conf`** — greeter UI settings: idle blanking timeout,
+- **`/etc/atrium-greeter.conf`** - greeter UI settings: idle blanking timeout,
   background image, theming etc.
 
 Each config file is heavily commented; consult them for the full set of
