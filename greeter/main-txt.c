@@ -48,7 +48,10 @@ int main(void) {
         memcpy(message, username, ulen);
         memcpy(message + ulen, password, plen);
 
-        if (ipc_send(ch, message, ulen + plen) < 0) {
+        int r = ipc_send(ch, message, ulen + plen);
+        explicit_bzero(message, sizeof(message)); /* Wipe both password copies. */
+        explicit_bzero((char *)password, plen - 1);
+        if (r < 0) {
             log_error("failed to send credentials");
             ipc_close(ch);
             return EXIT_FAILURE;

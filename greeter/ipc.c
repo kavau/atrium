@@ -60,7 +60,9 @@ int ipc_send_credentials(ipc_channel *ch, const char *username, const char *pass
     int  n = build_credentials_str(buf, sizeof(buf), username, password, session_id);
     if (n < 0)
         return -1;
-    if (ipc_send(ch, buf, n) < 0) {
+    int r = ipc_send(ch, buf, n);
+    explicit_bzero(buf, sizeof(buf)); /* Wipe our copy of the password. */
+    if (r < 0) {
         log_syserr("greeter: failed to send credentials");
         return -1;
     }

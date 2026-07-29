@@ -416,6 +416,11 @@ static void card_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_picture)
     g_user_label = GTK_LABEL(password_title);
 
     GtkWidget *password_entry = gtk_entry_new();
+    /* GtkPasswordEntryBuffer keeps the text in mlocked memory and zeroes it on
+    deletion. This makes set_text("") a true wipe. */
+    GtkEntryBuffer *password_buffer = gtk_password_entry_buffer_new();
+    gtk_entry_set_buffer(GTK_ENTRY(password_entry), password_buffer);
+    g_object_unref(password_buffer); /* entry holds its own ref */
     gtk_entry_set_input_purpose(GTK_ENTRY(password_entry), GTK_INPUT_PURPOSE_PASSWORD);
     gtk_entry_set_visibility(GTK_ENTRY(password_entry), FALSE);
     gtk_entry_set_placeholder_text(GTK_ENTRY(password_entry), "Password");
