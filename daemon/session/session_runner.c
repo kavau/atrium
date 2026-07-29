@@ -302,12 +302,14 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     pam_env[i++] = NULL;
     assert(i == n_env);
 
-    char        cred_buf[MAX_LEN_IPC_MSG]; /* must remain valid outside the loop */
+    /* +1 for the NUL ipc_recv_str() adds. cred_buf must remain valid outside
+    the loop since username and chosen_session point into it. */
+    char        cred_buf[MAX_LEN_IPC_MSG + 1];
     auth_result pam_result;
     const char *username = NULL;
     const char *chosen_session = NULL; /* points into cred_buf; valid after loop */
     while (1) {
-        ssize_t n = ipc_recv(parent_end, cred_buf, sizeof(cred_buf) - 1);
+        ssize_t n = ipc_recv_str(parent_end, cred_buf, sizeof(cred_buf));
         if (n <= 0) {
             if (g_reload_requested)
                 log_info("session_runner: terminating due to reload request on seat '%s'", s->name);

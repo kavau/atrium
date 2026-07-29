@@ -10,15 +10,14 @@ ipc_status ipc_read_result(ipc_channel *ch, char *reason, size_t reason_len) {
     /* FRAGILE: assumes the reply fits in a single read(). This holds because
     the daemon writes <= PIPE_BUF bytes atomically; if messages ever exceed
     PIPE_BUF, this needs a read loop. */
-    char    buf[MAX_LEN_IPC_MSG];
-    ssize_t n = ipc_recv(ch, buf, sizeof(buf) - 1);
+    char    buf[MAX_LEN_IPC_MSG + 1]; /* +1 for the NUL ipc_recv_str() adds */
+    ssize_t n = ipc_recv_str(ch, buf, sizeof(buf));
     if (n <= 0) {
         log_error("greeter: failed to receive response from daemon");
         snprintf(reason, reason_len, IPC_ERROR_INTERNAL);
         return IPC_FAIL;
     }
 
-    buf[n] = '\0';
     log_debug("greeter: received IPC response '%s'", buf);
 
     if (strcmp(buf, "ok\n") == 0) {

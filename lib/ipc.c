@@ -58,6 +58,14 @@ ssize_t ipc_recv(ipc_channel *ch, void *data, size_t len) {
     return read(ch->read_fd, data, len);
 }
 
+ssize_t ipc_recv_str(ipc_channel *ch, char *buf, size_t buflen) {
+    assert(buf);
+    assert(buflen > 0); /* buf[0] is always written */
+    ssize_t n = ipc_recv(ch, buf, buflen - 1);
+    buf[n > 0 ? (size_t)n : 0] = '\0';
+    return n;
+}
+
 void ipc_close(ipc_channel *ch) {
     if (ch->read_fd != -1) {
         close(ch->read_fd);

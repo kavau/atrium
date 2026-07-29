@@ -15,12 +15,17 @@ to the peer. After fork(), each process should immediately close the end it
 doesn't use. Returns 0 on success, -1 on failure. */
 int ipc_create(ipc_channel **end1, ipc_channel **end2);
 
-/* Low-level IPC functions */
+/* Low-level IPC functions. These do not add or expect a NUL terminator. Use
+ipc_recv_str() instead unless handling binary data. */
 ssize_t ipc_send(ipc_channel *ch, const void *data, size_t len);
 ssize_t ipc_recv(ipc_channel *ch, void *data, size_t len);
 
-/* Send a null-terminated string over the channel. */
+/* Send a string over the channel. The terminating NUL is not sent. */
 ssize_t ipc_send_str(ipc_channel *ch, const char *msg);
+
+/* Receive a message and NUL-terminate it. Reads at most buflen - 1 bytes.
+Returns the number of bytes read (excluding the terminator) or -1 on error. */
+ssize_t ipc_recv_str(ipc_channel *ch, char *buf, size_t buflen);
 
 /* Close the IPC channel */
 void ipc_close(ipc_channel *ch);

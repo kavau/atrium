@@ -21,8 +21,8 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
 
     /* Block until parent sends session_id. EOF (n <= 0) means parent failed
     (e.g. CreateSession error). */
-    char session_id[32] = {0};
-    ssize_t n = ipc_recv(ch, session_id, sizeof(session_id) - 1);
+    char    session_id[32];
+    ssize_t n = ipc_recv_str(ch, session_id, sizeof(session_id));
     if (n <= 0) {
         log_error("child_exec_greeter: failed to receive session_id from parent");
         _exit(EXIT_FAILURE);
