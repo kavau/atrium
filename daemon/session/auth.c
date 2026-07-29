@@ -22,7 +22,9 @@ static int conv_callback(int num_msg, const struct pam_message **msg, struct pam
     for (int i = 0; i < num_msg; i++) {
         switch (msg[i]->msg_style) {
             case PAM_PROMPT_ECHO_OFF:
-                /* Password prompt - return a copy of the password from appdata_ptr. */
+                /* Password prompt - return a copy of the password from appdata_ptr.
+                Ownership passes to libpam, which overwrites response strings before
+                freeing, so no wipe is needed here. */
                 responses[i].resp = strdup(password);
                 if (!responses[i].resp) {
                     goto oom;
@@ -57,6 +59,9 @@ oom:
 
 err:
     for (int j = 0; j < num_msg; j++) {
+        /* These copies never reached libpam; wipe the password before free. */
+        if (responses[j].resp)
+            explicit_bzero(responses[j].resp, strlen(responses[j].resp));
         free(responses[j].resp);
     }
     free(responses);

@@ -307,7 +307,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     char        cred_buf[MAX_LEN_IPC_MSG + 1];
     auth_result pam_result;
     const char *username = NULL;
-    const char *chosen_session = NULL; /* points into cred_buf; valid after loop */
+    const char *chosen_session = NULL;
     while (1) {
         ssize_t n = ipc_recv_str(parent_end, cred_buf, sizeof(cred_buf));
         if (n <= 0) {
@@ -323,22 +323,25 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         if (parse_credentials(cred_buf, n, &username, &password, &chosen_session) < 0) {
             log_warn("session_runner: invalid credentials from greeter on seat '%s'", s->name);
             ipc_send_str(parent_end, "fail:invalid credentials\n");
-            continue;
+            goto retry;
         }
 
         if (!is_valid_username(username)) {
             log_warn("session_runner: invalid username from greeter on seat '%s'", s->name);
             ipc_send_str(parent_end, "fail:invalid username\n");
-            continue;
+            goto retry;
         }
 
         /* Phase 1: verify user credentials. */
         int auth_r = auth_authenticate(username, password, (const char **)pam_env, pam_conf_path,
                                        "atrium", &pam_result);
+        /* password is not needed beyond this point, wipe it for security.
+        username and chosen_session (also in cred_buf) must remain intact. */
+        explicit_bzero((char *)password, strlen(password));
         if (auth_r != PAM_SUCCESS) {
             log_warn("session_runner: auth failed for '%s' on seat '%s'", username, s->name);
             ipc_send_str(parent_end, "fail:authentication failed\n");
-            continue;
+            goto retry;
         }
 
         /* Duplicate login check: between authenticate and open_session so the
@@ -349,7 +352,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
                 log_syserr("session_runner: getpwnam(%s)", username);
                 ipc_send_str(parent_end, "fail:system error\n");
                 auth_cancel(&pam_result);
-                continue;
+                goto retry;
             }
 
             login_lock_status lock_status = acquire_login_lock(pw->pw_uid);
@@ -357,7 +360,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
                 log_info("session_runner: user '%s' already logged in on another seat", username);
                 ipc_send_str(parent_end, "fail:User already logged in on another seat\n");
                 auth_cancel(&pam_result);
-                continue;
+                goto retry;
             }
             if (lock_status == LOGIN_LOCK_ERROR) {
                 /* System error acquiring lock; allow login with warning */
@@ -375,7 +378,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             ipc_send_str(parent_end, "fail:session error\n");
             release_login_lock();
             user_session_active = 0;
-            continue;
+            goto retry;
         }
 
         log_info("session_runner: auth ok for '%s' on seat '%s'", username, s->name);
@@ -383,6 +386,12 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             sessions_save_seat(s->name, chosen_session);
         ipc_send_str(parent_end, "ok\n");
         break;
+
+    retry:
+        /* cred_buf contains the plaintext password - explicitly wipe it for security. */
+        explicit_bzero(cred_buf, sizeof(cred_buf));
+        username = NULL;
+        chosen_session = NULL;
     }
 
     free(pam_env[0]); /* XDG_SEAT */
