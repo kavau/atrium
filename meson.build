@@ -32,6 +32,7 @@ add_project_arguments(
   '-Wshadow',
   '-Wstrict-prototypes',
   '-Wunused-parameter',
+  '-Wvla',
   language: 'c',
 )
 

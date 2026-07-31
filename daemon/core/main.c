@@ -201,7 +201,10 @@ int main(int argc, char *argv[]) {
         for (seat *s = seat_first(); s; s = seat_next(s))
             if (s->restart_tfd >= 0)
                 nfds++;
-        struct pollfd pfds[nfds];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wvla"
+        struct pollfd pfds[nfds]; /* nfds is bounded by seat count - VLA ok */
+#pragma GCC diagnostic pop
         pfds[0] = (struct pollfd){.fd = sfd, .events = POLLIN};
         pfds[1] = (struct pollfd){.fd = drm_mon ? drm_monitor_fd(drm_mon) : -1, .events = POLLIN};
         pfds[2] = (struct pollfd){.fd = bus_fd, .events = POLLIN};

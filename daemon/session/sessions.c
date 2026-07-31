@@ -57,9 +57,15 @@ static int try_exec_ok(const char *cmd) {
     for (const char *p = getenv("PATH"), *end = p; p && *p; p = end ? end + 1 : NULL) {
         end = strchr(p, ':');
         size_t dirlen = end ? (size_t)(end - p) : strlen(p);
-        char   full[dirlen + 1 + strlen(cmd) + 1];
-        snprintf(full, sizeof(full), "%.*s/%s", (int)dirlen, p, cmd);
-        if (access(full, X_OK) == 0)
+        /* Do not stack-allocate - full cmd path is unbounded */
+        char  *full = NULL;
+        if (asprintf(&full, "%.*s/%s", (int)dirlen, p, cmd) < 0) {
+            log_error("try_exec_ok: out of memory");
+            return 0;
+        }
+        int ok = access(full, X_OK) == 0;
+        free(full);
+        if (ok)
             return 1;
     }
     return 0;
