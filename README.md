@@ -9,17 +9,17 @@ off to an independent user session per seat.
 
 <table align="center">
   <tr>
-    <td align="center" width="33%">
+    <td align="center" valign="top" width="33%">
       <a href="doc/screenshots/login.webp">
         <img src="doc/screenshots/login.webp" alt="User selection"></a><br>
       <sub>Greeter with default theme</sub>
     </td>
-    <td align="center" width="33%">
+    <td align="center" valign="top" width="33%">
       <a href="doc/screenshots/password.webp">
         <img src="doc/screenshots/password.webp" alt="Password entry"></a><br>
       <sub>Password entry with <code>prism</code> theme</sub>
     </td>
-    <td align="center" width="33%">
+    <td align="center" valign="top" width="33%">
       <a href="doc/screenshots/ghibli.webp">
         <img src="doc/screenshots/ghibli.webp" alt="Ghibli theme"></a><br>
       <sub><code>ghibli</code> theme</sub>
