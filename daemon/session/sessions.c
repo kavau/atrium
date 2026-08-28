@@ -149,7 +149,7 @@ void sessions_free(void) {
 int sessions_scan(void) {
     sessions_free();
 
-    for (dir_entry_t *session_dirs = xdg_env_get_sessions(); session_dirs ; session_dirs = session_dirs->next) {
+    for (dir_entry_t *session_dirs = xdg_env_get_sessions(); session_dirs != NULL ; session_dirs = session_dirs->next) {
         DIR *dir = opendir(session_dirs->path);
         if (!dir) {
             log_debug("sessions: %s: %s", session_dirs->path, strerror(errno));

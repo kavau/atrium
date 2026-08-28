@@ -4,7 +4,6 @@
 
 struct dir_entry {
     char            *path;
-    size_t           path_len;
     struct dir_entry *next;
 };
 

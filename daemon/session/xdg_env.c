@@ -1,8 +1,9 @@
 #include "daemon/session/xdg_env.h"
-#include "lib/log.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define DEFAULT_DATA_DIRS     "/usr/local/share/wayland-sessions:/usr/share/wayland-sessions"
@@ -10,38 +11,69 @@
 
 static dir_entry_t *g_session_dirs = NULL;
 
-static dir_entry_t *map_to_next_data_dir(char *xdg_data_dirs) {
-    int       i;
-    dir_entry_t *result;
+/* Read xdg_data_dir until the next ':' or null byte. `result' store the parsed dir path */
+static size_t map_to_next_data_dir(dir_entry_t **result, char *xdg_data_dirs) {
+    int i;
 
     for (i = 0; xdg_data_dirs[i] && xdg_data_dirs[i] != ':'; ++i)
         ;
 
     if (i > 0) {
-        result = malloc(sizeof(dir_entry_t));
-        if (result == NULL) {
+        *result = malloc(sizeof(dir_entry_t));
+        if (*result == NULL) {
             _exit(EXIT_FAILURE);
         }
-        result->next = NULL;
-        result->path = NULL;
-        result->path_len = asprintf(&(result->path), "%.*s/wayland-sessions", i, xdg_data_dirs);
-        if (result->path_len <= 0) {
+        (*result)->next = NULL;
+        (*result)->path = NULL;
+        if (asprintf(&((*result)->path), "%.*s/wayland-sessions", i, xdg_data_dirs) <= 0) {
             _exit(EXIT_FAILURE);
         }
-        return result;
+        return i;
     } else {
-        return NULL;
+        result = NULL;
+        return 0;
     }
 }
 
-static void append_to_dir_list(dir_entry_t *tail) {
-    dir_entry_t *cursor;
+/* Return 0 if `path' is a directory, a non null value otherwise */
+static bool is_directory(char *path) {
+    struct stat path_stat;
 
+    if (path == NULL) {
+        return false;
+    }
+    if (!stat(path, &path_stat) && path_stat.st_mode & S_IFDIR) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+/* Free the allocated memory of a dir_entry_t pointer */
+static void free_entry(dir_entry_t *entry) {
+    if (entry->path != NULL) {
+        free(entry->path);
+    }
+    free(entry);
+}
+
+/* Append the `tail' to the linked list unless tail is NULL or the xdg sessions directory doesn't
+ * exist */
+static void append_to_dir_list(dir_entry_t *tail) {
+    dir_entry_t *cursor = NULL;
+
+    if (tail == NULL) {
+        return;
+    }
+    if (!is_directory(tail->path)) {
+        free_entry(tail);
+        return;
+    }
     if (g_session_dirs == NULL) {
         g_session_dirs = tail;
     } else {
         cursor = g_session_dirs;
-        while (cursor->next) {
+        while (cursor->next != NULL) {
             cursor = cursor->next;
         }
         cursor->next = tail;
@@ -49,37 +81,38 @@ static void append_to_dir_list(dir_entry_t *tail) {
 }
 
 dir_entry_t *xdg_env_get_sessions(void) {
-    dir_entry_t *tail;
-    char     *env_dirs;
+    char        *env_dirs = NULL;
+    int          path_len;
+    dir_entry_t *tail = NULL;
 
+    tail = NULL;
     env_dirs = getenv("XDG_DATA_DIRS");
-    if (env_dirs) {
-        while (*env_dirs) {
-            tail = map_to_next_data_dir(env_dirs);
+    if (env_dirs != NULL) {
+        while (*env_dirs != '\0') {
+            path_len = map_to_next_data_dir(&tail, env_dirs);
             append_to_dir_list(tail);
-            env_dirs = env_dirs + tail->path_len - 17;
+            env_dirs = env_dirs + path_len;
             if (*env_dirs == ':') {
                 ++env_dirs;
             }
         }
     }
-    append_to_dir_list(map_to_next_data_dir("/usr/share"));
-    append_to_dir_list(map_to_next_data_dir("/usr/local/share"));
+    map_to_next_data_dir(&tail, "/usr/share");
+    append_to_dir_list(tail);
+    map_to_next_data_dir(&tail, "/usr/local/share");
+    append_to_dir_list(tail);
     return g_session_dirs;
 }
 
 void xdg_env_free_sessions(void) {
     dir_entry_t *current = NULL;
-    dir_entry_t *next = NULL;;
+    dir_entry_t *next = NULL;
 
-    if (g_session_dirs) {
+    if (g_session_dirs != NULL) {
         current = g_session_dirs;
-        while (current) {
+        while (current != NULL) {
             next = current->next;
-            if (current->path) {
-                free(current->path);
-            }
-            free(current);
+            free_entry(current);
             current = next;
         }
     }
