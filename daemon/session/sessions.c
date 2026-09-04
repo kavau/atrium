@@ -9,19 +9,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "daemon/session/xdg_env.h"
 #include "ini.h"
 #include "lib/log.h"
 
 #define SEAT_STATE_DIR "/var/lib/atrium/seats"
 
 #define SESSIONS_MAX 64
-
-/* Where to look for session files */
-static const char *session_dirs[] = {
-    "/usr/local/share/wayland-sessions",
-    "/usr/share/wayland-sessions",
-};
-#define N_SESSION_DIRS ((int)(sizeof(session_dirs) / sizeof(session_dirs[0])))
 
 static session_entry g_sessions[SESSIONS_MAX];
 static int           g_session_count = 0;
@@ -153,11 +147,12 @@ void sessions_free(void) {
 
 int sessions_scan(void) {
     sessions_free();
+    xdg_dir_vec xdg_dirs = xdg_env_get_sessions();
 
-    for (int d = 0; d < N_SESSION_DIRS; d++) {
-        DIR *dir = opendir(session_dirs[d]);
+    for (size_t d = 0; d < xdg_dirs.len; d++) {
+        DIR *dir = opendir(xdg_dirs.dirs[d]);
         if (!dir) {
-            log_debug("sessions: %s: %s", session_dirs[d], strerror(errno));
+            log_debug("sessions: %s: %s", xdg_dirs.dirs[d], strerror(errno));
             continue;
         }
 
@@ -184,12 +179,12 @@ int sessions_scan(void) {
 
             /* Earlier directory wins: skip duplicates from later dirs. */
             if (sessions_find(id)) {
-                log_debug("sessions: skip duplicate '%s' from %s", id, session_dirs[d]);
+                log_debug("sessions: skip duplicate '%s' from %s", id, xdg_dirs.dirs[d]);
                 continue;
             }
 
             char path[512];
-            snprintf(path, sizeof(path), "%s/%s", session_dirs[d], name);
+            snprintf(path, sizeof(path), "%s/%s", xdg_dirs.dirs[d], name);
 
             session_entry entry;
             if (parse_desktop_file(path, id, &entry) == 0) {
@@ -201,6 +196,7 @@ int sessions_scan(void) {
 
         closedir(dir);
     }
+    xdg_env_free_sessions();
 
     if (g_session_count == 0)
         log_warn("sessions: no Wayland sessions found");
