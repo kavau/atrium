@@ -1,4 +1,5 @@
 #include "daemon/session/xdg_env.h"
+#include "lib/log.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -6,36 +7,22 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define DEFAULT_DATA_DIRS     "/usr/local/share/wayland-sessions:/usr/share/wayland-sessions"
-#define DEFAULT_DATA_DIRS_LEN 61
+#define XDG_USR_SHARE \
+    (path_entry) { .path = "/usr/share", .len = 10, .last_entry = true }
+#define XDG_USR_LOCAL_SHARE \
+    (path_entry) { .path = "/usr/local/share/wayland-sessions", .len = 16, .last_entry = true }
 
-static dir_entry_t *g_session_dirs = NULL;
+#define MAX_SESSION_DIRS 64
 
-/* Read xdg_data_dir until the next ':' or null byte. `result' store the parsed dir path */
-static size_t map_to_next_data_dir(dir_entry_t **result, char *xdg_data_dirs) {
-    int i;
+typedef struct {
+    char *path;
+    int   len;
+    bool  last_entry;
+} path_entry;
 
-    for (i = 0; xdg_data_dirs[i] && xdg_data_dirs[i] != ':'; ++i)
-        ;
+static xdg_dir_vec g_xdg_dirs = {.dirs = (char * [MAX_SESSION_DIRS]){}, .len = 0};
 
-    if (i > 0) {
-        *result = malloc(sizeof(dir_entry_t));
-        if (*result == NULL) {
-            _exit(EXIT_FAILURE);
-        }
-        (*result)->next = NULL;
-        (*result)->path = NULL;
-        if (asprintf(&((*result)->path), "%.*s/wayland-sessions", i, xdg_data_dirs) <= 0) {
-            _exit(EXIT_FAILURE);
-        }
-        return i;
-    } else {
-        result = NULL;
-        return 0;
-    }
-}
-
-/* Return 0 if `path' is a directory, a non null value otherwise */
+/* Return true if `path' is a directory, false otherwise */
 static bool is_directory(char *path) {
     struct stat path_stat;
 
@@ -49,72 +36,65 @@ static bool is_directory(char *path) {
     }
 }
 
-/* Free the allocated memory of a dir_entry_t pointer */
-static void free_entry(dir_entry_t *entry) {
-    if (entry->path != NULL) {
-        free(entry->path);
-    }
-    free(entry);
-}
+static path_entry parse_entry(char *env_dirs) {
+    path_entry entry;
 
-/* Append the `tail' to the linked list unless tail is NULL or the xdg sessions directory doesn't
- * exist */
-static void append_to_dir_list(dir_entry_t *tail) {
-    dir_entry_t *cursor = NULL;
-
-    if (tail == NULL) {
-        return;
-    }
-    if (!is_directory(tail->path)) {
-        free_entry(tail);
-        return;
-    }
-    if (g_session_dirs == NULL) {
-        g_session_dirs = tail;
-    } else {
-        cursor = g_session_dirs;
-        while (cursor->next != NULL) {
-            cursor = cursor->next;
+    entry.path = NULL;
+    entry.len = 0;
+    entry.last_entry = false;
+    if (env_dirs) {
+        while (env_dirs[entry.len] && env_dirs[entry.len] != ':') {
+            ++entry.len;
         }
-        cursor->next = tail;
+        if (entry.len > 0) {
+            entry.path = env_dirs;
+        }
+        if (!env_dirs[entry.len]) {
+            entry.last_entry = true;
+        }
+    }
+    return entry;
+}
+
+static void append_dir_if_valid(path_entry xdg_dir) {
+    char *session_dir_path;
+
+    if (asprintf(&session_dir_path, "%.*s/wayland-sessions", xdg_dir.len, xdg_dir.path) == -1) {
+        log_error("Failed to allocate memory");
+        _exit(EXIT_FAILURE);
+    } else if (!is_directory(session_dir_path)) {
+        log_debug("XDG directory `%.*s/wayland-sessions' doesn't exist. Skipping XDG entry.",
+                  xdg_dir.len, xdg_dir.path);
+        free(session_dir_path);
+    } else if (g_xdg_dirs.len >= MAX_SESSION_DIRS) {
+        log_error("Reached the maximum number of XDG dirs");
+    } else {
+        g_xdg_dirs.dirs[g_xdg_dirs.len++] = session_dir_path;
     }
 }
 
-dir_entry_t *xdg_env_get_sessions(void) {
-    char        *env_dirs = NULL;
-    int          path_len;
-    dir_entry_t *tail = NULL;
+xdg_dir_vec xdg_env_get_sessions(void) {
+    char      *env_dirs;
+    path_entry xdg_dir;
 
-    tail = NULL;
     env_dirs = getenv("XDG_DATA_DIRS");
     if (env_dirs != NULL) {
-        while (*env_dirs != '\0') {
-            path_len = map_to_next_data_dir(&tail, env_dirs);
-            append_to_dir_list(tail);
-            env_dirs = env_dirs + path_len;
-            if (*env_dirs == ':') {
-                ++env_dirs;
-            }
+        xdg_dir = parse_entry(env_dirs);
+        while (xdg_dir.path) {
+            append_dir_if_valid(xdg_dir);
+            env_dirs += xdg_dir.len + (xdg_dir.last_entry ? 0 : 1);
+            xdg_dir = parse_entry(env_dirs);
         }
     }
-    map_to_next_data_dir(&tail, "/usr/share");
-    append_to_dir_list(tail);
-    map_to_next_data_dir(&tail, "/usr/local/share");
-    append_to_dir_list(tail);
-    return g_session_dirs;
+    append_dir_if_valid(XDG_USR_SHARE);
+    append_dir_if_valid(XDG_USR_LOCAL_SHARE);
+    return g_xdg_dirs;
 }
 
 void xdg_env_free_sessions(void) {
-    dir_entry_t *current = NULL;
-    dir_entry_t *next = NULL;
-
-    if (g_session_dirs != NULL) {
-        current = g_session_dirs;
-        while (current != NULL) {
-            next = current->next;
-            free_entry(current);
-            current = next;
-        }
+    for (size_t i = 0; i < g_xdg_dirs.len; ++i) {
+        free(g_xdg_dirs.dirs[i]);
+        g_xdg_dirs.dirs[i] = NULL;
     }
-    g_session_dirs = NULL;
+    g_xdg_dirs.len = 0;
 }
