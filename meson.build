@@ -56,6 +56,11 @@ else
 endif
 add_project_arguments('-DATRIUM_GREETER_PATH="' + greeter_install_dir / 'atrium-gtk-greeter' + '"', language: 'c')
 
+# Session wrapper: sourced before the session command is exec'd, so
+# /etc/profile and ~/.profile are applied to the session environment.
+session_wrapper_path = get_option('prefix') / get_option('datadir') / 'atrium' / 'session-wrapper'
+add_project_arguments('-DATRIUM_SESSION_WRAPPER_PATH="' + session_wrapper_path + '"', language: 'c')
+
 daemon_bin = get_option('prefix') / 'bin' / 'atrium'
 
 # Dependencies
@@ -318,7 +323,10 @@ install_data(
 configure_file(
   input: 'data/atrium.conf.in',
   output: 'atrium.conf',
-  configuration: {'greeter_dir': greeter_install_dir},
+  configuration: {
+    'greeter_dir': greeter_install_dir,
+    'session_wrapper': session_wrapper_path,
+  },
   install: true,
   install_dir: '/etc',
 )
@@ -327,6 +335,13 @@ install_data(
   'data/atrium-greeter.conf',
   install_dir: '/etc',
   install_tag: 'greeter',
+)
+
+# Read, not executed directly - the daemon runs this as "sh <path> <command>".
+install_data(
+  'data/session-wrapper',
+  install_dir: get_option('datadir') / 'atrium',
+  install_tag: 'daemon',
 )
 
 install_data(

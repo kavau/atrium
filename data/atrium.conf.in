@@ -14,6 +14,11 @@
 # Example:
 #   desktop = sway
 
+# Session wrapper. Sources /etc/profile and ~/.profile before starting the
+# session. Can be set to an empty value to skip the wrapper and exec the
+# session command directly.
+# session-wrapper = @session_wrapper@
+
 # Milliseconds to wait before seat discovery at daemon startup. Default is 0
 # (disabled) - seats that arrive after boot are detected via SeatNew monitoring.
 # Increase if seats are missed at boot despite this.

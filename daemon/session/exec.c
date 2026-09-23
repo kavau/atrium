@@ -50,8 +50,20 @@ static void redirect_stderr_to_journal(void) {
 #endif
 }
 
-_Noreturn void drop_privs_and_run(struct passwd *pw, const char *cmd, char *const env[]) {
-    /* sh is non-interactive and non-login. "exec" replaces sh with the target
+_Noreturn void drop_privs_and_run(struct passwd *pw, const char *cmd, char *const env[],
+                                  const char *wrapper) {
+    /* Run the wrapper as "sh <wrapper> <cmd>", if it exists. */
+    if (wrapper && *wrapper) {
+        if (access(wrapper, F_OK) == 0) {
+            char *argv[] = {"sh", (char *)wrapper, (char *)cmd, NULL};
+            drop_privs_and_exec(pw, "/bin/sh", argv, env);
+        }
+        log_warn("drop_privs_and_run: session wrapper '%s' not found, running '%s' directly",
+                 wrapper, cmd);
+    }
+
+    /* Otherwise fall back to executing the command directly.
+    sh is non-interactive and non-login. "exec" replaces sh with the target
     process so the child PID is the real process and SIGTERM reaches it
     directly. SHORTCUT: sh interprets shell metacharacters in cmd, which is an
     acceptable violation of the Desktop Entry spec. */

@@ -12,10 +12,13 @@ SHELL, and PATH entries to env[i..]. Sets *pw_out on success. Returns the
 updated index, or -1 on error (getpwnam failure or OOM). */
 int env_append_passwd(const char *username, char **env, int i, struct passwd **pw_out);
 
-/* Drop privileges and run cmd via "sh -c exec ...". This is a thin wrapper
-around drop_privs_and_exec, sufficient for running the compositor and greeter.
+/* Drop privileges and run cmd through /bin/sh. This is a thin wrapper around
+drop_privs_and_exec, sufficient for running the compositor and greeter.
+If wrapper is non-empty, cmd is handed to it as a single argument ("sh <wrapper> <cmd>");
+the wrapper is responsible for exec'ing it. Otherwise, cmd is run directly ("sh -c exec <cmd>").
 Must be called after fork(). Never returns. */
-_Noreturn void drop_privs_and_run(struct passwd *pw, const char *cmd, char *const env[]);
+_Noreturn void drop_privs_and_run(struct passwd *pw, const char *cmd, char *const env[],
+                                  const char *wrapper);
 
 /* Drop privileges to the given user and exec the program. Must be called after
 fork(). Never returns. */

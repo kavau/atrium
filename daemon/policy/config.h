@@ -14,6 +14,7 @@ absent or a key is missing. */
 const char *config_greeter(void);               /* greeter shell command */
 const char *config_compositor(void);            /* compositor override */
 const char *config_desktop(void);               /* desktop identifier */
+const char *config_session_wrapper(void);       /* session wrapper script */
 int         config_seat_discovery_delay(void);  /* ms to wait before seat discovery */
 int         config_crash_restart_delay(void);   /* ms before greeter restart after crash */
 int         config_crash_count_limit(void);     /* max crashes before giving up on a seat */

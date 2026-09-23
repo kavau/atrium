@@ -29,7 +29,7 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
     }
 
     /* Build the session environment - count the number of env vars first. */
-    int n_env = 0;
+    int    n_env = 0;
     char **ipc_env = ipc_getenvlist(ch);
     if (!ipc_env)
         goto oom;
@@ -48,7 +48,7 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
     }
 
     struct passwd *pw;
-    int i = 0;
+    int            i = 0;
     i = env_append_passwd(username, env, i, &pw);
     if (i < 0)
         _exit(EXIT_FAILURE); /* logged by helper */
@@ -81,7 +81,7 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
     }
 
     log_debug("child_exec_greeter: exec: %s", config_greeter());
-    drop_privs_and_run(pw, config_greeter(), env);
+    drop_privs_and_run(pw, config_greeter(), env, NULL);
 
 oom:
     log_error("child_exec_greeter: out of memory");

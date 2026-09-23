@@ -82,7 +82,7 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     log_debug("child_exec_compositor: exec '%s' for user '%s'", compositor_cmd, username);
     for (int j = 0; env[j]; j++)
         log_debug("  env[%d]: %s", j, env[j]);
-    drop_privs_and_run(pw, compositor_cmd, env);
+    drop_privs_and_run(pw, compositor_cmd, env, config_session_wrapper());
 
 oom:
     log_error("child_exec_compositor: out of memory");

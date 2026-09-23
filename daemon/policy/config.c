@@ -11,6 +11,10 @@
 #define ATRIUM_GREETER_PATH "/usr/libexec/atrium-greeter"
 #endif
 
+#ifndef ATRIUM_SESSION_WRAPPER_PATH
+#define ATRIUM_SESSION_WRAPPER_PATH "/usr/share/atrium/session-wrapper"
+#endif
+
 #define DEFAULT_GREETER              "/usr/bin/cage -s -- " ATRIUM_GREETER_PATH
 #define DEFAULT_SEAT_DISCOVERY_DELAY 0    /* ms; 0 = disabled */
 #define DEFAULT_CRASH_RESTART_DELAY  1000 /* ms */
@@ -23,6 +27,7 @@
 typedef struct config_data {
     char greeter[512];
     char compositor[512];
+    char session_wrapper[512];
     char desktop[64];
     int  seat_discovery_delay;
     int  crash_restart_delay;
@@ -38,6 +43,7 @@ typedef struct config_data {
 static const config_data default_config = {
     .greeter = DEFAULT_GREETER,
     .compositor = "",
+    .session_wrapper = ATRIUM_SESSION_WRAPPER_PATH,
     .desktop = "",
     .seat_discovery_delay = DEFAULT_SEAT_DISCOVERY_DELAY,
     .crash_restart_delay = DEFAULT_CRASH_RESTART_DELAY,
@@ -66,6 +72,8 @@ static int handle_key(void *userdata, const char *section, const char *name, con
         conf_copy_str("config", name, value, cfg->greeter, sizeof(cfg->greeter));
     } else if (strcmp(name, "compositor") == 0) {
         conf_copy_str("config", name, value, cfg->compositor, sizeof(cfg->compositor));
+    } else if (strcmp(name, "session-wrapper") == 0) {
+        conf_copy_str("config", name, value, cfg->session_wrapper, sizeof(cfg->session_wrapper));
     } else if (strcmp(name, "desktop") == 0) {
         conf_copy_str("config", name, value, cfg->desktop, sizeof(cfg->desktop));
     } else if (strcmp(name, "seat-discovery-delay") == 0) {
@@ -109,6 +117,7 @@ void config_load(void) {
 const char *config_greeter(void) { return g_cfg.greeter; }
 const char *config_compositor(void) { return g_cfg.compositor; }
 const char *config_desktop(void) { return g_cfg.desktop; }
+const char *config_session_wrapper(void) { return g_cfg.session_wrapper; }
 int         config_seat_discovery_delay(void) { return g_cfg.seat_discovery_delay; }
 int         config_crash_restart_delay(void) { return g_cfg.crash_restart_delay; }
 int         config_crash_count_limit(void) { return g_cfg.crash_count_limit; }

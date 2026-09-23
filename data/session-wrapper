@@ -1,0 +1,47 @@
+# atrium session wrapper, sourced by /bin/sh. See session-wrapper in
+# /etc/atrium.conf.
+#
+# Sets up the environment and starts the session command.
+#
+# Argument: the session command as a single string. Shell syntax is allowed.
+
+if [ $# -ne 1 ] || [ -z "$1" ]; then
+    echo "atrium session-wrapper: expected a session command" >&2
+    exit 1
+fi
+command=$1
+
+# Session identity comes from the daemon and from logind via PAM. Save it here
+# and restore it after the profile scripts have run, so that a stray assignment
+# in a profile cannot break anything.
+_seat=$XDG_SEAT
+_vtnr=$XDG_VTNR
+_sid=$XDG_SESSION_ID
+_runtime=$XDG_RUNTIME_DIR
+_stype=$XDG_SESSION_TYPE
+_sclass=$XDG_SESSION_CLASS
+_sdesktop=$XDG_SESSION_DESKTOP
+_cdesktop=$XDG_CURRENT_DESKTOP
+_desktop=$DESKTOP_SESSION
+_bus=$DBUS_SESSION_BUS_ADDRESS
+
+[ -f /etc/profile ] && . /etc/profile
+[ -f "$HOME/.profile" ] && . "$HOME/.profile"
+
+export XDG_SEAT="$_seat"
+export XDG_SESSION_ID="$_sid"
+export XDG_RUNTIME_DIR="$_runtime"
+export XDG_SESSION_TYPE="$_stype"
+export XDG_SESSION_CLASS="$_sclass"
+export DBUS_SESSION_BUS_ADDRESS="$_bus"
+[ -n "$_vtnr" ] && export XDG_VTNR="$_vtnr"
+[ -n "$_sdesktop" ] && export XDG_SESSION_DESKTOP="$_sdesktop"
+[ -n "$_cdesktop" ] && export XDG_CURRENT_DESKTOP="$_cdesktop"
+[ -n "$_desktop" ] && export DESKTOP_SESSION="$_desktop"
+
+unset _seat _vtnr _sid _runtime _stype _sclass _sdesktop _cdesktop _desktop _bus
+
+# "exec" replaces this shell with the session, so the pid atrium forked is the
+# session itself and SIGTERM from the session runner reaches it directly.
+# "eval" preserves atrium's handling of shell metacharacters in Exec=.
+eval exec "$command"
