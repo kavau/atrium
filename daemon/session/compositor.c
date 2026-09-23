@@ -53,8 +53,9 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     for (char **p = pam_result->env; p && *p; p++)
         n_pam++;
 
-    /* passwd fields + PAM env entries + DBUS + XDG desktop (x2) + NULL */
-    int    n_env = 5 + n_pam + 4;
+    /* passwd fields + PAM env entries + DBUS + XDG_DATA_DIRS + XDG desktop
+    (x2) + NULL */
+    int    n_env = 5 + n_pam + 5;
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("child_exec_compositor: calloc");
@@ -72,6 +73,8 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     if (asprintf(&env[i++], "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%u/bus",
                  (unsigned)pw->pw_uid) < 0)
         goto oom;
+    /* Spec default, added after the PAM entries so a PAM-supplied value wins. */
+    env[i++] = "XDG_DATA_DIRS=/usr/local/share:/usr/share";
     if (asprintf(&env[i++], "XDG_SESSION_DESKTOP=%s", desktop) < 0)
         goto oom;
     if (asprintf(&env[i++], "XDG_CURRENT_DESKTOP=%s", desktop) < 0)
