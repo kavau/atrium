@@ -245,6 +245,13 @@ executable('atrium-fake-compositor',
   install: false,
 )
 
+executable('atrium-env-dump',
+  sources: [
+    'tools/env-dump.c',
+  ],
+  install: false,
+)
+
 executable('atrium-fake-greeter',
   sources: [
     'lib/ipc.c',
