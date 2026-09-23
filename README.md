@@ -246,7 +246,7 @@ Bug reports and feature requests are welcome. Please open an issue on
 [GitHub](https://github.com/kavau/atrium/issues) and include:
 
 - A description of the problem or request.
-- Relevant journal output (`sudo journalctl -u atrium -b`).
+- Relevant journal output (`sudo journalctl -t atrium -b`).
 - Your distro, kernel version, and hardware configuration (incl. graphics
   drivers; especially for multiseat-related issues).
 

@@ -20,9 +20,20 @@ sudo loginctl flush-devices
 To check what went wrong, inspect the journal:
 
 ```sh
-journalctl -u atrium -b    # logs from the current boot
-journalctl -u atrium -b-1  # logs from the previous boot
+journalctl -t atrium -b    # everything atrium logged this boot
+journalctl -t atrium -b-1  # the same, for the previous boot
+journalctl -u atrium -b    # systemd's own messages about the unit
 ```
+
+Note the two different filters:
+
+`-t atrium` matches atrium's log identifier and shows everything the daemon,
+the session runners and their children write. This is the one you want while
+diagnosing a login failure.
+
+`-u atrium` matches the systemd unit, so it shows systemd's own messages about
+the unit as well as the daemon's messages, but not those logged after a session
+has been created, while handing off to the greeter or to the compositor.
 
 ## Common Problems
 
@@ -33,7 +44,7 @@ caused by a hung desktop environment. To see what went wrong, look up the
 compositor PID from the atrium log, then query the logs for it:
 
 ```sh
-journalctl -u atrium -b | grep "started user session"
+journalctl -t atrium -b | grep "started user session"
 # note the (PID NNNN) value, then:
 journalctl -b _PID=NNNN
 ```
