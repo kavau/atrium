@@ -25,19 +25,26 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     }
 #endif
 
-    /* Resolve compositor command and desktop name. Configured compositor
-    override has priority over user-selected sessions. */
+    /* Resolve compositor command and desktop names. Configured compositor
+    override has priority over user-selected sessions.
+
+    XDG_CURRENT_DESKTOP is set from DesktopNames (e.g. "KDE");
+    XDG_SESSION_DESKTOP and DESKTOP_SESSION are set from the desktop entry's
+    basename (e.g. "plasma"). A compositor override has no desktop entry, so
+    both are set from `desktop`. */
     const char *compositor_cmd = config_compositor();
-    const char *desktop = config_desktop();
+    const char *current_desktop = config_desktop();
+    const char *session_desktop = config_desktop();
     log_debug("child_exec_compositor: config compositor '%s', desktop '%s'", compositor_cmd,
-              desktop);
+              current_desktop);
     if (!compositor_cmd || !*compositor_cmd) {
         log_debug("child_exec_compositor: no compositor override, looking up session '%s'",
                   session_id);
         const session_entry *e = (*session_id) ? sessions_find(session_id) : NULL;
         if (e) {
             compositor_cmd = e->exec;
-            desktop = e->desktop_names ? e->desktop_names : e->id;
+            current_desktop = e->desktop_names ? e->desktop_names : e->id;
+            session_desktop = e->id;
             log_info("child_exec_compositor: session '%s' (%s)", e->id, e->name);
         } else if (*session_id) {
             log_warn("child_exec_compositor: session '%s' not found", session_id);
@@ -53,9 +60,10 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     for (char **p = pam_result->env; p && *p; p++)
         n_pam++;
 
-    /* passwd fields + PAM env entries + DBUS + XDG_DATA_DIRS + XDG desktop
-    (x2) + NULL */
-    int    n_env = 5 + n_pam + 5;
+    /* passwd fields + PAM env entries + DBUS + XDG_DATA_DIRS + desktop names
+    + NULL. Unknown names are left unset rather than exported empty. */
+    int    n_desktop = (*current_desktop ? 1 : 0) + (*session_desktop ? 2 : 0);
+    int    n_env = NUM_ENV_PASSWD + n_pam + 2 + n_desktop + 1;
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
         log_syserr("child_exec_compositor: calloc");
@@ -75,10 +83,14 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
         goto oom;
     /* Spec default, added after the PAM entries so a PAM-supplied value wins. */
     env[i++] = "XDG_DATA_DIRS=/usr/local/share:/usr/share";
-    if (asprintf(&env[i++], "XDG_SESSION_DESKTOP=%s", desktop) < 0)
+    if (*current_desktop && asprintf(&env[i++], "XDG_CURRENT_DESKTOP=%s", current_desktop) < 0)
         goto oom;
-    if (asprintf(&env[i++], "XDG_CURRENT_DESKTOP=%s", desktop) < 0)
-        goto oom;
+    if (*session_desktop) {
+        if (asprintf(&env[i++], "XDG_SESSION_DESKTOP=%s", session_desktop) < 0)
+            goto oom;
+        if (asprintf(&env[i++], "DESKTOP_SESSION=%s", session_desktop) < 0)
+            goto oom;
+    }
     env[i++] = NULL;
     assert(i == n_env);
 

@@ -9,7 +9,8 @@
 #   compositor = sway
 
 # Desktop identifier used with compositor= override; added as
-# XDG_CURRENT_DESKTOP / XDG_SESSION_DESKTOP to the session environment.
+# XDG_CURRENT_DESKTOP / XDG_SESSION_DESKTOP / DESKTOP_SESSION to the session
+# environment. Without an override these come from the selected .desktop entry.
 #
 # Example:
 #   desktop = sway
