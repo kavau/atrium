@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/prctl.h>
 
 #include <glib-unix.h>
 #include <gtk/gtk.h>
@@ -60,6 +61,9 @@ static greeter_page current_page(void) {
 
 static void switch_page(greeter_page page) {
     const char *name = page == PAGE_PASSWORD ? "password" : "users";
+    /* Suppress core dumps while a password may be in memory. */
+    if (prctl(PR_SET_DUMPABLE, page == PAGE_PASSWORD ? 0 : 1, 0, 0, 0) < 0)
+        log_syserr("greeter: prctl(PR_SET_DUMPABLE)");
     gtk_stack_set_visible_child_name(g_stack, name);
 }
 
