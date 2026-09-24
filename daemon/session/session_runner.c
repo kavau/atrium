@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <systemd/sd-login.h>
 #include <unistd.h>
@@ -14,9 +15,9 @@
 #include "auth.h"
 #include "compositor.h"
 #include "daemon/core/bus.h"
-#include "daemon/policy/config.h"
 #include "daemon/core/seat.h"
 #include "daemon/core/vt.h"
+#include "daemon/policy/config.h"
 #include "greeter.h"
 #include "lib/defs.h"
 #include "lib/ipc.h"
@@ -171,6 +172,11 @@ static void wait_udev_settle(const char *seat_name) {
 _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     assert(pam_conf_path);
     assert(s);
+
+    /* Suppress core dumps as a precaution (pam_kwallet5 keeps a plaintext
+    password in memory until pam_end()) */
+    if (prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) < 0)
+        log_syserr("session_runner: prctl(PR_SET_DUMPABLE)");
 
     /* Ignore SIGPIPE to prevent a broken IPC pipe from killing this process. */
     signal(SIGPIPE, SIG_IGN);
