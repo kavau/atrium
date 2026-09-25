@@ -467,8 +467,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
     theme_apply();
 
     GtkSettings *gtk_settings = gtk_settings_get_default();
+    /* Pin font rendering. GTK otherwise tries to retrieve these settings from
+    the session bus, wich is not always reachable. */
     g_object_set(gtk_settings, "gtk-cursor-theme-name", greeter_config_cursor_theme(),
-                 "gtk-cursor-theme-size", greeter_config_cursor_size(), NULL);
+                 "gtk-cursor-theme-size", greeter_config_cursor_size(), "gtk-theme-name", "Adwaita",
+                 "gtk-xft-antialias", 1, "gtk-xft-hinting", 1, "gtk-xft-hintstyle", "hintslight",
+                 "gtk-xft-rgba", "none", "gtk-xft-dpi", 96 * 1024, NULL);
 
     /* Detect number of displays on this seat, so we can center the card correctly. */
     GdkDisplay *display = gdk_display_get_default();
