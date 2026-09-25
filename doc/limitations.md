@@ -45,3 +45,9 @@ As a long-term solution, a dedicated SELinux policy module with its own
 `atrium_t` domain is tracked in
 [#86](https://github.com/kavau/atrium/issues/86).
 
+### Touchpad tap-to-click is not supported in the greeter
+
+This is a limitation of `cage`, the kiosk compositor atrium uses to launch the
+greeter. As a workaround, you can use `labwc`, which has tap-to-click by
+default, to host the greeter. See
+[Custom compositor as greeter host](configuration.md#custom-compositor-as-greeter-host).
