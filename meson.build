@@ -354,6 +354,7 @@ install_data(
 install_data(
   'data/themes/catppuccin-latte.css',
   'data/themes/catppuccin-mocha.css',
+  'data/themes/example.css',
   'data/themes/ghibli.css',
   'data/themes/hacker.css',
   'data/themes/high-contrast.css',

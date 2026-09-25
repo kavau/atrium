@@ -23,7 +23,7 @@
 }
 
 .card-tint {
-  background-color: rgba(@atrium-card, 0.7);
+  background-color: alpha(@atrium-card, 0.6);
 }
 
 .password-field {

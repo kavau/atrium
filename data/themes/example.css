@@ -1,0 +1,248 @@
+/*
+ * atrium example theme - an annotated reference
+ *
+ * How theming works: 
+ *
+ *   The theme file is appended to atrium's built-in CSS, so later declarations
+ *   win and you only need to write what you want to change. An empty theme file
+ *   is valid and looks exactly like the default.
+ *
+ * How to use this file:
+ *
+ *   Copy and edit the contents, then reference it from
+ *   /etc/atrium-greeter.conf, e.g. `theme = /etc/my-theme.css`.
+ *
+ * Notes:
+ *
+ *   - CSS parse errors are logged to the journal: journalctl -u atrium
+ *   - Base font size is configured in /etc/atrium-greeter.conf
+ *     (base-font-size), not here. All font sizes below are relative (em) to
+ *     that value.
+ *   - Node names like "> text" and "> placeholder" are GTK internals and can
+ *     change between GTK versions.
+ *   - The defaults live in greeter/theme.css in the source tree.
+ */
+
+/* ------------------------------------------------------------------------
+ * Colors
+ * ---------------------------------------------------------------------- */
+
+@define-color atrium-bg           #1e1e2e; /* desktop background (no background image set) */
+@define-color atrium-card         #313244; /* card surface */
+@define-color atrium-text         #cdd6f4; /* primary text */
+@define-color atrium-border       #45475a; /* borders, and hover fill for flat buttons */
+@define-color atrium-accent       #89b4fa; /* solid buttons, focused entry border */
+@define-color atrium-accent-hover #b4d0ff; /* solid buttons, hover fill */
+@define-color atrium-accent-fg    #1e1e2e; /* text drawn on top of accent-colored surfaces */
+@define-color atrium-subtle       #a6adc8; /* placeholder text */
+@define-color atrium-error        #f38ba8; /* error messages */
+@define-color atrium-dropdown     #bac2de; /* session dropdown button */
+
+/* ------------------------------------------------------------------------
+ * Window and card
+ * ---------------------------------------------------------------------- */
+
+/* The full-screen window background. Visible only when no background-image is
+configured. */
+window {
+  background-color: @atrium-bg;
+  color: @atrium-text;
+}
+
+/* The login card. */
+.card {
+  background-color: @atrium-card;
+  border-radius: 12px;
+
+  /* Drop shadow under the card. box-shadow parameters are: x-offset y-offset
+  blur-radius spread-radius color. */
+  box-shadow: 0 8px 24px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* Frosted-glass layer: a blurred slice of the background image, drawn behind
+the card content, only visible when a background image is set. Off by default.
+To enable it, set opacity to 1 and choose blur radius and brightness to your
+liking. */
+.card-background {
+  opacity: 0;
+  filter: blur(12px) brightness(0.7);
+}
+
+/* Color tint over the glass layer. Only visible when .card-background is on. */
+.card-tint {
+  background-color: alpha(@atrium-card, 0.6);
+}
+
+/* ------------------------------------------------------------------------
+ * Text
+ * ---------------------------------------------------------------------- */
+
+/* The greeting above the user list (the login-label config key). */
+.heading {
+  font-size: 1.3em;
+  font-weight: bold;
+  color: @atrium-text;
+  margin-bottom: 8px;
+}
+
+/* Authentication failures and other messages. */
+.error-label {
+  color: @atrium-error;
+  font-size: 0.9em;
+}
+
+/* ------------------------------------------------------------------------
+ * Buttons
+ * ---------------------------------------------------------------------- */
+
+/* User selection buttons on the first page. */
+.user-button {
+  font-size: 1em;
+  background-image: none;
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
+  border: none;
+  box-shadow: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  margin-bottom: 8px;
+}
+
+.user-button:hover {
+  background-image: none;
+  background-color: @atrium-accent-hover;
+  box-shadow: none;
+}
+
+/* Login button on the password page. */
+button.suggested-action {
+  font-size: 1em;
+  background-image: none;
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
+  border: none;
+  box-shadow: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+}
+
+button.suggested-action:hover {
+  background-image: none;
+  background-color: @atrium-accent-hover;
+  box-shadow: none;
+}
+
+/* Back button on the password page. Flat by default. */
+.back-button {
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  color: @atrium-text;
+  box-shadow: none;
+}
+
+.back-button:hover {
+  background-image: none;
+  background-color: @atrium-border;
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------------
+ * Password entry
+ *
+ * The entry consists of two nested elements: the .password-field container and
+ * the GtkText node inside it that actually draws the box. Style the inner node.
+ * ---------------------------------------------------------------------- */
+
+/* Strips the toolkit's own padding and background from the container. All
+styling goes on the text node. */
+.password-field {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  padding: 0;
+  min-height: 0;
+}
+
+.password-field > text {
+  font-size: 1em;
+  background-color: @atrium-bg;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+/* The "Password" hint shown while the field is empty. */
+.password-field > text > placeholder {
+  color: @atrium-subtle;
+}
+
+/* Focused entry. */
+.password-field > text:focus {
+  border: 2px solid @atrium-accent;
+}
+
+/* ------------------------------------------------------------------------
+ * Session picker
+ *
+ * Shown below the card only when more than one desktop session is installed,
+ * and hidden when compositor= is set in /etc/atrium.conf.
+ * ---------------------------------------------------------------------- */
+
+/* Row holding the label and the dropdown. */
+.session-row {
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
+/* The "Session" label next to the dropdown. */
+.session-row > label {
+  color: @atrium-text;
+  font-size: 0.8em;
+  margin-right: 12px;
+}
+
+dropdown.session-dropdown > button {
+  background-image: none;
+  background-color: @atrium-dropdown;
+  color: @atrium-accent-fg;
+  border: 1px solid @atrium-border;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.8em;
+  box-shadow: none;
+}
+
+dropdown.session-dropdown > button:hover {
+  background-image: none;
+  background-color: @atrium-border;
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------------
+ * Miscellaneous
+ * ---------------------------------------------------------------------- */
+
+/* Spinner shown while the greeter waits for the daemon's response. */
+spinner {
+  -gtk-icon-size: 1em;
+}
+
+/* The black overlay drawn after blank-timeout seconds of inactivity. Any key
+or mouse movement dismisses it. */
+.blank-page {
+  background-color: black;
+}
+
+/* Keyboard focus ring. With :focus-visible, the ring appears only when
+navigating with the keyboard. If you prefer the ring to always be visible, use
+:focus instead. */
+.user-button:focus-visible,
+button.suggested-action:focus-visible,
+.back-button:focus-visible,
+dropdown.session-dropdown > button:focus-visible {
+  outline: 2px solid @atrium-accent;
+  outline-offset: 2px;
+}
