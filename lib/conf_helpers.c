@@ -1,5 +1,6 @@
 #include "conf_helpers.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,7 +66,10 @@ char *conf_file_lookup(const char *path, const char *key) {
 int conf_parse_int(const char *prefix, const char *key, const char *val, long max, int *out) {
     char *end;
     long  v = strtol(val, &end, 10);
-    if (*end != '\0' || v < 0) {
+    int   converted = (end != val); /* end == val means nothing was converted. */
+    while (isspace((unsigned char)*end))
+        ++end;
+    if (!converted || *end != '\0' || v < 0) {
         log_warn("%s: invalid value for '%s': '%s', using default", prefix, key, val);
         return 0;
     }
@@ -77,14 +81,25 @@ int conf_parse_int(const char *prefix, const char *key, const char *val, long ma
     return 1;
 }
 
+/* Return 1 if val equals expected, ignoring whitespace around val. */
+static int val_eq(const char *val, const char *expected) {
+    while (isspace((unsigned char)*val))
+        ++val;
+    size_t len = strlen(expected);
+    if (strncmp(val, expected, len) != 0)
+        return 0;
+    val += len;
+    while (isspace((unsigned char)*val))
+        ++val;
+    return *val == '\0';
+}
+
 int conf_parse_bool(const char *prefix, const char *key, const char *val, int *out) {
-    if (strcmp(val, "true") == 0 || strcmp(val, "yes") == 0 || strcmp(val, "1") == 0 ||
-        strcmp(val, "on") == 0) {
+    if (val_eq(val, "true") || val_eq(val, "yes") || val_eq(val, "1") || val_eq(val, "on")) {
         *out = 1;
         return 1;
     }
-    if (strcmp(val, "false") == 0 || strcmp(val, "no") == 0 || strcmp(val, "0") == 0 ||
-        strcmp(val, "off") == 0) {
+    if (val_eq(val, "false") || val_eq(val, "no") || val_eq(val, "0") || val_eq(val, "off")) {
         *out = 0;
         return 1;
     }

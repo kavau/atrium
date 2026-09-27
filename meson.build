@@ -252,6 +252,15 @@ executable('atrium-env-dump',
   install: false,
 )
 
+executable('atrium-conf-helpers-test',
+  sources: [
+    'lib/conf_helpers.c',
+    'lib/log.c',
+    'tools/conf-helpers-test.c',
+  ],
+  install: false,
+)
+
 executable('atrium-fake-greeter',
   sources: [
     'lib/ipc.c',
