@@ -4,13 +4,43 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <syslog.h>
 #ifdef HAVE_SD_JOURNAL
 #include <systemd/sd-journal.h>
 #endif
 #include <unistd.h>
 
+#include "lib/conf_helpers.h"
 #include "lib/log.h"
+
+/* File containing login environment definitions. */
+#define LOGIN_DEFS_PATH "/etc/login.defs"
+
+/* Used when login.defs has nothing to say about the PATH. */
+#define FALLBACK_PATH_ENV "PATH=/usr/local/bin:/usr/bin:/bin"
+
+/* Return the login PATH declared in login.defs (ENV_SUPATH for uid 0, ENV_PATH
+otherwis) as an allocated "PATH=..." string. Returns NULL when the file or the
+key is absent. */
+static char *login_defs_path(uid_t uid) {
+    char *val = conf_file_lookup(LOGIN_DEFS_PATH, (uid == 0) ? "ENV_SUPATH" : "ENV_PATH");
+    if (!val)
+        return NULL;
+
+    /* login.defs conventionally declares the whole assignment, e.g.
+    "ENV_PATH PATH=/usr/bin", but we should tolerate a value without prefix. */
+    if (strncmp(val, "PATH=", 5) == 0)
+        return val;
+
+    char *path_env = NULL;
+    if (asprintf(&path_env, "PATH=%s", val) < 0) {
+        log_error("login_defs_path: out of memory");
+        path_env = NULL;
+    }
+    free(val);
+    return path_env;
+}
 
 int env_append_passwd(const char *username, char **env, int i, struct passwd **pw_out) {
     struct passwd *pw = getpwnam(username);
@@ -26,7 +56,14 @@ int env_append_passwd(const char *username, char **env, int i, struct passwd **p
         goto oom;
     if (asprintf(&env[i++], "SHELL=%s", pw->pw_shell) < 0)
         goto oom;
-    env[i++] = "PATH=/usr/local/bin:/usr/bin:/bin";
+    char *path_env = login_defs_path(pw->pw_uid);
+    if (path_env) {
+        log_debug("env_append_passwd: %s from %s", path_env, LOGIN_DEFS_PATH);
+        env[i++] = path_env;
+    } else {
+        log_debug("env_append_passwd: using built-in %s", FALLBACK_PATH_ENV);
+        env[i++] = FALLBACK_PATH_ENV;
+    }
     *pw_out = pw;
     return i;
 oom:

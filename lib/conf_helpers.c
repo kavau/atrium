@@ -6,9 +6,65 @@
 
 #include "log.h"
 
+char *conf_file_lookup(const char *path, const char *key) {
+    size_t keylen = strlen(key);
+
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return NULL;
+
+    char  *line = NULL;
+    char  *result = NULL;
+    size_t cap = 0;
+
+    while (getline(&line, &cap, f) > 0) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t')
+            ++p;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0')
+            continue;
+        if (strncmp(p, key, keylen) != 0)
+            continue;
+        p += keylen;
+
+        /* Require a separator, so "KEY" does not match "KEY_EXTRA". */
+        if (*p != ' ' && *p != '\t' && *p != '=')
+            continue;
+
+        while (*p == ' ' || *p == '\t')
+            ++p;
+        if (*p == '=') /* Consume the optional '=' separator. */
+            ++p;
+        while (*p == ' ' || *p == '\t')
+            ++p;
+
+        char *end = p + strlen(p);
+        while (end > p && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t'))
+            --end;
+        *end = '\0';
+
+        /* If the value is quoted, remove the quotes. */
+        if (*p == '"' && end > p + 1 && end[-1] == '"') {
+            ++p;
+            end[-1] = '\0';
+        }
+        if (!*p)
+            continue;
+
+        result = strdup(p);
+        if (!result)
+            log_error("conf_file_lookup: out of memory");
+        break;
+    }
+
+    free(line);
+    fclose(f);
+    return result;
+}
+
 int conf_parse_int(const char *prefix, const char *key, const char *val, long max, int *out) {
     char *end;
-    long v = strtol(val, &end, 10);
+    long  v = strtol(val, &end, 10);
     if (*end != '\0' || v < 0) {
         log_warn("%s: invalid value for '%s': '%s', using default", prefix, key, val);
         return 0;
