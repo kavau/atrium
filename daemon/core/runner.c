@@ -10,6 +10,10 @@
 #include "lib/proc.h"
 #include "seat.h"
 
+/* Grace period for session runner to shut down. Longer than the default, since
+the runner has to wait for both compositor and PAM session to complete. */
+#define RUNNER_STOP_GRACE_MS (PROC_GRACE_MS * 2)
+
 int runner_start(const char *pam_conf_path, seat *s) {
     assert(s);
 
@@ -58,7 +62,7 @@ void runner_stop(seat *s) {
         return;
 
     log_info("stopping session runner (PID %d) on seat '%s'", s->runner_pid, s->name);
-    kill_and_wait(s->runner_pid, "session runner", s->name);
+    kill_and_wait_timeout(s->runner_pid, RUNNER_STOP_GRACE_MS, "session runner", s->name);
     s->runner_pid = 0;
     s->state = SEAT_IDLE;
 }

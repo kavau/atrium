@@ -102,13 +102,16 @@ static int parse_credentials(char *buf, ssize_t n, const char **username, const 
     return 0;
 }
 
-/* Wait for a child process to exit and log the result. Retries on EINTR. Logs
-an error if waitpid fails. */
-static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
+/* Wait for a child process to exit and log the result. Returns 1 once the child
+has been reaped, or 0 if the wait was cut short by a shutdown request. Other
+interruptions are retried. Logs an error if waitpid fails. */
+static int wait_child(pid_t pid, const char *desc, const char *seat_name) {
     int   wstatus = 0;
     pid_t r;
     do {
         r = waitpid(pid, &wstatus, 0);
+        if (r < 0 && errno == EINTR && g_terminate)
+            return 0;
     } while (r < 0 && errno == EINTR);
 
     if (r < 0)
@@ -120,6 +123,7 @@ static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
                  strsignal(WTERMSIG(wstatus)), seat_name);
     else
         log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
+    return 1;
 }
 
 /* Release everything the user session holds, then exit. Use on every path after
@@ -471,7 +475,12 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     log_info("started user session for '%s' (PID %d) on seat '%s'", username, (int)comp_pid,
              s->name);
 
-    wait_child(comp_pid, "compositor", s->name);
+    if (g_terminate || !wait_child(comp_pid, "compositor", s->name)) {
+        /* We received SIGTERM with the session still running. The handler has already
+        sent SIGTERM to the compositor; give it a grace period then SIGKILL it. */
+        log_info("session_runner: shutdown requested, stopping user session on seat '%s'", s->name);
+        kill_and_wait(comp_pid, "compositor", s->name);
+    }
     g_child_pid = 0;
 
     /* Re-suppress VT keyboard (compositor may have re-enabled it on exit) */
