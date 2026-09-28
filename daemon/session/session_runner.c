@@ -33,11 +33,13 @@ static volatile sig_atomic_t g_child_pid = 0;
 
 static volatile sig_atomic_t user_session_active = 0; /* Set to 1 while user session is active */
 static volatile sig_atomic_t g_reload_requested = 0;  /* Set to 1 if SIGUSR1 is received */
+static volatile sig_atomic_t g_terminate = 0;         /* Set to 1 if SIGTERM is received. */
 
-/* SIGTERM handler: kill the current child so it exits cleanly, then let the
-runner's normal wait path detect the exit and clean up. */
+/* SIGTERM handler: record the request and kill the current child so it exits
+cleanly, then let the runner's normal wait path detect the exit and clean up. */
 static void on_sigterm(int sig) {
     (void)sig;
+    g_terminate = 1;
     if (g_child_pid > 0)
         kill((pid_t)g_child_pid, SIGTERM);
 }
@@ -118,6 +120,23 @@ static void wait_child(pid_t pid, const char *desc, const char *seat_name) {
                  strsignal(WTERMSIG(wstatus)), seat_name);
     else
         log_warn("%s exited with unexpected status %d on seat '%s'", desc, wstatus, seat_name);
+}
+
+/* Release everything the user session holds, then exit. Use on every path after
+successful authentication. */
+static _Noreturn void close_session_and_exit(auth_result *pam_result, int status) {
+    user_session_active = 0;
+    auth_close_session(pam_result);
+    release_login_lock();
+    _exit(status);
+}
+
+/* Exit cleanly if SIGTERM has been recorded. */
+static void exit_if_terminating(auth_result *pam_result, const char *seat_name) {
+    if (!g_terminate)
+        return;
+    log_info("session_runner: shutdown requested on seat '%s'", seat_name);
+    close_session_and_exit(pam_result, EXIT_SUCCESS);
 }
 
 /* Wait until logind has activated the session by polling sd_session_is_active().
@@ -319,10 +338,12 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         if (n <= 0) {
             if (g_reload_requested)
                 log_info("session_runner: terminating due to reload request on seat '%s'", s->name);
+            else if (g_terminate)
+                log_info("session_runner: terminating due to shutdown on seat '%s'", s->name);
             else
                 log_error("session_runner: greeter disconnected before auth on seat '%s'", s->name);
             kill_and_wait(greeter_pid, "greeter", s->name);
-            _exit(g_reload_requested ? EXIT_SUCCESS : EXIT_FAILURE);
+            _exit(g_reload_requested || g_terminate ? EXIT_SUCCESS : EXIT_FAILURE);
         }
 
         const char *password;
@@ -423,19 +444,21 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     /* ---- USER SESSION PHASE ---- */
 
+    exit_if_terminating(&pam_result, s->name);
+
     /* Activate VT for seat0; blocks until active. */
     if (s->vtnr > 0 && vt_activate(s->vtnr) < 0) {
         log_error("session_runner: failed to activate VT%d", s->vtnr);
-        auth_close_session(&pam_result);
-        _exit(EXIT_FAILURE);
+        close_session_and_exit(&pam_result, EXIT_FAILURE);
     }
+
+    exit_if_terminating(&pam_result, s->name); /* re-check since vt_activate() blocks */
 
     /* Fork the compositor child. */
     pid_t comp_pid = fork();
     if (comp_pid < 0) {
         log_syserr("session_runner: fork (compositor)");
-        auth_close_session(&pam_result);
-        _exit(EXIT_FAILURE);
+        close_session_and_exit(&pam_result, EXIT_FAILURE);
     }
     if (comp_pid == 0) {
         /* Child process - execute compositor */
@@ -450,14 +473,11 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     wait_child(comp_pid, "compositor", s->name);
     g_child_pid = 0;
-    user_session_active = 0;
 
     /* Re-suppress VT keyboard (compositor may have re-enabled it on exit) */
     if (s->vtnr > 0)
         vt_suppress_keyboard(s->vtnr, NULL);
 
-    auth_close_session(&pam_result);
-    release_login_lock();
     log_debug("session lifecycle complete on seat '%s'", s->name);
-    _exit(EXIT_SUCCESS);
+    close_session_and_exit(&pam_result, EXIT_SUCCESS);
 }
