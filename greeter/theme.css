@@ -108,6 +108,19 @@ spinner {
   box-shadow: none;
 }
 
+/* Keyboard focus ring. The system GTK theme draws one, but it is invisible or
+very faint against some backgrounds. With :focus-visible, the ring appears only
+when navigating with the keyboard. Using :focus instead would make the ring
+always visible.
+*/
+.user-button:focus-visible,
+button.suggested-action:focus-visible,
+.back-button:focus-visible,
+dropdown.session-dropdown > button:focus-visible {
+  outline: 2px solid @atrium-accent;
+  outline-offset: 2px;
+}
+
 /* Strip Adwaita's padding/background from the outer entry container. */
 .password-field {
   background-color: transparent;
