@@ -53,3 +53,8 @@ int bus_get_fd(void);
 /* Drain all pending bus messages. Call whenever bus_get_fd() is readable.
 Returns 0 on success, -1 on error (error is logged). */
 int bus_process(void);
+
+/* Request power off or reboot via logind. Returns 0 on success, -1 on error
+(error is logged). */
+int bus_power_off(void);
+int bus_reboot(void);

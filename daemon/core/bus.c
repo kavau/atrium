@@ -255,3 +255,22 @@ int bus_activate_session(const char *session_object) {
     sd_bus_error_free(&error);
     return (r < 0) ? -1 : 0;
 }
+
+static int login1_power_call(const char *method) {
+    assert(g_bus);
+
+    sd_bus_error    error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+    int r = sd_bus_call_method(g_bus, "org.freedesktop.login1", "/org/freedesktop/login1",
+                               "org.freedesktop.login1.Manager", method, &error, &reply, "b", 0);
+    sd_bus_message_unref(reply);
+    if (r < 0)
+        log_warn("login1_power_call(%s): %s", method, error.message ? error.message : strerror(-r));
+    else
+        log_info("login1_power_call: %s accepted by logind", method);
+    sd_bus_error_free(&error);
+    return (r < 0) ? -1 : 0;
+}
+
+int bus_power_off(void) { return login1_power_call("PowerOff"); }
+int bus_reboot(void) { return login1_power_call("Reboot"); }
