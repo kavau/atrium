@@ -52,6 +52,12 @@ greeter = /usr/bin/cage -s -- @greeter_dir@/atrium-gtk-greeter
 # session bus across seats.
 allow-duplicate-login = false
 
+# --- Work in progress - currently not functional ---
+# Show "Shut Down" and "Restart" buttons on the login screen. On a multiseat
+# machine a shutdown from any seat takes down the sessions on all other seats,
+# so set this to false if this is undesirable.
+power-actions = false
+
 # Seats to ignore during enumeration. Repeat for multiple seats.
 # Useful for seats with no connected display that would crash-loop the greeter.
 #

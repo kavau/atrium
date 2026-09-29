@@ -38,8 +38,9 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
     n_env += NUM_ENV_PASSWD;
     /* XDG_SEAT [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS XDG_RUNTIME_DIR
     XDG_SESSION_ID WLR_LIBINPUT_NO_DEVICES [ATRIUM_SESSION_LIST]
-    [ATRIUM_SESSION_PRESELECT] NULL */
-    n_env += 7 + (s->vtnr > 0 ? 1 : 0) + (*session_list ? 1 : 0) + (*preselect ? 1 : 0);
+    [ATRIUM_SESSION_PRESELECT] [ATRIUM_POWER_ACTIONS] NULL */
+    n_env += 7 + (s->vtnr > 0 ? 1 : 0) + (*session_list ? 1 : 0) + (*preselect ? 1 : 0) +
+             (config_power_actions() ? 1 : 0);
 
     char **env = calloc(n_env, sizeof(*env));
     if (!env) {
@@ -68,6 +69,8 @@ _Noreturn void child_exec_greeter(const char *username, const seat *s, ipc_chann
         goto oom;
     if (*preselect && asprintf(&env[i++], "ATRIUM_SESSION_PRESELECT=%s", preselect) < 0)
         goto oom;
+    if (config_power_actions())
+        env[i++] = "ATRIUM_POWER_ACTIONS=1";
 
     for (char **p = ipc_env; *p; p++)
         env[i++] = *p;
