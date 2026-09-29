@@ -14,6 +14,9 @@ int         greeter_config_blank_timeout(void);  /* seconds; 0 = disabled */
 int         greeter_config_base_font_size(void); /* px */
 const char *greeter_config_login_label(void);
 const char *greeter_config_cursor_theme(void);
-int         greeter_config_cursor_size(void);    /* px */
+int         greeter_config_cursor_size(void); /* px */
 const char *greeter_config_theme(void);
 const char *greeter_config_background_image(void);
+
+/* Return 1 if username is listed in a 'hide-user' entry. */
+int greeter_config_is_hidden_user(const char *username);

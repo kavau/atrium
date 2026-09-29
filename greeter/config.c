@@ -5,12 +5,15 @@
 #include "ini.h"
 #include "lib/conf_helpers.h"
 #include "lib/log.h"
+#include "users.h"
 
 #define DEFAULT_BLANK_TIMEOUT  300
-#define DEFAULT_BASE_FONT_SIZE  28
+#define DEFAULT_BASE_FONT_SIZE 28
 #define DEFAULT_LOGIN_LABEL    "Log in"
 #define DEFAULT_CURSOR_THEME   "Adwaita"
-#define DEFAULT_CURSOR_SIZE     36
+#define DEFAULT_CURSOR_SIZE    36
+
+#define MAX_HIDDEN_USERS 32
 
 static struct {
     int  blank_timeout;
@@ -20,18 +23,19 @@ static struct {
     int  cursor_size;
     char theme[512];
     char background_image[512];
+    char hidden_users[MAX_HIDDEN_USERS][MAX_USERNAME_LEN];
+    int  hidden_user_count;
 } g_cfg = {
-    .blank_timeout    = DEFAULT_BLANK_TIMEOUT,
-    .base_font_size   = DEFAULT_BASE_FONT_SIZE,
-    .login_label      = DEFAULT_LOGIN_LABEL,
-    .cursor_theme     = DEFAULT_CURSOR_THEME,
-    .cursor_size      = DEFAULT_CURSOR_SIZE,
-    .theme            = "",
+    .blank_timeout = DEFAULT_BLANK_TIMEOUT,
+    .base_font_size = DEFAULT_BASE_FONT_SIZE,
+    .login_label = DEFAULT_LOGIN_LABEL,
+    .cursor_theme = DEFAULT_CURSOR_THEME,
+    .cursor_size = DEFAULT_CURSOR_SIZE,
+    .theme = "",
     .background_image = "",
 };
 
-static int handle_key(void *userdata, const char *section, const char *name,
-                      const char *value) {
+static int handle_key(void *userdata, const char *section, const char *name, const char *value) {
     (void)userdata;
 
     if (*section) {
@@ -48,8 +52,7 @@ static int handle_key(void *userdata, const char *section, const char *name,
     } else if (strcmp(name, "base-font-size") == 0) {
         conf_parse_int("greeter-config", name, value, 200, &g_cfg.base_font_size);
     } else if (strcmp(name, "login-label") == 0) {
-        conf_copy_str("greeter-config", name, value, g_cfg.login_label,
-                      sizeof(g_cfg.login_label));
+        conf_copy_str("greeter-config", name, value, g_cfg.login_label, sizeof(g_cfg.login_label));
     } else if (strcmp(name, "cursor-theme") == 0) {
         conf_copy_str("greeter-config", name, value, g_cfg.cursor_theme,
                       sizeof(g_cfg.cursor_theme));
@@ -60,6 +63,9 @@ static int handle_key(void *userdata, const char *section, const char *name,
     } else if (strcmp(name, "background-image") == 0) {
         conf_copy_str("greeter-config", name, value, g_cfg.background_image,
                       sizeof(g_cfg.background_image));
+    } else if (strcmp(name, "hide-user") == 0) {
+        conf_append_strlist("greeter-config", name, value, g_cfg.hidden_users[0],
+                            &g_cfg.hidden_user_count, MAX_HIDDEN_USERS, MAX_USERNAME_LEN);
     } else {
         log_warn("greeter-config: unknown key '%s', ignoring", name);
     }
@@ -76,10 +82,17 @@ void greeter_config_load(const char *path) {
         log_info("greeter-config: loaded %s", path);
 }
 
-int         greeter_config_blank_timeout(void)    { return g_cfg.blank_timeout; }
-int         greeter_config_base_font_size(void)   { return g_cfg.base_font_size; }
-const char *greeter_config_login_label(void)      { return g_cfg.login_label; }
-const char *greeter_config_cursor_theme(void)     { return g_cfg.cursor_theme; }
-int         greeter_config_cursor_size(void)      { return g_cfg.cursor_size; }
-const char *greeter_config_theme(void)            { return g_cfg.theme; }
+int         greeter_config_blank_timeout(void) { return g_cfg.blank_timeout; }
+int         greeter_config_base_font_size(void) { return g_cfg.base_font_size; }
+const char *greeter_config_login_label(void) { return g_cfg.login_label; }
+const char *greeter_config_cursor_theme(void) { return g_cfg.cursor_theme; }
+int         greeter_config_cursor_size(void) { return g_cfg.cursor_size; }
+const char *greeter_config_theme(void) { return g_cfg.theme; }
 const char *greeter_config_background_image(void) { return g_cfg.background_image; }
+
+int greeter_config_is_hidden_user(const char *username) {
+    for (int i = 0; i < g_cfg.hidden_user_count; i++)
+        if (strcmp(g_cfg.hidden_users[i], username) == 0)
+            return 1;
+    return 0;
+}

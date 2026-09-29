@@ -4,6 +4,7 @@
 #include <pwd.h>
 #include <string.h>
 
+#include "config.h"
 #include "lib/log.h"
 
 int enumerate_users(greeter_user *users, int max) {
@@ -16,6 +17,10 @@ int enumerate_users(greeter_user *users, int max) {
             continue;
         if (pw->pw_shell == NULL || pw->pw_shell[0] == '\0' || strstr(pw->pw_shell, "nologin") ||
             strcmp(pw->pw_shell, "/bin/false") == 0) {
+            continue;
+        }
+        if (greeter_config_is_hidden_user(pw->pw_name)) {
+            log_debug("users: hiding '%s' (hide-user)", pw->pw_name);
             continue;
         }
         snprintf(users[count].username, sizeof(users[count].username), "%s", pw->pw_name);
