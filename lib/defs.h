@@ -13,7 +13,8 @@ Must stay below PIPE_BUF (4096 on Linux) to guarantee atomic writes. */
 #define MAX_LEN_IPC_MSG 512
 
 /* IPC message types. */
-#define IPC_TYPE_CRED "cred" /* "cred\0<username>\0<password>\0<session_id>\0" */
+#define IPC_TYPE_CRED  "cred"  /* "cred\0<username>\0<password>\0<session_id>\0" */
+#define IPC_TYPE_POWER "power" /* "power\0<action>\0" */
 
 /* PAM configuration directory. */
 #define PAM_CONF_PATH "/etc/pam.d"

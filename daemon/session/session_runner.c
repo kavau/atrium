@@ -164,6 +164,41 @@ static void wait_udev_settle(const char *seat_name) {
     }
 }
 
+/* Handle a power action message from the greeter. */
+static void handle_power_request(const char *msg, ssize_t len, ipc_channel *ch,
+                                 const char *seat_name) {
+    const char *action;
+    if (ipc_msg_parse1(msg, len, IPC_TYPE_POWER, &action) < 0) {
+        log_warn("session_runner: invalid power request from seat '%s'", seat_name);
+        ipc_send_str(ch, "fail:invalid power request");
+        return;
+    }
+    log_info("session_runner: power request '%s' received on seat '%s'", action, seat_name);
+    if (!config_power_actions()) {
+        log_warn("session_runner: power actions disabled in config, ignoring request");
+        ipc_send_str(ch, "fail:not permitted");
+        return;
+    }
+
+    int r = 0;
+    if (strcmp(action, "shutdown") == 0) {
+        log_info("session_runner: shutting down system on seat '%s'", seat_name);
+        r = bus_power_off();
+    } else if (strcmp(action, "reboot") == 0) {
+        log_info("session_runner: rebooting system on seat '%s'", seat_name);
+        r = bus_reboot();
+    } else {
+        log_warn("session_runner: unknown power action '%s' on seat '%s'", action, seat_name);
+        /* TODO: the greeter currently cannot process the response. */
+        /* ipc_send_str(ch, "fail:unknown power action"); */
+    }
+
+    if (r < 0) {
+        /* TODO: the greeter currently cannot process the response. */
+        /* ipc_send_str(ch, "fail:request refused"); */
+    }
+}
+
 _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     assert(pam_conf_path);
     assert(s);
@@ -322,8 +357,13 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             _exit(g_reload_requested || g_terminate ? EXIT_SUCCESS : EXIT_FAILURE);
         }
 
-        /* Check message type. Currently we only accept credentials messages. */
+        /* Check message type. We accept credentials and power action messages. */
         const char *tag = ipc_msg_type(cred_buf, n);
+        if (tag && strcmp(tag, IPC_TYPE_POWER) == 0) {
+            handle_power_request(cred_buf, n, parent_end, s->name);
+            goto retry;
+        }
+
         if (!tag || strcmp(tag, IPC_TYPE_CRED) != 0) {
             log_warn("session_runner: unknown message type '%s' from greeter on seat '%s'",
                      tag ? tag : "(untagged)", s->name);
