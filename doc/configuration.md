@@ -34,12 +34,13 @@ Set `theme` to a CSS file to change the color scheme and widget styling. Several
 themes ship with atrium and are installed under `/usr/share/atrium/themes/`
 (distro packages) or `/usr/local/share/atrium/themes/` (source builds).
 
-To write your own, start from `example.css` in that directory. It is a fully
-annotated reference listing every color variable and every styleable element.
-The example theme is close to the built-in theme in appearance with a few
-additions (drop shadow, keyboard focus ring). The configured theme file is
-appended to atrium's built-in CSS, so you only need to keep the rules you
-actually change.
+To write your own, start from
+[`example.css`](https://github.com/kavau/atrium/blob/main/data/themes/example.css)
+in that directory. It is a fully annotated reference listing every color
+variable and every styleable element. The example theme is close to the built-in
+theme in appearance with a few additions (drop shadow, keyboard focus ring). The
+configured theme file is appended to atrium's built-in CSS, so you only need to
+keep the rules you actually change.
 
 ---
 
