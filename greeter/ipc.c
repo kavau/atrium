@@ -48,3 +48,18 @@ int ipc_send_credentials(ipc_channel *ch, const char *username, const char *pass
     }
     return 0;
 }
+
+int ipc_send_power_action(ipc_channel *ch, ipc_power_action action) {
+    log_info("greeter: sending %s request to daemon",
+             action == IPC_POWER_OFF ? "shutdown" : "reboot");
+    char    buf[MAX_LEN_IPC_MSG];
+    ssize_t n = ipc_msg_build1(buf, sizeof(buf), IPC_TYPE_POWER,
+                               action == IPC_POWER_OFF ? "shutdown" : "reboot");
+    if (n < 0)
+        return -1;
+    if (ipc_send(ch, buf, n) < 0) {
+        log_syserr("greeter: failed to send power action request");
+        return -1;
+    }
+    return 0;
+}

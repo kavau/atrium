@@ -316,10 +316,20 @@ static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     submit_credentials(gtk_editable_get_text(GTK_EDITABLE(g_password_entry)));
 }
 
-/* Build the login card for the monitor rectangle geo. bg_file and bg_picture
-(both may be NULL) are the wallpaper the glass card samples. */
-static void card_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_picture) {
-    GtkWidget *slot = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+static void on_power_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
+    ipc_power_action action = GPOINTER_TO_INT(user_data);
+    log_info("greeter: %s button clicked", action == IPC_POWER_OFF ? "shutdown" : "reboot");
+    if (ipc_send_power_action(g_ch, action) != 0) {
+        show_error(IPC_ERROR_INTERNAL);
+    }
+}
+
+/* Build the UI for one monitor: the login card centered in the rectangle geo, plus the power
+buttons (if activated) in the corner. bg_file and bg_picture (both may be NULL) are the wallpaper
+the glass card samples.*/
+static void monitor_ui_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_picture) {
+    GtkWidget *slot = gtk_overlay_new();
     gtk_widget_set_size_request(slot, geo.width, geo.height);
     gtk_fixed_put(g_root, slot, geo.x, geo.y);
 
@@ -334,7 +344,7 @@ static void card_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_picture)
     gtk_widget_set_hexpand(g_card, TRUE);
     gtk_widget_set_vexpand(g_card, TRUE);
     gtk_widget_set_size_request(g_card, CARD_CONTENT_MIN_WIDTH + 2 * CARD_PADDING_H, -1);
-    gtk_box_append(GTK_BOX(slot), g_card);
+    gtk_overlay_set_child(GTK_OVERLAY(slot), g_card);
 
     /* User selection page */
 
@@ -459,6 +469,31 @@ static void card_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_picture)
     gtk_widget_add_css_class(back_btn, "back-button");
     g_signal_connect(back_btn, "clicked", G_CALLBACK(on_back_clicked), NULL);
     gtk_box_append(GTK_BOX(action_box), back_btn);
+
+    /* Power buttons, enabled by the daemon's power-actions setting. */
+
+    const char *power_actions_enabled = getenv("ATRIUM_POWER_ACTIONS");
+    if (power_actions_enabled && strcmp(power_actions_enabled, "1") == 0) {
+        GtkWidget *power_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_widget_set_halign(power_box, GTK_ALIGN_END);
+        gtk_widget_set_valign(power_box, GTK_ALIGN_START);
+        gtk_overlay_add_overlay(GTK_OVERLAY(slot), power_box);
+
+        GtkWidget *shutdown_btn = gtk_button_new_from_icon_name("system-shutdown-symbolic");
+        gtk_widget_add_css_class(shutdown_btn, "power-button");
+        gtk_widget_set_tooltip_text(shutdown_btn, "Shut Down");
+
+        g_signal_connect(shutdown_btn, "clicked", G_CALLBACK(on_power_clicked),
+                         GINT_TO_POINTER(IPC_POWER_OFF));
+        gtk_box_append(GTK_BOX(power_box), shutdown_btn);
+
+        GtkWidget *reboot_btn = gtk_button_new_from_icon_name("system-reboot-symbolic");
+        gtk_widget_add_css_class(reboot_btn, "power-button");
+        gtk_widget_set_tooltip_text(reboot_btn, "Reboot");
+        g_signal_connect(reboot_btn, "clicked", G_CALLBACK(on_power_clicked),
+                         GINT_TO_POINTER(IPC_POWER_REBOOT));
+        gtk_box_append(GTK_BOX(power_box), reboot_btn);
+    }
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
@@ -471,8 +506,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     the session bus, wich is not always reachable. */
     g_object_set(gtk_settings, "gtk-cursor-theme-name", greeter_config_cursor_theme(),
                  "gtk-cursor-theme-size", greeter_config_cursor_size(), "gtk-theme-name", "Adwaita",
-                 "gtk-xft-antialias", 1, "gtk-xft-hinting", 1, "gtk-xft-hintstyle", "hintslight",
-                 "gtk-xft-rgba", "none", "gtk-xft-dpi", 96 * 1024, NULL);
+                 "gtk-icon-theme-name", "Adwaita", "gtk-xft-antialias", 1, "gtk-xft-hinting", 1,
+                 "gtk-xft-hintstyle", "hintslight", "gtk-xft-rgba", "none", "gtk-xft-dpi",
+                 96 * 1024, NULL);
 
     /* Detect number of displays on this seat, so we can center the card correctly. */
     GdkDisplay *display = gdk_display_get_default();
@@ -528,7 +564,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     }
 
     /* Build the login card */
-    card_create(default_monitor_geo, bg_file, bg_picture);
+    monitor_ui_create(default_monitor_geo, bg_file, bg_picture);
     if (bg_file)
         g_object_unref(bg_file);
 

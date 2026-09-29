@@ -20,6 +20,15 @@ or "" if none was selected. Returns 0 on success, -1 on failure. */
 int ipc_send_credentials(ipc_channel *ch, const char *username, const char *password,
                          const char *session_id);
 
+typedef enum {
+    IPC_POWER_OFF,
+    IPC_POWER_REBOOT,
+} ipc_power_action;
+
+/* Ask the daemon to shutdown or reboot the machine. Returns 0 on success, -1 on
+failure. */
+int ipc_send_power_action(ipc_channel *ch, ipc_power_action action);
+
 /* Read and parse a daemon response. On IPC_FAIL, reason is populated with a
 user-facing message. On IPC_OK, reason is set to an empty string. */
 ipc_status ipc_read_result(ipc_channel *ch, char *reason, size_t reason_len);
