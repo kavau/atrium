@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
 
         sleep(1);
 
-        const char *response = (i == 0) ? "fail:invalid credentials\n" : "ok\n";
+        const char *response = (i == 0) ? "fail:invalid credentials" : "ok";
         log_info("sending to greeter: %s", response);
         if (ipc_send_str(parent_end, response) < 0) {
             log_syserr("ipc_send_str");

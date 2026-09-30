@@ -327,20 +327,20 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         if (!tag || strcmp(tag, IPC_TYPE_CRED) != 0) {
             log_warn("session_runner: unknown message type '%s' from greeter on seat '%s'",
                      tag ? tag : "(untagged)", s->name);
-            ipc_send_str(parent_end, "fail:invalid message\n");
+            ipc_send_str(parent_end, "fail:invalid message");
             goto retry;
         }
 
         const char *password;
         if (ipc_msg_parse3(cred_buf, n, IPC_TYPE_CRED, &username, &password, &chosen_session) < 0) {
             log_warn("session_runner: invalid credentials from greeter on seat '%s'", s->name);
-            ipc_send_str(parent_end, "fail:invalid credentials\n");
+            ipc_send_str(parent_end, "fail:invalid credentials");
             goto retry;
         }
 
         if (!is_valid_username(username)) {
             log_warn("session_runner: invalid username from greeter on seat '%s'", s->name);
-            ipc_send_str(parent_end, "fail:invalid username\n");
+            ipc_send_str(parent_end, "fail:invalid username");
             goto retry;
         }
 
@@ -352,7 +352,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         explicit_bzero((char *)password, strlen(password));
         if (auth_r != PAM_SUCCESS) {
             char reply[MAX_LEN_IPC_MSG];
-            snprintf(reply, sizeof(reply), "fail:%s\n", auth_fail_message(auth_r));
+            snprintf(reply, sizeof(reply), "fail:%s", auth_fail_message(auth_r));
             log_warn("session_runner: auth failed for '%s' on seat '%s': %s", username, s->name,
                      pam_strerror(NULL, auth_r));
             ipc_send_str(parent_end, reply);
@@ -365,7 +365,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             struct passwd *pw = getpwnam(username);
             if (!pw) {
                 log_syserr("session_runner: getpwnam(%s)", username);
-                ipc_send_str(parent_end, "fail:system error\n");
+                ipc_send_str(parent_end, "fail:system error");
                 auth_cancel(&pam_result);
                 goto retry;
             }
@@ -373,7 +373,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             login_lock_status lock_status = acquire_login_lock(pw->pw_uid);
             if (lock_status == LOGIN_LOCK_DUPLICATE) {
                 log_info("session_runner: user '%s' already logged in on another seat", username);
-                ipc_send_str(parent_end, "fail:User already logged in on another seat\n");
+                ipc_send_str(parent_end, "fail:User already logged in on another seat");
                 auth_cancel(&pam_result);
                 goto retry;
             }
@@ -390,7 +390,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         if (auth_open_session(&pam_result) != PAM_SUCCESS) {
             log_warn("session_runner: failed to open session for '%s' on seat '%s'", username,
                      s->name);
-            ipc_send_str(parent_end, "fail:session error\n");
+            ipc_send_str(parent_end, "fail:session error");
             release_login_lock();
             user_session_active = 0;
             goto retry;
@@ -399,7 +399,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         log_info("session_runner: auth ok for '%s' on seat '%s'", username, s->name);
         if (chosen_session && chosen_session[0] != '\0')
             sessions_save_seat(s->name, chosen_session);
-        ipc_send_str(parent_end, "ok\n");
+        ipc_send_str(parent_end, "ok");
         break;
 
     retry:
@@ -414,7 +414,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         free(pam_env[1]); /* XDG_VTNR */
     free(pam_env);
 
-    /* Greeter exits after reading "ok\n". Wait for it to exit cleanly; send
+    /* Greeter exits after reading "ok". Wait for it to exit cleanly; send
     SIGTERM and SIGKILL only if it does not exit within 5 s. */
     wait_and_kill(greeter_pid, "greeter", s->name);
     g_child_pid = 0;

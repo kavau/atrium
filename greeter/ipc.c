@@ -20,18 +20,14 @@ ipc_status ipc_read_result(ipc_channel *ch, char *reason, size_t reason_len) {
 
     log_debug("greeter: received IPC response '%s'", buf);
 
-    if (strcmp(buf, "ok\n") == 0) {
+    if (strcmp(buf, "ok") == 0) {
         reason[0] = '\0';
         return IPC_OK;
     }
 
-    /* Parse "fail:<reason>\n" */
+    /* Parse "fail:<reason>" */
     if (strncmp(buf, "fail:", 5) == 0) {
-        const char *p = buf + 5;
-        size_t      len = strlen(p);
-        if (len > 0 && p[len - 1] == '\n')
-            len--;
-        snprintf(reason, reason_len, "%.*s", (int)len, p);
+        snprintf(reason, reason_len, "%s", buf + 5);
     } else {
         snprintf(reason, reason_len, IPC_ERROR_INTERNAL);
     }

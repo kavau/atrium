@@ -53,7 +53,7 @@ static int send_and_recv(ipc_channel *ch, const void *msg, size_t len, const cha
         log_error("fake-greeter: ipc_recv failed (%s)", desc);
         return -1;
     }
-    fprintf(stderr, "fake-greeter: result: %.*s", (int)n, result);
+    fprintf(stderr, "fake-greeter: result: %.*s\n", (int)n, result);
     if (strncmp(result, expect_prefix, strlen(expect_prefix)) != 0) {
         log_error("fake-greeter: unexpected result for %s (expected '%s')", desc, expect_prefix);
         return -1;

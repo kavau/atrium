@@ -66,9 +66,9 @@ int main(void) {
         if (strncmp(result, "ok", 2) == 0)
             break;
 
-        /* "fail:<reason>\n" - show reason and retry */
+        /* "fail:<reason>" - show reason and retry */
         const char *reason = strchr(result, ':');
-        printf("Login failed: %s", reason ? reason + 1 : "unknown error\n");
+        printf("Login failed: %s\n", reason ? reason + 1 : "unknown error");
     }
 
     ipc_close(ch);
