@@ -8,11 +8,24 @@
  *   4. nonexistent user                      -> expect "fail:authentication failed"
  *   5. correct credentials                   -> expect "ok"
  *
- * Usage: in lib/defs.h,
- * #define HEADLESS 1
- * #define COMPOSITOR "/usr/local/bin/atrium-fake-compositor"
+ * Usage:
  *
- * Set ATRIUM_LOG_STDERR=1 to see child output in the terminal.
+ * Run this from a text console. Needs an 'alice' account that has passwordless
+ * login enabled (or adjust USERNAME / PASSWORD below).
+ *
+ * 1. `#define HEADLESS 1` in lib/defs.h to skip VT allocation.
+ * 2. In /etc/atrium.conf:
+ *    - Point both children at the fakes:
+ *        greeter    = <builddir>/atrium-fake-greeter
+ *        compositor = <builddir>/atrium-fake-compositor
+ *      Make sure the builddir is accessible to the authenticating user.
+ *    - Leave exactly one non-seat0 seat active:
+ *        ignore-seat = seat0
+ *        ignore-seat = seat2  # etc.
+ * 3. Start the daemon (must be the only instance):
+ *      ninja -C build
+ *      sudo systemctl stop atrium
+ *      sudo env ATRIUM_LOG_STDERR=1 build/atrium
  */
 
 #include <stdio.h>
