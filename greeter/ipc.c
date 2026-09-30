@@ -38,26 +38,10 @@ ipc_status ipc_read_result(ipc_channel *ch, char *reason, size_t reason_len) {
     return IPC_FAIL;
 }
 
-/* Construct credentials string for daemon: "<username>\0<password>\0<session_id>\0" */
-static int build_credentials_str(char *buf, size_t buflen, const char *username,
-                                 const char *password, const char *session_id) {
-    size_t ulen = strlen(username)   + 1; /* include the \0 */
-    size_t plen = strlen(password)   + 1;
-    size_t slen = strlen(session_id) + 1;
-    if (ulen + plen + slen > buflen) {
-        log_error("greeter: credentials too long to send");
-        return -1;
-    }
-    memcpy(buf,               username,   ulen);
-    memcpy(buf + ulen,        password,   plen);
-    memcpy(buf + ulen + plen, session_id, slen);
-    return (int)(ulen + plen + slen);
-}
-
 int ipc_send_credentials(ipc_channel *ch, const char *username, const char *password,
                          const char *session_id) {
-    char buf[MAX_LEN_IPC_MSG];
-    int  n = build_credentials_str(buf, sizeof(buf), username, password, session_id);
+    char    buf[MAX_LEN_IPC_MSG];
+    ssize_t n = ipc_msg_build3(buf, sizeof(buf), IPC_TYPE_CRED, username, password, session_id);
     if (n < 0)
         return -1;
     int r = ipc_send(ch, buf, n);

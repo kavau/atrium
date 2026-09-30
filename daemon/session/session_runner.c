@@ -74,34 +74,6 @@ static int is_valid_username(const char *username) {
     return 1;
 }
 
-/* Parse credentials from greeter IPC message. Wire format:
-"username\0password\0[session_id\0]" (session_id is optional for backward
-compatibility). On success, *username, *password, *session_id point into buf.
-Returns 0 on success or -1 on error. */
-static int parse_credentials(char *buf, ssize_t n, const char **username, const char **password,
-                             const char **session_id) {
-    if (n <= 0)
-        return -1;
-    *username = buf;
-    size_t ulen = strnlen(*username, (size_t)n);
-    if (ulen >= (size_t)n)
-        return -1;
-    *password = buf + ulen + 1;
-    size_t remaining = (size_t)n - ulen - 1;
-    size_t plen = strnlen(*password, remaining);
-    if (plen >= remaining)
-        return -1;
-    remaining -= plen + 1;
-    if (remaining > 0) { /* session_id is optional */
-        *session_id = buf + ulen + 1 + plen + 1;
-        if (strnlen(*session_id, remaining) >= remaining)
-            return -1;
-    } else {
-        *session_id = "";
-    }
-    return 0;
-}
-
 /* Wait for a child process to exit and log the result. Returns 1 once the child
 has been reaped, or 0 if the wait was cut short by a shutdown request. Other
 interruptions are retried. Logs an error if waitpid fails. */
@@ -350,8 +322,17 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             _exit(g_reload_requested || g_terminate ? EXIT_SUCCESS : EXIT_FAILURE);
         }
 
+        /* Check message type. Currently we only accept credentials messages. */
+        const char *tag = ipc_msg_type(cred_buf, n);
+        if (!tag || strcmp(tag, IPC_TYPE_CRED) != 0) {
+            log_warn("session_runner: unknown message type '%s' from greeter on seat '%s'",
+                     tag ? tag : "(untagged)", s->name);
+            ipc_send_str(parent_end, "fail:invalid message\n");
+            goto retry;
+        }
+
         const char *password;
-        if (parse_credentials(cred_buf, n, &username, &password, &chosen_session) < 0) {
+        if (ipc_msg_parse3(cred_buf, n, IPC_TYPE_CRED, &username, &password, &chosen_session) < 0) {
             log_warn("session_runner: invalid credentials from greeter on seat '%s'", s->name);
             ipc_send_str(parent_end, "fail:invalid credentials\n");
             goto retry;

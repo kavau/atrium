@@ -154,9 +154,12 @@ directly avoids this fork.
 
 Communication with the greeter takes place over a pair of anonymous pipes, one
 for each direction. The pipe fds are passed via two environment variables
-`CREDENTIALS_FD` and `RESULT_FD`. The greeter sends
-`username\0password\0session_id\0`, to which the session runner responds with
-either `ok\n` or `fail:<reason>\n`.
+`CREDENTIALS_FD` and `RESULT_FD`.
+
+Each message from the greeter begins with a type tag, which decides how the
+message is read, followed by a fixed number of NUL-terminated fields: a login
+attempt is `cred\0username\0password\0session_id\0`. The session runner responds
+with either `ok\n` or `fail:<reason>\n`.
 
 atrium uses the `cage` Wayland compositor to run the greeter UI.
 

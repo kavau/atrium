@@ -10,13 +10,19 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "lib/defs.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
 #include "lib/proc.h"
 
 static void log_credentials(const char *buf) {
-    const char *username = buf;
-    const char *password = buf + strlen(username) + 1;
+    const char *tag = buf;
+    if (strcmp(tag, IPC_TYPE_CRED) != 0) {
+        log_warn("greeter: message with unexpected tag '%s'", tag);
+        return;
+    }
+    const char *username = tag + strlen(tag) + 1;
+    const char *password = username + strlen(username) + 1;
     log_info("greeter: received credentials for user '%s' with password '%s'", username, password);
 }
 

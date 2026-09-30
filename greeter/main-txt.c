@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "lib/defs.h"
 #include "lib/ipc.h"
 #include "lib/log.h"
 
@@ -37,27 +38,24 @@ int main(void) {
             return EXIT_FAILURE;
         }
 
-        char message[256];
-        size_t ulen = strlen(username) + 1; /* include the \0 */
-        size_t plen = strlen(password) + 1;
-        if (ulen + plen > sizeof(message)) {
-            log_error("credentials too long");
+        char    message[256];
+        ssize_t mlen =
+            ipc_msg_build3(message, sizeof(message), IPC_TYPE_CRED, username, password, "");
+        if (mlen < 0) {
             ipc_close(ch);
             return EXIT_FAILURE;
         }
-        memcpy(message, username, ulen);
-        memcpy(message + ulen, password, plen);
 
-        int r = ipc_send(ch, message, ulen + plen);
+        int r = ipc_send(ch, message, mlen);
         explicit_bzero(message, sizeof(message)); /* Wipe both password copies. */
-        explicit_bzero((char *)password, plen - 1);
+        explicit_bzero((char *)password, strlen(password));
         if (r < 0) {
             log_error("failed to send credentials");
             ipc_close(ch);
             return EXIT_FAILURE;
         }
 
-        char result[64] = {0};
+        char    result[64] = {0};
         ssize_t n = ipc_recv(ch, result, sizeof(result) - 1);
         if (n <= 0) {
             log_error("failed to read auth result");
