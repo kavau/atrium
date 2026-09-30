@@ -170,6 +170,11 @@ sudo ninja -C build install
 
 The `-Ddist` option (required) selects the correct PAM stack for the target distribution. Possible values for `dist` are: `arch` (for Arch/CachyOS), `debian` (for Debian/Ubuntu), or `fedora` (for Fedora).
 
+> **Warning: Reinstalling from source overwrites config files.** `ninja install`
+> replaces `/etc/atrium.conf` and `/etc/atrium-greeter.conf` with the shipped
+> versions, discarding your own changes. Make a backup of these files before
+> upgrading if you want to keep your changes.
+
 ### 3. Configure
 
 > This step can usually be skipped - the defaults work for a standard
