@@ -116,6 +116,7 @@ always visible.
 .user-button:focus-visible,
 button.suggested-action:focus-visible,
 .back-button:focus-visible,
+.power-button:focus-visible,
 dropdown.session-dropdown > button:focus-visible {
   outline: 2px solid @atrium-accent;
   outline-offset: 2px;
@@ -176,4 +177,37 @@ dropdown.session-dropdown > button:hover {
   background-image: none;
   background-color: @atrium-border;
   box-shadow: none;
+}
+
+/* Power buttons in the corner of the screen, outside the card. */
+.power-button {
+  background-image: none;
+  background-color: alpha(@atrium-card, 0.6);
+  border: none;
+  box-shadow: none;
+  color: @atrium-subtle;
+  padding: 8px;
+  margin: 4px;
+  border-radius: 8px;
+}
+
+.power-button:hover {
+  background-image: none;
+  background-color: alpha(@atrium-border, 0.8);
+  box-shadow: none;
+  color: @atrium-text;
+}
+
+.power-button image {
+  -gtk-icon-size: 1em;
+}
+
+tooltip.background {
+  background-color: alpha(@atrium-card, 0.95);
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+}
+
+tooltip label {
+  font-size: 0.7em;
 }

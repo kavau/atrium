@@ -132,6 +132,42 @@ button.suggested-action:hover {
   box-shadow: none;
 }
 
+/* Shut Down and Restart, in the corner of the screen outside the card. Shown
+only when power-actions is enabled in /etc/atrium.conf. */
+.power-button {
+  background-image: none;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+  color: @atrium-subtle;
+  padding: 8px;
+  margin: 8px;
+  border-radius: 8px;
+}
+
+.power-button:hover {
+  background-image: none;
+  background-color: @atrium-border;
+  box-shadow: none;
+  color: @atrium-text;
+}
+
+/* Icon size, relative to the button's font size. */
+.power-button image {
+  -gtk-icon-size: 1em;
+}
+
+/* Power button tooltips. */
+tooltip.background {
+  background-color: alpha(@atrium-card, 0.95);
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+}
+
+tooltip label {
+  font-size: 0.7em;
+}
+
 /* Back button on the password page. Flat by default. */
 .back-button {
   background-image: none;
