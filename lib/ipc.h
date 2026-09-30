@@ -45,3 +45,28 @@ int ipc_create_from_env(ipc_channel **ch);
 
 /* Return the file descriptor for reading from the IPC channel */
 int ipc_get_read_fd(ipc_channel *ch);
+
+/*
+ * Typed messages
+ *
+ * Wire format: a type tag followed by a fixed number of NUL-terminated fields.
+ * Type tags live in lib/defs.h.
+ * "<type>\0<field>\0..."
+ */
+
+/* Build a message into buf. Returns its length, or -1 if buf is too small (logged). */
+ssize_t ipc_msg_build1(char *buf, size_t buflen, const char *tag, const char *a);
+ssize_t ipc_msg_build2(char *buf, size_t buflen, const char *tag, const char *a, const char *b);
+ssize_t ipc_msg_build3(char *buf, size_t buflen, const char *tag, const char *a, const char *b,
+                       const char *c);
+
+/* Parse a message of n bytes. Returns 0 on success, -1 on error (unknown tag,
+unterminated field, or incorrect field count). Fields point into buf and are
+valid as long as buf is valid. */
+int ipc_msg_parse1(const char *buf, ssize_t n, const char *tag, const char **a);
+int ipc_msg_parse2(const char *buf, ssize_t n, const char *tag, const char **a, const char **b);
+int ipc_msg_parse3(const char *buf, ssize_t n, const char *tag, const char **a, const char **b,
+                   const char **c);
+
+/* Return the type tag of a message, or NULL if it carries no NUL-terminated tag. */
+const char *ipc_msg_type(const char *buf, ssize_t n);

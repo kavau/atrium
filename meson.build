@@ -283,6 +283,17 @@ executable('atrium-ipc-test',
   install: false,
 )
 
+executable('atrium-ipc-msg-test',
+  sources: [
+    'lib/ipc.c',
+    'lib/log.c',
+    'tools/ipc-msg-test.c',
+  ],
+  dependencies: [
+  ],
+  install: false,
+)
+
 executable('atrium-greeter-test',
   sources: [
     'lib/ipc.c',

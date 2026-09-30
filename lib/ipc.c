@@ -138,3 +138,94 @@ int ipc_create_from_env(ipc_channel **ch) {
     }
     return ipc_from_fds(ch, read_fd, write_fd);
 }
+
+/* Concatenate tag and count fields, each NUL-terminated. */
+static ssize_t build_fields(char *buf, size_t buflen, const char *tag, const char *const *fields,
+                            int count) {
+    size_t pos = 0;
+    for (int i = -1; i < count; i++) {
+        const char *s = (i < 0) ? tag : fields[i];
+        size_t      len = strlen(s) + 1; /* include the NUL */
+        if (len > buflen - pos) {
+            log_error("ipc_msg_build: message does not fit in %zu bytes", buflen);
+            return -1;
+        }
+        memcpy(buf + pos, s, len);
+        pos += len;
+    }
+    return (ssize_t)pos;
+}
+
+/* Split a message into count NUL-terminated fields after the tag. Rejects a
+wrong tag, an unterminated field, and any trailing bytes. */
+static int parse_fields(const char *buf, ssize_t n, const char *tag, const char **fields,
+                        int count) {
+    if (n <= 0)
+        return -1;
+    size_t left = (size_t)n;
+    size_t pos = 0;
+    for (int i = -1; i < count; i++) {
+        size_t len = strnlen(buf + pos, left);
+        if (len >= left)
+            return -1; /* missing NUL: message is truncated or malformed */
+        if (i < 0) {
+            if (strcmp(buf, tag) != 0)
+                return -1;
+        } else {
+            fields[i] = buf + pos;
+        }
+        pos += len + 1;
+        left -= len + 1;
+    }
+    return left == 0 ? 0 : -1; /* more fields than expected */
+}
+
+ssize_t ipc_msg_build1(char *buf, size_t buflen, const char *tag, const char *a) {
+    const char *f[] = {a};
+    return build_fields(buf, buflen, tag, f, 1);
+}
+
+ssize_t ipc_msg_build2(char *buf, size_t buflen, const char *tag, const char *a, const char *b) {
+    const char *f[] = {a, b};
+    return build_fields(buf, buflen, tag, f, 2);
+}
+
+ssize_t ipc_msg_build3(char *buf, size_t buflen, const char *tag, const char *a, const char *b,
+                       const char *c) {
+    const char *f[] = {a, b, c};
+    return build_fields(buf, buflen, tag, f, 3);
+}
+
+int ipc_msg_parse1(const char *buf, ssize_t n, const char *tag, const char **a) {
+    const char *f[1];
+    if (parse_fields(buf, n, tag, f, 1) < 0)
+        return -1;
+    *a = f[0];
+    return 0;
+}
+
+int ipc_msg_parse2(const char *buf, ssize_t n, const char *tag, const char **a, const char **b) {
+    const char *f[2];
+    if (parse_fields(buf, n, tag, f, 2) < 0)
+        return -1;
+    *a = f[0];
+    *b = f[1];
+    return 0;
+}
+
+int ipc_msg_parse3(const char *buf, ssize_t n, const char *tag, const char **a, const char **b,
+                   const char **c) {
+    const char *f[3];
+    if (parse_fields(buf, n, tag, f, 3) < 0)
+        return -1;
+    *a = f[0];
+    *b = f[1];
+    *c = f[2];
+    return 0;
+}
+
+const char *ipc_msg_type(const char *buf, ssize_t n) {
+    if (n <= 0 || strnlen(buf, (size_t)n) >= (size_t)n)
+        return NULL;
+    return buf;
+}
