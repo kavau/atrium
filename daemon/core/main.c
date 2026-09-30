@@ -147,6 +147,7 @@ int main(int argc, char *argv[]) {
 
     /* Allocate a VT for seat0. */
     int vt_fd = -1;
+    int vt_kb_mode = K_UNICODE; /* saved keyboard mode; restored at shutdown */
 #if HEADLESS
     log_info("headless mode enabled, skipping VT allocation");
     int vtnr = 0;
@@ -157,8 +158,7 @@ int main(int argc, char *argv[]) {
         bus_close();
         return EXIT_FAILURE;
     }
-    vt_fd = vt_open(vtnr);      /* persistent hold on /dev/ttyN; blocks VT_DISALLOCATE */
-    int vt_kb_mode = K_UNICODE; /* saved keyboard mode; restored at shutdown */
+    vt_fd = vt_open(vtnr); /* persistent hold on /dev/ttyN; blocks VT_DISALLOCATE */
     vt_suppress_keyboard_fd(vt_fd, &vt_kb_mode);
 
     /* Stop getty on our VT so it does not race with the greeter or compositor
