@@ -95,8 +95,9 @@ void theme_apply(void) {
        (1) base font-size from config,
        (2) built-in base CSS,
        (3) external theme file, if set */
-    char font_css[64];
-    snprintf(font_css, sizeof(font_css), "window, tooltip { font-size: %dpx; }\n",
+    char font_css[80];
+    /* Tooltips and popovers are toplevel elements, so they don't inherit the window's font size. */
+    snprintf(font_css, sizeof(font_css), "window, tooltip, popover { font-size: %dpx; }\n",
              greeter_config_base_font_size());
 
     GBytes *bytes =

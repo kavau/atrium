@@ -316,13 +316,58 @@ static void on_login_clicked(GtkWidget *widget, gpointer user_data) {
     submit_credentials(gtk_editable_get_text(GTK_EDITABLE(g_password_entry)));
 }
 
-static void on_power_clicked(GtkWidget *widget, gpointer user_data) {
-    (void)widget;
+static void on_power_confirmed(GtkWidget *widget, gpointer user_data) {
     ipc_power_action action = GPOINTER_TO_INT(user_data);
-    log_info("greeter: %s button clicked", action == IPC_POWER_OFF ? "shutdown" : "reboot");
-    if (ipc_send_power_action(g_ch, action) != 0) {
+    log_info("greeter: %s confirmed", action == IPC_POWER_OFF ? "shutdown" : "reboot");
+
+    GtkWidget *popover = gtk_widget_get_ancestor(widget, GTK_TYPE_POPOVER);
+    if (popover)
+        gtk_popover_popdown(GTK_POPOVER(popover));
+
+    if (ipc_send_power_action(g_ch, action) != 0)
         show_error(IPC_ERROR_INTERNAL);
-    }
+}
+
+static void on_power_cancelled(GtkWidget *widget, gpointer user_data) {
+    (void)user_data;
+    GtkWidget *popover = gtk_widget_get_ancestor(widget, GTK_TYPE_POPOVER);
+    if (popover)
+        gtk_popover_popdown(GTK_POPOVER(popover));
+}
+
+/* Build one power button plus confirmation popover. */
+static GtkWidget *power_button_new(const char *icon_name, const char *tooltip, const char *prompt,
+                                   const char *confirm_label, ipc_power_action action) {
+    GtkWidget *button = gtk_menu_button_new();
+    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), icon_name);
+    gtk_widget_add_css_class(button, "power-button");
+    gtk_widget_set_tooltip_text(button, tooltip);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(box, "power-confirm");
+
+    GtkWidget *label = gtk_label_new(prompt);
+    gtk_widget_add_css_class(label, "power-confirm-label");
+    gtk_box_append(GTK_BOX(box), label);
+
+    GtkWidget *confirm = gtk_button_new_with_label(confirm_label);
+    gtk_widget_add_css_class(confirm, "power-confirm-button");
+    gtk_widget_add_css_class(confirm, "destructive-action");
+    g_signal_connect(confirm, "clicked", G_CALLBACK(on_power_confirmed), GINT_TO_POINTER(action));
+    gtk_box_append(GTK_BOX(box), confirm);
+
+    GtkWidget *cancel = gtk_button_new_with_label("Cancel");
+    gtk_widget_add_css_class(cancel, "power-confirm-button");
+    g_signal_connect(cancel, "clicked", G_CALLBACK(on_power_cancelled), NULL);
+    gtk_box_append(GTK_BOX(box), cancel);
+
+    GtkWidget *popover = gtk_popover_new();
+    gtk_popover_set_position(GTK_POPOVER(popover), GTK_POS_BOTTOM);
+    gtk_popover_set_child(GTK_POPOVER(popover), box);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(button), popover);
+
+    gtk_widget_set_focus_child(box, cancel); /* Cancel is the default focus. */
+    return button;
 }
 
 /* Build the UI for one monitor: the login card centered in the rectangle geo, plus the power
@@ -479,20 +524,13 @@ static void monitor_ui_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_pi
         gtk_widget_set_valign(power_box, GTK_ALIGN_START);
         gtk_overlay_add_overlay(GTK_OVERLAY(slot), power_box);
 
-        GtkWidget *shutdown_btn = gtk_button_new_from_icon_name("system-shutdown-symbolic");
-        gtk_widget_add_css_class(shutdown_btn, "power-button");
-        gtk_widget_set_tooltip_text(shutdown_btn, "Shut Down");
+        GtkWidget *button_reboot = power_button_new("system-reboot-symbolic", "Reboot",
+                                                    "Reboot now?", "Reboot", IPC_POWER_REBOOT);
+        gtk_box_append(GTK_BOX(power_box), button_reboot);
 
-        g_signal_connect(shutdown_btn, "clicked", G_CALLBACK(on_power_clicked),
-                         GINT_TO_POINTER(IPC_POWER_OFF));
-        gtk_box_append(GTK_BOX(power_box), shutdown_btn);
-
-        GtkWidget *reboot_btn = gtk_button_new_from_icon_name("system-reboot-symbolic");
-        gtk_widget_add_css_class(reboot_btn, "power-button");
-        gtk_widget_set_tooltip_text(reboot_btn, "Reboot");
-        g_signal_connect(reboot_btn, "clicked", G_CALLBACK(on_power_clicked),
-                         GINT_TO_POINTER(IPC_POWER_REBOOT));
-        gtk_box_append(GTK_BOX(power_box), reboot_btn);
+        GtkWidget *button_shutdown = power_button_new("system-shutdown-symbolic", "Shut Down",
+                                                      "Shut down now?", "Shut Down", IPC_POWER_OFF);
+        gtk_box_append(GTK_BOX(power_box), button_shutdown);
     }
 }
 

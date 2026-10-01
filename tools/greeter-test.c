@@ -46,6 +46,8 @@ int main(int argc, char *argv[]) {
     }
     for (char **p = ipc_env; *p; p++)
         putenv(*p);
+    putenv("ATRIUM_POWER_ACTIONS=1"); /* enable shutdown/reboot buttons */
+
     if (ipc_prepare_for_exec(child_end) < 0) {
         log_syserr("ipc_prepare_for_exec");
         return EXIT_FAILURE;
