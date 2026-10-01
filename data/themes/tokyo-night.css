@@ -44,3 +44,18 @@ button.suggested-action {
 dropdown.session-dropdown > button {
   border-radius: 6px;
 }
+
+menubutton.power-button image {
+  -gtk-icon-shadow: none;
+}
+
+menubutton.power-button > button {
+  background-color: @atrium-card;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(65, 72, 104, 0.80);
+}
+
+menubutton.power-button > popover > contents {
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(65, 72, 104, 0.80);
+}

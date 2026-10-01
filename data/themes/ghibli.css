@@ -48,3 +48,23 @@ dropdown.session-dropdown > button {
   border-radius: 12px;
 }
 
+menubutton.power-button image {
+  -gtk-icon-shadow: none;
+}
+
+menubutton.power-button > button {
+  background-color: alpha(@atrium-card, 0.6);
+  box-shadow: 0 2px 10px rgba(80, 50, 20, 0.30),
+              inset 0 0 0 1px rgba(200, 170, 110, 0.45);
+}
+
+menubutton.power-button > button:hover,
+menubutton.power-button > button:checked {
+  background-color: alpha(@atrium-border, 0.8);
+}
+
+menubutton.power-button > popover > contents {
+  background-color: alpha(@atrium-card, 0.8);
+  box-shadow: 0 4px 20px rgba(80, 50, 20, 0.35),
+              inset 0 0 0 1px rgba(200, 170, 110, 0.50);
+}

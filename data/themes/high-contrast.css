@@ -50,3 +50,12 @@ dropdown.session-dropdown > button {
   background-color: @atrium-text;
   color: @atrium-accent-fg;
 }
+
+.power-confirm-button:hover {
+  background-color: @atrium-text;
+  color: @atrium-accent-fg;
+}
+
+.power-confirm-button.destructive-action:hover {
+  background-color: @atrium-text;
+}

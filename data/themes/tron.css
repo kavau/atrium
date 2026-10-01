@@ -75,3 +75,9 @@ dropdown.session-dropdown > button:hover {
   box-shadow: 0 0 6px rgba(0, 200, 255, 0.80),
               0 0 14px rgba(0, 200, 255, 0.50);
 }
+
+menubutton.power-button > popover > contents {
+  box-shadow: 0 0  4px 1px rgba(0, 200, 255, 0.70),
+              0 0 14px 3px rgba(0, 200, 255, 0.35),
+              inset 0 0 10px rgba(0, 200, 255, 0.15);
+}

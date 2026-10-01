@@ -35,6 +35,7 @@ window {
 .user-button,
 button.suggested-action,
 .back-button,
+.power-confirm-button,
 dropdown.session-dropdown > button {
   font-weight: normal;
 }
@@ -116,7 +117,8 @@ always visible.
 .user-button:focus-visible,
 button.suggested-action:focus-visible,
 .back-button:focus-visible,
-.power-button:focus-visible,
+menubutton.power-button > button:focus-visible,
+.power-confirm-button:focus-visible,
 dropdown.session-dropdown > button:focus-visible {
   outline: 2px solid @atrium-accent;
   outline-offset: 2px;
@@ -180,9 +182,9 @@ dropdown.session-dropdown > button:hover {
 }
 
 /* Power buttons in the corner of the screen, outside the card. */
-.power-button {
+menubutton.power-button > button {
   background-image: none;
-  background-color: alpha(@atrium-card, 0.6);
+  background-color: transparent;
   border: none;
   box-shadow: none;
   color: @atrium-subtle;
@@ -191,15 +193,72 @@ dropdown.session-dropdown > button:hover {
   border-radius: 8px;
 }
 
-.power-button:hover {
+menubutton.power-button > button:hover,
+menubutton.power-button > button:checked {
   background-image: none;
-  background-color: alpha(@atrium-border, 0.8);
+  background-color: @atrium-card;
   box-shadow: none;
   color: @atrium-text;
 }
 
-.power-button image {
+menubutton.power-button image {
   -gtk-icon-size: 1em;
+  /* Icon shadow to account for arbitrary wallpaper. Can be deactivated in
+  themes that set a power-button background. */
+  -gtk-icon-shadow: 0 1px 2px alpha(@atrium-bg, 0.9);
+}
+
+/* Confirmation popover. */
+menubutton.power-button > popover > contents {
+  background-color: @atrium-card;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+menubutton.power-button > popover > arrow {
+  background-color: @atrium-card;
+  border: 1px solid @atrium-border;
+}
+
+box.power-confirm {
+  border-spacing: 6px;
+}
+
+.power-confirm-label {
+  font-size: 0.6em;
+  color: @atrium-text;
+  margin-bottom: 4px;
+}
+
+.power-confirm-button {
+  font-size: 0.7em;
+  background-image: none;
+  background-color: transparent;
+  color: @atrium-text;
+  border: 1px solid @atrium-border;
+  box-shadow: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+.power-confirm-button.destructive-action {
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
+  border: none;
+}
+
+.power-confirm-button:hover {
+  background-image: none;
+  background-color: @atrium-border;
+  box-shadow: none;
+}
+
+.power-confirm-button.destructive-action:hover {
+  background-image: none;
+  background-color: @atrium-accent-hover;
+  box-shadow: none;
 }
 
 tooltip.background {

@@ -32,3 +32,18 @@ dropdown.session-dropdown > button {
   border-radius: 2px;
   color: @atrium-text;
 }
+
+menubutton.power-button image {
+  -gtk-icon-shadow: none;
+}
+
+menubutton.power-button > button {
+  background-color: @atrium-card;
+  border: 1px solid @atrium-border;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+
+menubutton.power-button > popover > contents {
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.50),
+              inset 0 0 0 1px rgba(88, 110, 117, 0.40);
+}

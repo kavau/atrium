@@ -32,3 +32,8 @@ dropdown.session-dropdown > button {
   border-radius: 8px;
   color: @atrium-text;
 }
+
+menubutton.power-button > popover > contents {
+  box-shadow: 0 2px 12px rgba(76, 79, 105, 0.18),
+              0 1px 3px rgba(76, 79, 105, 0.12);
+}
