@@ -524,7 +524,9 @@ static void monitor_ui_create(GdkRectangle geo, GFile *bg_file, GtkWidget *bg_pi
         gtk_widget_set_valign(power_box, GTK_ALIGN_START);
         gtk_overlay_add_overlay(GTK_OVERLAY(slot), power_box);
 
-        GtkWidget *button_reboot = power_button_new("system-reboot-symbolic", "Reboot",
+        /* The standard icon would be 'system-reboot-symbolic', but it looks too
+        similar to 'system-shutdown-symbolic' for my taste. */
+        GtkWidget *button_reboot = power_button_new("view-refresh-symbolic", "Reboot",
                                                     "Reboot now?", "Reboot", IPC_POWER_REBOOT);
         gtk_box_append(GTK_BOX(power_box), button_reboot);
 
@@ -540,8 +542,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
     theme_apply();
 
     GtkSettings *gtk_settings = gtk_settings_get_default();
-    /* Pin font rendering. GTK otherwise tries to retrieve these settings from
-    the session bus, wich is not always reachable. */
+    /* Pin font rendering and themes. GTK otherwise tries to retrieve these
+    settings from the session bus, wich is not always reachable. */
     g_object_set(gtk_settings, "gtk-cursor-theme-name", greeter_config_cursor_theme(),
                  "gtk-cursor-theme-size", greeter_config_cursor_size(), "gtk-theme-name", "Adwaita",
                  "gtk-icon-theme-name", "Adwaita", "gtk-xft-antialias", 1, "gtk-xft-hinting", 1,
