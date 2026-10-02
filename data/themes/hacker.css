@@ -1,14 +1,16 @@
 /* Hacker -- classic phosphor green terminal */
-@define-color atrium-bg           #000000; /* pure black */
-@define-color atrium-card         rgba(10, 26, 10, 0.8); /* very dark green, 80% opacity */
-@define-color atrium-text         #00b000; /* mid-intensity phosphor */
-@define-color atrium-border       #003300; /* dark green */
-@define-color atrium-accent       #00aa00; /* neon green */
-@define-color atrium-accent-hover #008800; /* darker green */
-@define-color atrium-accent-fg    #000000; /* black text */
-@define-color atrium-subtle       #006600; /* medium green */
-@define-color atrium-error        #44dd44; /* brighter phosphor */
-@define-color atrium-dropdown     #003300; /* dark green */
+@define-color atrium-bg             #000000; /* pure black */
+@define-color atrium-card           rgba(10, 26, 10, 0.8); /* very dark green, 80% opacity */
+@define-color atrium-text           #00b000; /* mid-intensity phosphor */
+@define-color atrium-border         #003300; /* dark green */
+@define-color atrium-accent         #00aa00; /* neon green */
+@define-color atrium-accent-hover   #008800; /* darker green */
+@define-color atrium-accent-fg      #000000; /* black text */
+@define-color atrium-subtle         #006600; /* medium green */
+@define-color atrium-error          #44dd44; /* brighter phosphor */
+@define-color atrium-dropdown       #003300; /* dark green */
+@define-color atrium-dropdown-hover #005700; /* lighter green */
+@define-color atrium-dropdown-fg    @atrium-accent-hover;
 
 /* Sharp corners and phosphor glow -- no rounded UI allowed in the terminal. */
 .card {
@@ -48,12 +50,42 @@ button.suggested-action {
 
 dropdown.session-dropdown > button {
   border-radius: 0;
-  color: @atrium-accent-hover; /* darker green */
-  border: 2px solid @atrium-border;
+  border: 1px solid @atrium-subtle;
   box-shadow: 0 0 8px rgba(0, 255, 0, 0.3);
 }
 
-menubutton.power-button > popover > contents {
+dropdown.session-dropdown > button:hover {
+  box-shadow: 0 0 14px rgba(0, 255, 0, 0.45);
+}
+
+dropdown.session-dropdown > popover > contents {
+  border: 1px solid @atrium-subtle;
+}
+
+menubutton.power-button > popover > contents,
+dropdown.session-dropdown > popover > contents {
+  border-radius: 0;
   box-shadow: 0 0 12px rgba(0, 255, 0, 0.25),
               inset 0 0 12px rgba(0, 255, 0, 0.04);
+}
+
+/* The base theme has rounds corners; square them to match the rest of the theme. */
+.password-field > text {
+  border-radius: 0;
+}
+
+menubutton.power-button > button {
+  border-radius: 0;
+}
+
+.power-confirm-button {
+  border-radius: 0;
+}
+
+dropdown.session-dropdown > popover listview > row {
+  border-radius: 0;
+}
+
+tooltip.background {
+  border-radius: 0;
 }

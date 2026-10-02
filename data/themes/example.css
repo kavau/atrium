@@ -27,16 +27,18 @@
  * Colors
  * ---------------------------------------------------------------------- */
 
-@define-color atrium-bg           #1e1e2e; /* desktop background (no background image set) */
-@define-color atrium-card         #313244; /* card surface */
-@define-color atrium-text         #cdd6f4; /* primary text */
-@define-color atrium-border       #45475a; /* borders, and hover fill for flat buttons */
-@define-color atrium-accent       #89b4fa; /* solid buttons, focused entry border */
-@define-color atrium-accent-hover #b4d0ff; /* solid buttons, hover fill */
-@define-color atrium-accent-fg    #1e1e2e; /* text drawn on top of accent-colored surfaces */
-@define-color atrium-subtle       #a6adc8; /* placeholder text */
-@define-color atrium-error        #f38ba8; /* error messages */
-@define-color atrium-dropdown     #bac2de; /* session dropdown button */
+@define-color atrium-bg             #1e1e2e; /* desktop background (no background image set) */
+@define-color atrium-card           #313244; /* card surface */
+@define-color atrium-text           #cdd6f4; /* primary text */
+@define-color atrium-border         #45475a; /* borders, and hover fill for flat buttons */
+@define-color atrium-accent         #89b4fa; /* solid buttons, focused entry border */
+@define-color atrium-accent-hover   #b4d0ff; /* solid buttons, hover fill */
+@define-color atrium-accent-fg      #1e1e2e; /* text drawn on top of accent-colored surfaces */
+@define-color atrium-subtle         #a6adc8; /* placeholder text */
+@define-color atrium-error          #f38ba8; /* error messages */
+@define-color atrium-dropdown       #bac2de; /* session dropdown button */
+@define-color atrium-dropdown-hover #d2d7ea; /* session dropdown button, hovered */
+@define-color atrium-dropdown-fg    @atrium-accent-fg; /* session dropdown button and list text */
 
 /* ------------------------------------------------------------------------
  * Window and card
@@ -130,6 +132,36 @@ button.suggested-action:hover {
   background-image: none;
   background-color: @atrium-accent-hover;
   box-shadow: none;
+}
+
+/* The session picker dropdown list. */
+dropdown.session-dropdown > popover > contents {
+  /* Same dark-on-light treatment as the closed button, so they together appear
+  as one control. Always opaque (alpha multiplies and clamps at 1), since the
+  list is hard to read otherwise. */
+  background-color: alpha(@atrium-dropdown, 100);
+  color: @atrium-dropdown-fg;
+  border: 1px solid @atrium-border;
+  border-radius: 10px;
+}
+
+/* The list paints its own background, which would hide the colour above. */
+dropdown.session-dropdown > popover listview {
+  background-color: transparent;
+}
+
+dropdown.session-dropdown > popover listview > row {
+  color: @atrium-accent-fg;
+  /* A bit smaller than the button, which reads better for a list of items. */
+  font-size: 0.7em;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+dropdown.session-dropdown > popover listview > row:selected,
+dropdown.session-dropdown > popover listview > row:selected:hover {
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
 }
 
 /* Shut Down and Restart, in the corner of the screen outside the card. Shown
@@ -305,7 +337,6 @@ styling goes on the text node. */
 dropdown.session-dropdown > button {
   background-image: none;
   background-color: @atrium-dropdown;
-  color: @atrium-accent-fg;
   border: 1px solid @atrium-border;
   border-radius: 8px;
   padding: 6px 12px;
@@ -315,7 +346,7 @@ dropdown.session-dropdown > button {
 
 dropdown.session-dropdown > button:hover {
   background-image: none;
-  background-color: @atrium-border;
+  background-color: @atrium-dropdown-hover;
   box-shadow: none;
 }
 
@@ -342,7 +373,8 @@ button.suggested-action:focus-visible,
 .back-button:focus-visible,
 menubutton.power-button > button:focus-visible,
 .power-confirm-button:focus-visible,
-dropdown.session-dropdown > button:focus-visible {
+dropdown.session-dropdown > button:focus-visible,
+dropdown.session-dropdown > popover listview > row:focus-visible {
   outline: 2px solid @atrium-accent;
   outline-offset: 2px;
 }

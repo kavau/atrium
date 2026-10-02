@@ -1,15 +1,17 @@
 /* atrium default theme - catppuccin mocha */
 
-@define-color atrium-bg           #1e1e2e; /* very dark navy */
-@define-color atrium-card         #313244; /* slightly lighter surface */
-@define-color atrium-text         #cdd6f4; /* pale lavender */
-@define-color atrium-border       #45475a; /* dim grey-blue */
-@define-color atrium-accent       #89b4fa; /* soft blue */
-@define-color atrium-accent-hover #b4d0ff; /* lighter blue */
-@define-color atrium-accent-fg    #1e1e2e; /* same as bg - text on accent */
-@define-color atrium-subtle       #a6adc8; /* muted grey-violet */
-@define-color atrium-error        #f38ba8; /* soft red */
-@define-color atrium-dropdown     #bac2de; /* light lavender */
+@define-color atrium-bg             #1e1e2e; /* very dark navy */
+@define-color atrium-card           #313244; /* dark navy-grey */
+@define-color atrium-text           #cdd6f4; /* pale lavender */
+@define-color atrium-border         #45475a; /* dim grey-blue */
+@define-color atrium-accent         #89b4fa; /* soft blue */
+@define-color atrium-accent-hover   #b4d0ff; /* lighter blue */
+@define-color atrium-accent-fg      #1e1e2e; /* same as bg - text on accent */
+@define-color atrium-subtle         #a6adc8; /* pale grey-blue */
+@define-color atrium-error          #f38ba8; /* soft red */
+@define-color atrium-dropdown       #bac2de; /* soft grey-lavender */
+@define-color atrium-dropdown-hover #d2d7ea; /* lighter grey-lavender */
+@define-color atrium-dropdown-fg    @atrium-accent-fg; /* follows accent-fg by default */
 
 window {
   background-color: @atrium-bg;
@@ -119,7 +121,8 @@ button.suggested-action:focus-visible,
 .back-button:focus-visible,
 menubutton.power-button > button:focus-visible,
 .power-confirm-button:focus-visible,
-dropdown.session-dropdown > button:focus-visible {
+dropdown.session-dropdown > button:focus-visible,
+dropdown.session-dropdown > popover listview > row:focus-visible {
   outline: 2px solid @atrium-accent;
   outline-offset: 2px;
 }
@@ -167,7 +170,7 @@ dropdown.session-dropdown > button:focus-visible {
 dropdown.session-dropdown > button {
   background-image: none;
   background-color: @atrium-dropdown;
-  color: @atrium-accent-fg;
+  color: @atrium-dropdown-fg;
   border: 1px solid @atrium-border;
   border-radius: 8px;
   padding: 6px 12px;
@@ -177,8 +180,33 @@ dropdown.session-dropdown > button {
 
 dropdown.session-dropdown > button:hover {
   background-image: none;
-  background-color: @atrium-border;
+  background-color: @atrium-dropdown-hover;
   box-shadow: none;
+}
+
+/* Session picker popup. */
+dropdown.session-dropdown > popover > contents {
+  background-color: alpha(@atrium-dropdown, 100); /* always opaque */
+  color: @atrium-dropdown-fg;
+  border: 1px solid @atrium-border;
+  border-radius: 10px;
+}
+
+dropdown.session-dropdown > popover listview {
+  background-color: transparent;
+}
+
+dropdown.session-dropdown > popover listview > row {
+  color: @atrium-dropdown-fg;
+  font-size: 0.7em;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+dropdown.session-dropdown > popover listview > row:selected,
+dropdown.session-dropdown > popover listview > row:selected:hover {
+  background-color: @atrium-accent;
+  color: @atrium-accent-fg;
 }
 
 /* Power buttons in the corner of the screen, outside the card. */

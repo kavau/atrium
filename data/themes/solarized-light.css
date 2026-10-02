@@ -1,14 +1,15 @@
 /* Solarized Light */
-@define-color atrium-bg           #fdf6e3; /* warm cream */
-@define-color atrium-card         #eee8d5; /* light beige */
-@define-color atrium-text         #586e75; /* medium grey-blue */
-@define-color atrium-border       #93a1a1; /* soft grey-blue */
-@define-color atrium-accent       #268bd2; /* bright blue */
-@define-color atrium-accent-hover #2aa198; /* cyan */
-@define-color atrium-accent-fg    #fdf6e3; /* warm cream text */
-@define-color atrium-subtle       #839496; /* muted grey */
-@define-color atrium-error        #dc322f; /* bright red */
-@define-color atrium-dropdown     #586e75; /* grey-blue */
+@define-color atrium-bg             #fdf6e3; /* warm cream */
+@define-color atrium-card           #eee8d5; /* light beige */
+@define-color atrium-text           #586e75; /* medium grey-blue */
+@define-color atrium-border         #93a1a1; /* soft grey-blue */
+@define-color atrium-accent         #268bd2; /* bright blue */
+@define-color atrium-accent-hover   #2aa198; /* cyan */
+@define-color atrium-accent-fg      #fdf6e3; /* warm cream text */
+@define-color atrium-subtle         #839496; /* muted grey */
+@define-color atrium-error          #dc322f; /* bright red */
+@define-color atrium-dropdown       #586e75; /* grey-blue */
+@define-color atrium-dropdown-hover #678189; /* lighter grey-blue */
 
 .card {
   border-radius: 4px;
@@ -16,7 +17,7 @@
               inset 0 0 0 1px rgba(147, 161, 161, 0.40);
 }
 
-.password-field {
+.password-field > text {
   border-radius: 2px;
 }
 
@@ -30,7 +31,6 @@ button.suggested-action {
 
 dropdown.session-dropdown > button {
   border-radius: 2px;
-  color: @atrium-accent-fg;
 }
 
 menubutton.power-button image {
@@ -43,7 +43,29 @@ menubutton.power-button > button {
   box-shadow: 0 1px 6px rgba(0, 43, 54, 0.18);
 }
 
-menubutton.power-button > popover > contents {
+menubutton.power-button > popover > contents,
+dropdown.session-dropdown > popover > contents {
   box-shadow: 0 1px 8px rgba(0, 43, 54, 0.15),
               inset 0 0 0 1px rgba(147, 161, 161, 0.40);
+}
+
+menubutton.power-button > popover > contents,
+dropdown.session-dropdown > popover > contents {
+  border-radius: 4px;
+}
+
+tooltip.background {
+  border-radius: 4px;
+}
+
+dropdown.session-dropdown > popover listview > row {
+  border-radius: 2px;
+}
+
+menubutton.power-button > button {
+  border-radius: 2px;
+}
+
+.power-confirm-button {
+  border-radius: 2px;
 }

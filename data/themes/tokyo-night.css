@@ -1,14 +1,15 @@
 /* Tokyo Night */
-@define-color atrium-bg           #1a1b26; /* dark blue-black */
-@define-color atrium-card         #24283b; /* slightly lighter blue */
-@define-color atrium-text         #c0caf5; /* soft lavender blue */
-@define-color atrium-border       #414868; /* muted blue-grey */
-@define-color atrium-accent       #7aa2f7; /* bright blue */
-@define-color atrium-accent-hover #89b4fa; /* lighter blue */
-@define-color atrium-accent-fg    #1a1b26; /* dark blue-black text */
-@define-color atrium-subtle       #565f89; /* grey-blue */
-@define-color atrium-error        #f7768e; /* rose pink */
-@define-color atrium-dropdown     #5a75c0; /* light blue */
+@define-color atrium-bg             #1a1b26; /* dark blue-black */
+@define-color atrium-card           #24283b; /* slightly lighter blue */
+@define-color atrium-text           #c0caf5; /* soft lavender blue */
+@define-color atrium-border         #414868; /* muted blue-grey */
+@define-color atrium-accent         #7aa2f7; /* bright blue */
+@define-color atrium-accent-hover   #89b4fa; /* lighter blue */
+@define-color atrium-accent-fg      #1a1b26; /* dark blue-black text */
+@define-color atrium-subtle         #565f89; /* grey-blue */
+@define-color atrium-error          #f7768e; /* rose pink */
+@define-color atrium-dropdown       #5a75c0; /* light blue */
+@define-color atrium-dropdown-hover #748bca; /* lighter blue */
 
 .card {
   border-radius: 8px;
@@ -55,7 +56,8 @@ menubutton.power-button > button {
               0 0 0 1px rgba(65, 72, 104, 0.80);
 }
 
-menubutton.power-button > popover > contents {
+menubutton.power-button > popover > contents,
+dropdown.session-dropdown > popover > contents {
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.45),
               0 0 0 1px rgba(65, 72, 104, 0.80);
 }

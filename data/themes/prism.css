@@ -1,15 +1,17 @@
 /* Prism -- white light with a spectrum hidden inside it. Goes well with dark,
 cosmic backgrounds. */
-@define-color atrium-bg           #05060e; /* near-black */
-@define-color atrium-card         rgba(14, 17, 26, 0.46); /* faintly blue glass */
-@define-color atrium-text         #f8f6ef; /* warm white */
-@define-color atrium-border       rgba(235, 236, 245, 0.22); /* faint neutral edge */
-@define-color atrium-accent       #fff3d2; /* pale warm gold-white */
-@define-color atrium-accent-hover #fffdf4; /* near-white */
-@define-color atrium-accent-fg    #14130a; /* dark pale accent */
-@define-color atrium-subtle       #b7bcca; /* cool grey */
-@define-color atrium-error        #ff8f7a; /* soft red */
-@define-color atrium-dropdown     rgba(23, 27, 38, 0.90); /* cool dark */
+@define-color atrium-bg             #05060e; /* near-black */
+@define-color atrium-card           rgba(14, 17, 26, 0.46); /* faintly blue glass */
+@define-color atrium-text           #f8f6ef; /* warm white */
+@define-color atrium-border         rgba(235, 236, 245, 0.22); /* faint neutral edge */
+@define-color atrium-accent         #fff3d2; /* pale warm gold-white */
+@define-color atrium-accent-hover   #fffdf4; /* near-white */
+@define-color atrium-accent-fg      #14130a; /* dark pale accent */
+@define-color atrium-subtle         #b7bcca; /* cool grey */
+@define-color atrium-error          #ff8f7a; /* soft red */
+@define-color atrium-dropdown       rgba(23, 27, 38, 0.90); /* cool dark */
+@define-color atrium-dropdown-hover rgba(36, 43, 60, 0.90); /* lighter cool dark */
+@define-color atrium-dropdown-fg    @atrium-text;
 
 .card {
   border-radius: 0;
@@ -87,10 +89,27 @@ button.suggested-action:hover {
 
 dropdown.session-dropdown > button {
   border-radius: 0;
-  color: @atrium-text;
 }
 
-menubutton.power-button > popover > contents {
+menubutton.power-button > popover > contents,
+dropdown.session-dropdown > popover > contents {
+  border-radius: 6px;
   box-shadow: 0 0 16px 2px rgba(255, 252, 236, 0.30),
               0 0 40px 8px rgba(255, 225, 210, 0.14);
+}
+
+dropdown.session-dropdown > popover listview > row {
+  border-radius: 4px;
+}
+
+menubutton.power-button > button {
+  border-radius: 4px;
+}
+
+.power-confirm-button {
+  border-radius: 4px;
+}
+
+tooltip.background {
+  border-radius: 4px;
 }

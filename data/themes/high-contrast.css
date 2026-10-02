@@ -1,14 +1,15 @@
 /* High Contrast -- for accessibility */
-@define-color atrium-bg           #000000; /* pure black */
-@define-color atrium-card         #1a1a1a; /* dark grey */
-@define-color atrium-text         #ffffff; /* pure white */
-@define-color atrium-border       #ffffff; /* pure white */
-@define-color atrium-accent       #ffff00; /* bright yellow */
-@define-color atrium-accent-hover #ffffaa; /* pale yellow */
-@define-color atrium-accent-fg    #000000; /* black text */
-@define-color atrium-subtle       #cccccc; /* light grey */
-@define-color atrium-error        #ff4444; /* bright red */
-@define-color atrium-dropdown     #ffff00; /* bright yellow */
+@define-color atrium-bg             #000000; /* pure black */
+@define-color atrium-card           #1a1a1a; /* dark grey */
+@define-color atrium-text           #ffffff; /* pure white */
+@define-color atrium-border         #ffffff; /* pure white */
+@define-color atrium-accent         #ffff00; /* bright yellow */
+@define-color atrium-accent-hover   #ffffaa; /* pale yellow */
+@define-color atrium-accent-fg      #000000; /* black text */
+@define-color atrium-subtle         #cccccc; /* light grey */
+@define-color atrium-error          #ff4444; /* bright red */
+@define-color atrium-dropdown       #ffffff; /* pure white */
+@define-color atrium-dropdown-hover #ffff00; /* bright yellow */
 
 /* No decoration that could reduce legibility. */
 .card {
@@ -22,6 +23,7 @@
 }
 
 .user-button {
+  border-radius: 0;
   border: 2px solid @atrium-accent;
   background-color: @atrium-accent;
   color: @atrium-accent-fg;
@@ -43,7 +45,17 @@ button.suggested-action:hover {
 
 dropdown.session-dropdown > button {
   border-radius: 0;
-  color: @atrium-accent-fg;
+}
+
+dropdown.session-dropdown > popover listview > row:selected,
+dropdown.session-dropdown > popover listview > row:selected:hover {
+  background-color: @atrium-bg;
+  color: @atrium-accent;
+}
+
+menubutton.power-button > popover > contents,
+dropdown.session-dropdown > popover > contents {
+  border-radius: 0;
 }
 
 .back-button:hover {
@@ -58,4 +70,25 @@ dropdown.session-dropdown > button {
 
 .power-confirm-button.destructive-action:hover {
   background-color: @atrium-text;
+}
+
+/* The base theme has rounds corners; square them to match the rest of the theme. */
+.password-field > text {
+  border-radius: 0;
+}
+
+menubutton.power-button > button {
+  border-radius: 0;
+}
+
+.power-confirm-button {
+  border-radius: 0;
+}
+
+dropdown.session-dropdown > popover listview > row {
+  border-radius: 0;
+}
+
+tooltip.background {
+  border-radius: 0;
 }

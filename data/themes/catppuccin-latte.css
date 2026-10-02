@@ -1,14 +1,16 @@
 /* Catppuccin Latte (light) - official palette */
-@define-color atrium-bg           #eff1f5; /* off-white base */
-@define-color atrium-card         #e6e9ef; /* light grey surface */
-@define-color atrium-text         #4c4f69; /* dark blue-grey text */
-@define-color atrium-border       #bcc0cc; /* soft grey border */
-@define-color atrium-accent       #1e66f5; /* vivid blue accent */
-@define-color atrium-accent-hover #0959cc; /* darker blue hover */
-@define-color atrium-accent-fg    #eff1f5; /* light text on accent */
-@define-color atrium-subtle       #8c8fa1; /* muted grey-violet */
-@define-color atrium-error        #d20f39; /* deep red error */
-@define-color atrium-dropdown     #acb0be; /* grey dropdown bg */
+@define-color atrium-bg             #eff1f5; /* off-white base */
+@define-color atrium-card           #e6e9ef; /* light grey surface */
+@define-color atrium-text           #4c4f69; /* dark blue-grey text */
+@define-color atrium-border         #bcc0cc; /* soft grey border */
+@define-color atrium-accent         #1e66f5; /* vivid blue accent */
+@define-color atrium-accent-hover   #0959cc; /* darker blue hover */
+@define-color atrium-accent-fg      #eff1f5; /* light text on accent */
+@define-color atrium-subtle         #8c8fa1; /* muted grey-violet */
+@define-color atrium-error          #d20f39; /* deep red error */
+@define-color atrium-dropdown       #ccd0da; /* light grey (surface0) */
+@define-color atrium-dropdown-hover #dce0e8; /* lighter grey (crust) */
+@define-color atrium-dropdown-fg    @atrium-text; /* same as text */
 
 .card {
   border-radius: 20px;
@@ -30,10 +32,10 @@ button.suggested-action {
 
 dropdown.session-dropdown > button {
   border-radius: 8px;
-  color: @atrium-text;
 }
 
-menubutton.power-button > popover > contents {
+menubutton.power-button > popover > contents,
+dropdown.session-dropdown > popover > contents {
   box-shadow: 0 2px 12px rgba(76, 79, 105, 0.18),
               0 1px 3px rgba(76, 79, 105, 0.12);
 }
