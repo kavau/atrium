@@ -192,6 +192,8 @@ int main(int argc, char *argv[]) {
 
     int bus_fd = bus_get_fd();
 
+    int rc = EXIT_SUCCESS; /* exit status: error paths must set this to EXIT_FAILURE */
+
     /* Event loop */
     while (1) {
         /* Assemble fds to watch: POSIX signals (SIGCHLD and SIGTERM), DRM
@@ -217,12 +219,24 @@ int main(int argc, char *argv[]) {
             if (errno == EINTR)
                 continue;
             log_syserr("main: poll");
+            rc = EXIT_FAILURE;
             break;
         }
+
+        /* fd failure modes. An unconsumed POLLERR would spin forever, so the
+        corresponding fds are explicitly retired below. */
+        const short poll_err = POLLERR | POLLHUP | POLLNVAL;
 
         /* Process D-Bus SeatNew signals */
         if ((pfds[2].revents & POLLIN) && bus_fd >= 0)
             bus_process();
+
+        if (pfds[2].revents & poll_err) {
+            log_error("main: D-Bus connection failed (revents 0x%x), seat hotplug disabled",
+                      pfds[2].revents);
+            bus_close();
+            bus_fd = -1;
+        }
 
         /* Process DRM connector-change events */
         if ((pfds[1].revents & POLLIN) && drm_mon) {
@@ -236,19 +250,35 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Process seat restart timers */
+        if (pfds[1].revents & poll_err) {
+            log_error("main: DRM monitor failed (revents 0x%x), display hotplug disabled",
+                      pfds[1].revents);
+            drm_monitor_close(drm_mon);
+            drm_mon = NULL;
+        }
+
+        /* Process seat restart timers. */
         for (int i = 3; i < nfds; i++) {
-            if (!(pfds[i].revents & POLLIN))
+            if (!(pfds[i].revents & (POLLIN | poll_err)))
                 continue;
-            for (seat *s = seat_first(); s; s = seat_next(s)) {
-                if (s->restart_tfd != pfds[i].fd)
-                    continue;
+            seat *s = seat_find_by_restart_tfd(pfds[i].fd);
+            if (s) {
+                if (pfds[i].revents & poll_err)
+                    log_error("main: restart timer for seat '%s' invalid (revents 0x%x)", s->name,
+                              pfds[i].revents); /* fall through to restart anyway */
                 close(s->restart_tfd);
                 s->restart_tfd = -1;
                 if (s->state == SEAT_IDLE)
                     maybe_start_runner(s, REASON_IDLE);
-                break;
             }
+        }
+
+        if (pfds[0].revents & poll_err) {
+            /* Without signals we can neither reap runners nor shut down
+            cleanly; exit and let the unit's restart-on-failure take over. */
+            log_error("main: signalfd failed (revents 0x%x), exiting", pfds[0].revents);
+            rc = EXIT_FAILURE;
+            break;
         }
 
         /* Process signal events (SIGCHLD, SIGTERM, and SIGUSR1) */
@@ -258,6 +288,7 @@ int main(int argc, char *argv[]) {
         struct signalfd_siginfo si;
         if (read(sfd, &si, sizeof(si)) != (ssize_t)sizeof(si)) {
             log_syserr("main: read signalfd");
+            rc = EXIT_FAILURE;
             break;
         }
 
@@ -329,5 +360,5 @@ int main(int argc, char *argv[]) {
         vt_release(vtnr);
     }
     bus_close();
-    return EXIT_SUCCESS;
+    return rc;
 }

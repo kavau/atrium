@@ -39,5 +39,9 @@ seat *seat_next(const seat *s);
 /* Return the seat whose runner_pid matches pid, or NULL if not found. */
 seat *seat_find_by_pid(pid_t pid);
 
+/* Return the seat whose restart_tfd matches fd, or NULL if not found.
+fd must be >= 0. */
+seat *seat_find_by_restart_tfd(int fd);
+
 /* Return the seat with the given name, or NULL if not found. */
 seat *seat_find_by_name(const char *name);

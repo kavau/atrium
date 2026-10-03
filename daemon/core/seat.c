@@ -56,6 +56,14 @@ seat *seat_find_by_pid(pid_t pid) {
     return NULL;
 }
 
+seat *seat_find_by_restart_tfd(int fd) {
+    assert(fd >= 0);
+    for (seat *s = seat_first(); s; s = seat_next(s))
+        if (s->restart_tfd == fd)
+            return s;
+    return NULL;
+}
+
 seat *seat_find_by_name(const char *name) {
     for (seat *s = seat_first(); s; s = seat_next(s))
         if (strcmp(s->name, name) == 0)
