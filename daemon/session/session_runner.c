@@ -223,8 +223,10 @@ static void free_pam_env(char **env) {
 
 /* Build the PAM environment for the user session. Every entry is
 heap-allocated, so free_pam_env() can just walk the array. */
-static char **build_pam_env(const seat *s) {
-    int    n_env = 4 + (s->vtnr > 0 ? 1 : 0);
+static char **build_pam_env(const seat *s, const char *desktop) {
+    assert(desktop);
+
+    int    n_env = 4 + (s->vtnr > 0 ? 1 : 0) + (*desktop ? 1 : 0);
     char **env = calloc(n_env, sizeof(*env)); /* zeroed: the array is NULL-terminated */
     if (!env)
         return NULL;
@@ -242,6 +244,13 @@ static char **build_pam_env(const seat *s) {
         goto oom;
     if (env_add(env, &i, "XDG_SESSION_CLASS", "user") < 0)
         goto oom;
+    if (*desktop && env_add(env, &i, "XDG_SESSION_DESKTOP", desktop) < 0)
+        goto oom;
+
+    if (*desktop)
+        log_debug("build_pam_env: XDG_SESSION_DESKTOP=%s", desktop);
+    else
+        log_debug("build_pam_env: no desktop name known, XDG_SESSION_DESKTOP omitted");
 
     assert(i == n_env - 1); /* last slot stays NULL */
     return env;
@@ -365,14 +374,6 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     /* ---- CREDENTIAL / AUTH LOOP ---- */
 
-    /* Build PAM environment once; reused across credential attempts. */
-    char **pam_env = build_pam_env(s);
-    if (!pam_env) {
-        log_error("session_runner: out of memory building PAM environment");
-        kill_and_wait(greeter_pid, "greeter", s->name);
-        _exit(EXIT_FAILURE);
-    }
-
     /* +1 for the NUL ipc_recv_str() adds. cred_buf must remain valid outside
     the loop since username and chosen_session point into it. */
     char        cred_buf[MAX_LEN_IPC_MSG + 1];
@@ -419,9 +420,17 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
             goto retry;
         }
 
-        /* Phase 1: verify user credentials. */
+        /* Phase 1: verify user credentials. The PAM environment is rebuilt here
+        because the chosen session can change between attempts. */
+        char **pam_env = build_pam_env(s, session_resolve(chosen_session).session_desktop);
+        if (!pam_env) {
+            log_error("session_runner: out of memory building PAM environment");
+            kill_and_wait(greeter_pid, "greeter", s->name);
+            _exit(EXIT_FAILURE);
+        }
         int auth_r = auth_authenticate(username, password, (const char **)pam_env, pam_conf_path,
                                        "atrium", &pam_result);
+        free_pam_env(pam_env);
         /* password is not needed beyond this point, wipe it for security.
         username and chosen_session (also in cred_buf) must remain intact. */
         explicit_bzero((char *)password, strlen(password));
@@ -483,8 +492,6 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         username = NULL;
         chosen_session = NULL;
     }
-
-    free_pam_env(pam_env);
 
     /* Greeter exits after reading "ok". Wait for it to exit cleanly; send
     SIGTERM and SIGKILL only if it does not exit within 5 s. */
