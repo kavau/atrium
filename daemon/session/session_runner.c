@@ -170,13 +170,15 @@ static void handle_power_request(const char *msg, ssize_t len, ipc_channel *ch,
     const char *action;
     if (ipc_msg_parse1(msg, len, IPC_TYPE_POWER, &action) < 0) {
         log_warn("session_runner: invalid power request from seat '%s'", seat_name);
-        ipc_send_str(ch, "fail:invalid power request");
+        /* TODO(GH#135): the greeter currently cannot process the response. */
+        /* ipc_send_str(ch, "fail:invalid power request"); */
         return;
     }
     log_info("session_runner: power request '%s' received on seat '%s'", action, seat_name);
     if (!config_power_actions()) {
         log_warn("session_runner: power actions disabled in config, ignoring request");
-        ipc_send_str(ch, "fail:not permitted");
+        /* TODOGH(GH#135): the greeter currently cannot process the response. */
+        /* ipc_send_str(ch, "fail:not permitted"); */
         return;
     }
 
@@ -189,12 +191,12 @@ static void handle_power_request(const char *msg, ssize_t len, ipc_channel *ch,
         r = bus_reboot();
     } else {
         log_warn("session_runner: unknown power action '%s' on seat '%s'", action, seat_name);
-        /* TODO: the greeter currently cannot process the response. */
+        /* TODO(GH#135): the greeter currently cannot process the response. */
         /* ipc_send_str(ch, "fail:unknown power action"); */
     }
 
     if (r < 0) {
-        /* TODO: the greeter currently cannot process the response. */
+        /* TODO(GH#135): the greeter currently cannot process the response. */
         /* ipc_send_str(ch, "fail:request refused"); */
     }
 }

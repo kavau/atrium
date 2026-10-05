@@ -265,7 +265,8 @@ static int login1_power_call(const char *method) {
                                "org.freedesktop.login1.Manager", method, &error, &reply, "b", 0);
     sd_bus_message_unref(reply);
     if (r < 0)
-        log_warn("login1_power_call(%s): %s", method, error.message ? error.message : strerror(-r));
+        log_error("login1_power_call(%s): %s", method,
+                  error.message ? error.message : strerror(-r));
     else
         log_info("login1_power_call: %s accepted by logind", method);
     sd_bus_error_free(&error);
