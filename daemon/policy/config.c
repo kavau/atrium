@@ -52,7 +52,7 @@ static const config_data default_config = {
     .crash_window = DEFAULT_CRASH_WINDOW,
     .drm_backoff = DEFAULT_DRM_BACKOFF,
     .allow_duplicate_login = 0,
-    .power_actions = 0,
+    .power_actions = 1,
     .ignore_seat_count = 0,
 };
 

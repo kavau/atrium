@@ -100,3 +100,14 @@ To fix this, disable the automatic sleep timeout in your desktop environment's p
 
 - In GNOME: Settings > Power > Automatic Suspend
 - In KDE Plasma: System Settings > Power Management > Suspend Session
+
+### Clicking "Shut Down" or "Reboot" does nothing
+
+A likely cause is a shutdown inhibitor, held by a session on another seat or a
+long-running operation such as a package manager transaction. You can use
+`systemd-inhibit --list` to show such inhibitors (look for `WHAT=shutdown` and
+`MODE=block`).
+
+The greeter cannot report a failed power action yet, so check the journal for
+the failure reason (e.g. run `journalctl -t atrium -b -f` on another seat or in
+a VT, then click "Shut Down" or "Reboot").

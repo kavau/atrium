@@ -24,6 +24,17 @@ that greeters also pick up their new config.
 
 ---
 
+### Shutdown and Reboot from the greeter
+
+By default, the greeter shows "Shut Down" and "Reboot" buttons on the login screen.
+Anyone can use them, no credentials are required. On a multiseat machine they take
+down any active user session running on another seat.
+
+Set `power-actions` in `/etc/atrium.conf` to `false` to hide the buttons and disable
+shutdown/reboot from the greeter.
+
+---
+
 ### Greeter background and themes
 
 Set `background-image` in `/etc/atrium-greeter.conf` to an image path, or to a

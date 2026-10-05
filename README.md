@@ -69,6 +69,9 @@ See [doc/architecture.md](doc/architecture.md) for a **detailed design overview*
 
 #### What's new since v0.4
 
+- **Shutdown and reboot from the greeter** - the greeter now shows "Shut Down"
+  and "Reboot" buttons in the upper-right corner. Disable with `power-actions =
+  false` in `/etc/atrium.conf`.
 - **Live config reload** - `sudo systemctl reload atrium` reloads the daemon
   configuration and restarts all idle seats (greeters will also pick up their
   new config).
