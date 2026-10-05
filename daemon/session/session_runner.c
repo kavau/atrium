@@ -167,6 +167,8 @@ static void wait_udev_settle(const char *seat_name) {
 /* Handle a power action message from the greeter. */
 static void handle_power_request(const char *msg, ssize_t len, ipc_channel *ch,
                                  const char *seat_name) {
+    (void)ch;
+
     const char *action;
     if (ipc_msg_parse1(msg, len, IPC_TYPE_POWER, &action) < 0) {
         log_warn("session_runner: invalid power request from seat '%s'", seat_name);
@@ -177,7 +179,7 @@ static void handle_power_request(const char *msg, ssize_t len, ipc_channel *ch,
     log_info("session_runner: power request '%s' received on seat '%s'", action, seat_name);
     if (!config_power_actions()) {
         log_warn("session_runner: power actions disabled in config, ignoring request");
-        /* TODOGH(GH#135): the greeter currently cannot process the response. */
+        /* TODO(GH#135): the greeter currently cannot process the response. */
         /* ipc_send_str(ch, "fail:not permitted"); */
         return;
     }
