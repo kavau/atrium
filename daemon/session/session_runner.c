@@ -203,6 +203,54 @@ static void handle_power_request(const char *msg, ssize_t len, ipc_channel *ch,
     }
 }
 
+/* Append "key=val" to `env' at index *i, advancing *i on success. */
+static int env_add(char **env, int *i, const char *key, const char *val) {
+    if (asprintf(&env[*i], "%s=%s", key, val) < 0) {
+        env[*i] = NULL; /* keep the array NULL-terminated on failure */
+        return -1;
+    }
+    (*i)++;
+    return 0;
+}
+
+static void free_pam_env(char **env) {
+    if (!env)
+        return;
+    for (char **p = env; *p; p++)
+        free(*p);
+    free(env);
+}
+
+/* Build the PAM environment for the user session. Every entry is
+heap-allocated, so free_pam_env() can just walk the array. */
+static char **build_pam_env(const seat *s) {
+    int    n_env = 4 + (s->vtnr > 0 ? 1 : 0);
+    char **env = calloc(n_env, sizeof(*env)); /* zeroed: the array is NULL-terminated */
+    if (!env)
+        return NULL;
+
+    int i = 0;
+    if (env_add(env, &i, "XDG_SEAT", s->name) < 0)
+        goto oom;
+    if (s->vtnr > 0) {
+        char vtnr[16];
+        snprintf(vtnr, sizeof(vtnr), "%d", s->vtnr);
+        if (env_add(env, &i, "XDG_VTNR", vtnr) < 0)
+            goto oom;
+    }
+    if (env_add(env, &i, "XDG_SESSION_TYPE", "wayland") < 0)
+        goto oom;
+    if (env_add(env, &i, "XDG_SESSION_CLASS", "user") < 0)
+        goto oom;
+
+    assert(i == n_env - 1); /* last slot stays NULL */
+    return env;
+
+oom:
+    free_pam_env(env);
+    return NULL;
+}
+
 _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     assert(pam_conf_path);
     assert(s);
@@ -317,30 +365,13 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
 
     /* ---- CREDENTIAL / AUTH LOOP ---- */
 
-    /* Build PAM environment once; reused across credential attempts.
-    XDG_SEAT [XDG_VTNR] XDG_SESSION_TYPE XDG_SESSION_CLASS */
-    int    n_env = 4 + (s->vtnr > 0 ? 1 : 0);
-    char **pam_env = calloc(n_env, sizeof(*pam_env));
+    /* Build PAM environment once; reused across credential attempts. */
+    char **pam_env = build_pam_env(s);
     if (!pam_env) {
-        log_syserr("session_runner: calloc");
+        log_error("session_runner: out of memory building PAM environment");
         kill_and_wait(greeter_pid, "greeter", s->name);
         _exit(EXIT_FAILURE);
     }
-    int i = 0;
-    if (asprintf(&pam_env[i++], "XDG_SEAT=%s", s->name) < 0) {
-        log_error("session_runner: out of memory");
-        kill_and_wait(greeter_pid, "greeter", s->name);
-        _exit(EXIT_FAILURE);
-    }
-    if (s->vtnr > 0 && asprintf(&pam_env[i++], "XDG_VTNR=%d", s->vtnr) < 0) {
-        log_error("session_runner: out of memory");
-        kill_and_wait(greeter_pid, "greeter", s->name);
-        _exit(EXIT_FAILURE);
-    }
-    pam_env[i++] = "XDG_SESSION_TYPE=wayland";
-    pam_env[i++] = "XDG_SESSION_CLASS=user";
-    pam_env[i++] = NULL;
-    assert(i == n_env);
 
     /* +1 for the NUL ipc_recv_str() adds. cred_buf must remain valid outside
     the loop since username and chosen_session point into it. */
@@ -453,10 +484,7 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
         chosen_session = NULL;
     }
 
-    free(pam_env[0]); /* XDG_SEAT */
-    if (s->vtnr > 0)
-        free(pam_env[1]); /* XDG_VTNR */
-    free(pam_env);
+    free_pam_env(pam_env);
 
     /* Greeter exits after reading "ok". Wait for it to exit cleanly; send
     SIGTERM and SIGKILL only if it does not exit within 5 s. */
