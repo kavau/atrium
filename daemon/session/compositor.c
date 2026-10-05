@@ -10,6 +10,31 @@
 #include "lib/log.h"
 #include "sessions.h"
 
+session_choice session_resolve(const char *session_id) {
+    assert(session_id);
+
+    const char *cmd = config_compositor();
+    const char *desktop = config_desktop();
+
+    session_choice c = {
+        .compositor_cmd = cmd ? cmd : "",
+        .current_desktop = desktop ? desktop : "",
+        .session_desktop = desktop ? desktop : "",
+        .entry = NULL,
+    };
+
+    if (*c.compositor_cmd)
+        return c; /* configured compositor override wins */
+
+    c.entry = (*session_id) ? sessions_find(session_id) : NULL;
+    if (c.entry) {
+        c.compositor_cmd = c.entry->exec;
+        c.current_desktop = c.entry->desktop_names ? c.entry->desktop_names : c.entry->id;
+        c.session_desktop = c.entry->id;
+    }
+    return c;
+}
+
 _Noreturn void child_exec_compositor(const char *username, const auth_result *pam_result,
                                      const char *session_id) {
     assert(username);
@@ -25,32 +50,20 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
     }
 #endif
 
-    /* Resolve compositor command and desktop names. Configured compositor
-    override has priority over user-selected sessions.
+    session_choice sel = session_resolve(session_id);
+    const char    *compositor_cmd = sel.compositor_cmd;
+    const char    *current_desktop = sel.current_desktop;
+    const char    *session_desktop = sel.session_desktop;
 
-    XDG_CURRENT_DESKTOP is set from DesktopNames (e.g. "KDE");
-    XDG_SESSION_DESKTOP and DESKTOP_SESSION are set from the desktop entry's
-    basename (e.g. "plasma"). A compositor override has no desktop entry, so
-    both are set from `desktop`. */
-    const char *compositor_cmd = config_compositor();
-    const char *current_desktop = config_desktop();
-    const char *session_desktop = config_desktop();
-    log_debug("child_exec_compositor: config compositor '%s', desktop '%s'", compositor_cmd,
-              current_desktop);
-    if (!compositor_cmd || !*compositor_cmd) {
-        log_debug("child_exec_compositor: no compositor override, looking up session '%s'",
-                  session_id);
-        const session_entry *e = (*session_id) ? sessions_find(session_id) : NULL;
-        if (e) {
-            compositor_cmd = e->exec;
-            current_desktop = e->desktop_names ? e->desktop_names : e->id;
-            session_desktop = e->id;
-            log_info("child_exec_compositor: session '%s' (%s)", e->id, e->name);
-        } else if (*session_id) {
-            log_warn("child_exec_compositor: session '%s' not found", session_id);
-        }
-    }
-    if (!compositor_cmd || !*compositor_cmd) {
+    if (sel.entry)
+        log_info("child_exec_compositor: session '%s' (%s)", sel.entry->id, sel.entry->name);
+    else if (*compositor_cmd)
+        log_debug("child_exec_compositor: compositor override '%s', desktop '%s'", compositor_cmd,
+                  current_desktop);
+    else if (*session_id)
+        log_warn("child_exec_compositor: session '%s' not found", session_id);
+
+    if (!*compositor_cmd) {
         log_error("child_exec_compositor: no compositor configured");
         _exit(EXIT_FAILURE);
     }
@@ -83,6 +96,9 @@ _Noreturn void child_exec_compositor(const char *username, const auth_result *pa
         goto oom;
     /* Spec default, added after the PAM entries so a PAM-supplied value wins. */
     env[i++] = "XDG_DATA_DIRS=/usr/local/share:/usr/share";
+    /* XDG_CURRENT_DESKTOP is set from DesktopNames (e.g. "KDE");
+    XDG_SESSION_DESKTOP and DESKTOP_SESSION are set from the desktop entry's
+    basename (e.g. "plasma"). */
     if (*current_desktop && asprintf(&env[i++], "XDG_CURRENT_DESKTOP=%s", current_desktop) < 0)
         goto oom;
     if (*session_desktop) {
