@@ -1,6 +1,6 @@
 /* Ghibli -- warm, semi-transparent card, works well with landscape backgrounds. */
 @define-color atrium-bg             rgba(235, 218, 185, 0.75); /* warm beige */
-@define-color atrium-card           rgba(255, 236, 180, 0.8); /* soft cream */
+@define-color atrium-card           rgba(255, 245, 206, 0.8); /* soft cream */
 @define-color atrium-text           #1e0e04; /* dark brown */
 @define-color atrium-border         rgba(130, 85, 30, 0.65); /* soft brown */
 @define-color atrium-accent         #8f4c10; /* warm brown */
