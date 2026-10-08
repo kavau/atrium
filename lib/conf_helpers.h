@@ -4,6 +4,7 @@
  * conf_helpers.h - helpers for reading config files and parsing their values.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 
 /* Look up a key in a simple configuration file and return its value as an
@@ -11,6 +12,10 @@ allocated string, or NULL when the file or the key is absent, or when the value
 is empty. Handles both "key value" and "key=value".
 The caller must free the result. */
 char *conf_file_lookup(const char *path, const char *key);
+
+/* Returns true if the section header names the given seat. seat can be NULL or
+empty, in which case no section matches. */
+bool conf_is_seat_section(const char *section, const char *seat);
 
 /* The following functions parse an already-extracted value. In all of them:
      prefix - log message prefix

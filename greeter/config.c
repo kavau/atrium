@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "ini.h"
@@ -36,15 +37,21 @@ static struct {
 };
 
 static int handle_key(void *userdata, const char *section, const char *name, const char *value) {
-    (void)userdata;
+    const char *seat = userdata;
 
+    /* Keys in our seat's section are treated exactly like keys outside any
+    section, so a later seat-specific entry overrides an earlier general one. */
     if (*section) {
-        static char last_warned[64];
-        if (strcmp(last_warned, section) != 0) {
-            log_warn("greeter-config: unknown section '[%s]', ignoring", section);
-            snprintf(last_warned, sizeof(last_warned), "%s", section);
+        bool is_seat = conf_is_seat_section(section, seat);
+        /* Report each section only once, rather than once per key. */
+        static char last_reported[64];
+        if (strcmp(last_reported, section) != 0) {
+            snprintf(last_reported, sizeof(last_reported), "%s", section);
+            log_info("greeter-config: %s section '[%s]'", is_seat ? "applying" : "ignoring",
+                     section);
         }
-        return 1;
+        if (!is_seat)
+            return 1;
     }
 
     if (strcmp(name, "blank-timeout") == 0) {
@@ -73,7 +80,12 @@ static int handle_key(void *userdata, const char *section, const char *name, con
 }
 
 void greeter_config_load(const char *path) {
-    int r = ini_parse(path, handle_key, NULL);
+    /* The seat identifies which override section applies. */
+    char *seat = getenv("XDG_SEAT");
+    if (!seat || !*seat)
+        log_debug("greeter-config: XDG_SEAT unset, ignoring all seat sections");
+
+    int r = ini_parse(path, handle_key, seat);
     if (r < 0)
         log_warn("greeter-config: %s not found, using defaults", path);
     else if (r > 0)

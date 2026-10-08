@@ -217,6 +217,23 @@ static void test_append_strlist(void) {
 #undef ITEM_SIZE
 }
 
+static void test_is_seat_section(void) {
+    check_int("section seat1 vs seat1", conf_is_seat_section("seat1", "seat1"),
+              true);
+    check_int("section seat1 vs seat0", conf_is_seat_section("seat1", "seat0"),
+              false);
+    check_int("section seat11 vs seat1", conf_is_seat_section("seat11", "seat1"),
+              false);
+    check_int("section seatx vs seatX", conf_is_seat_section("seatx", "seatX"),
+              false); /* seat names are case sensitive */
+
+    /* No seat (a greeter run by hand): always false. */
+    check_int("section seat1, seat NULL", conf_is_seat_section("seat1", NULL),
+              false);
+    check_int("section seat1, seat empty", conf_is_seat_section("seat1", ""),
+              false);
+}
+
 int main(void) {
     /* Line-buffer stdout so the helpers' warnings on stderr interleave with the
     cases that provoked them, rather than clumping when output is piped. */
@@ -235,6 +252,7 @@ int main(void) {
     test_parse_bool();
     test_copy_str();
     test_append_strlist();
+    test_is_seat_section();
 
     rmdir(dir);
 

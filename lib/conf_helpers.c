@@ -4,8 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "log.h"
+
+bool conf_is_seat_section(const char *section, const char *seat) {
+    return seat && *seat && strcmp(section, seat) == 0;
+}
 
 char *conf_file_lookup(const char *path, const char *key) {
     size_t keylen = strlen(key);
