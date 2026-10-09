@@ -1,5 +1,8 @@
 #include "config.h"
 
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "ini.h"
@@ -44,8 +47,8 @@ typedef struct config_data {
 static const config_data default_config = {
     .greeter = DEFAULT_GREETER,
     .compositor = "",
-    .session_wrapper = ATRIUM_SESSION_WRAPPER_PATH,
     .desktop = "",
+    .session_wrapper = ATRIUM_SESSION_WRAPPER_PATH,
     .seat_discovery_delay = DEFAULT_SEAT_DISCOVERY_DELAY,
     .crash_restart_delay = DEFAULT_CRASH_RESTART_DELAY,
     .crash_count_limit = DEFAULT_CRASH_COUNT_LIMIT,
@@ -56,18 +59,48 @@ static const config_data default_config = {
     .ignore_seat_count = 0,
 };
 
+/* Keys that can be overridden in a seat section. */
+static const char *const overridable[] = {
+    "greeter", "compositor", "desktop", "session-wrapper", "power-actions",
+};
+
 static config_data g_cfg = default_config;
-static char        last_warned_section[64] = "";
+
+static char *g_raw; /* Retained copy of the config file contents. */
+static char  last_reported_section[64] = "";
+
+static int key_is_seat_overridable(const char *name) {
+    for (size_t i = 0; i < sizeof(overridable) / sizeof(*overridable); i++)
+        if (strcmp(name, overridable[i]) == 0)
+            return 1;
+    return 0;
+}
+
+struct parse_ctx {
+    config_data *cfg;
+    const char  *seat; /* seat whose section applies, or NULL */
+};
 
 static int handle_key(void *userdata, const char *section, const char *name, const char *value) {
-    config_data *cfg = userdata;
+    struct parse_ctx *ctx = userdata;
+    config_data      *cfg = ctx->cfg;
 
+    /* Keys in our seat's section are treated exactly like keys outside any
+    section, so a later seat-specific entry overrides an earlier general one. */
     if (*section) {
-        if (strcmp(last_warned_section, section) != 0) {
-            log_warn("config: unknown section '[%s]', ignoring", section);
-            snprintf(last_warned_section, sizeof(last_warned_section), "%s", section);
+        bool is_seat = conf_is_seat_section(section, ctx->seat);
+        /* Report each section only once, rather than once per key. */
+        if (strcmp(last_reported_section, section) != 0) {
+            snprintf(last_reported_section, sizeof(last_reported_section), "%s", section);
+            log_info("config: %s section '[%s]'", is_seat ? "applying" : "ignoring", section);
         }
-        return 1;
+        if (!is_seat)
+            return 1;
+        if (!key_is_seat_overridable(name)) {
+            log_warn("config: '%s' is not a key that can be set per seat, ignoring it in '[%s]'",
+                     name, section);
+            return 1;
+        }
     }
 
     if (strcmp(name, "greeter") == 0) {
@@ -101,21 +134,55 @@ static int handle_key(void *userdata, const char *section, const char *name, con
     return 1;
 }
 
-void config_load(void) {
-    /* Parse into a fresh copy seeded with defaults, then update atomically.
-    This keeps reloads idempotent. */
-    config_data new_cfg = default_config;
-    last_warned_section[0] = '\0'; /* reset unknown section warning */
-    int r = ini_parse(CONFIG_PATH, handle_key, &new_cfg);
-    if (r < 0) {
-        log_warn("config: %s not found, using defaults", CONFIG_PATH);
+/* Parse config file contents into *out. Returns 0 on success, the failing line
+number otherwise. */
+static int parse_config_text(const char *text, const char *seat, config_data *out) {
+    struct parse_ctx ctx = {.cfg = out, .seat = seat};
+    *out = default_config;
+    last_reported_section[0] = '\0'; /* reset the per-section report */
+    return ini_parse_string(text, handle_key, &ctx);
+}
+
+void config_load(void) { config_load_path(CONFIG_PATH); }
+
+void config_load_path(const char *path) {
+    free(g_raw);
+    g_raw = conf_read_file(path);
+    if (!g_raw) {
+        log_warn("config: %s not readable, using defaults", path);
         g_cfg = default_config;
-    } else if (r > 0) {
-        log_warn("config: parse error in %s at line %d, keeping previous config", CONFIG_PATH, r);
+        return;
+    }
+
+    /* Parse into a fresh copy seeded with defaults, then update atomically.
+    This keeps reloads idempotent. Seat sections are skipped here. */
+    config_data new_cfg;
+    int         r = parse_config_text(g_raw, NULL, &new_cfg);
+    if (r > 0) {
+        log_warn("config: parse error in %s at line %d, keeping previous config", path, r);
     } else {
-        log_info("config: loaded %s", CONFIG_PATH);
+        log_info("config: loaded %s", path);
         g_cfg = new_cfg;
     }
+}
+
+void config_apply_seat_overrides(const char *seat) {
+    if (!seat || !*seat)
+        return; /* nothing to do */
+    if (!g_raw) {
+        log_debug("config: no config file loaded, no seat overrides for '%s'", seat);
+        return;
+    }
+
+    /* Re-parse the stored copy instead of re-reading the file to guarantee the
+    runner sees the same configuration as the daemon. */
+    config_data seat_cfg;
+    int         r = parse_config_text(g_raw, seat, &seat_cfg);
+    if (r > 0) {
+        log_warn("config: parse error at line %d, keeping general config for seat '%s'", r, seat);
+        return;
+    }
+    g_cfg = seat_cfg;
 }
 
 const char *config_greeter(void) { return g_cfg.greeter; }

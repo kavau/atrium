@@ -9,6 +9,14 @@ refresh the config. Logs a warning and falls back to defaults if the config file
 is missing. */
 void config_load(void);
 
+/* Like config_load(), but reads from `path' instead of CONFIG_PATH. */
+void config_load_path(const char *path);
+
+/* Re-evaluate the stored configuration for the given seat. Applies the general
+keys as well as any seat-specific overrides. Call this in the session runner
+after the fork, when the seat is known. */
+void config_apply_seat_overrides(const char *seat);
+
 /* Accessors return loaded values or compiled-in defaults if the config file is
 absent or a key is missing. */
 const char *config_greeter(void);               /* greeter shell command */

@@ -281,6 +281,10 @@ _Noreturn void session_runner(const char *pam_conf_path, const seat *s) {
     sa.sa_handler = on_sigusr1;
     sigaction(SIGUSR1, &sa, NULL);
 
+    /* Apply this seat's config overrides. We are past the fork, so the daemon's
+    copy remains untouched. */
+    config_apply_seat_overrides(s->name);
+
     /* ---- GREETER PHASE ---- */
 
     /* Scan available Wayland sessions and serialize for greeter (skip if a

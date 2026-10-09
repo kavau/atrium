@@ -62,3 +62,19 @@ power-actions = true
 #
 # Example:
 #   ignore-seat = seat2
+
+# ---------------------------------------------------------------------------
+# Per-seat overrides
+#
+# Each seat can define its own override values for some of the keys above by
+# putting them in a section named after the seat. The section name must match
+# the seat name reported by `loginctl list-seats` exactly.
+#
+# Overridable keys are: greeter, compositor, desktop, session-wrapper, and
+# power-actions.
+#
+# Example: fixed compositor and no power buttons on seat1
+#   [seat1]
+#   compositor = sway
+#   desktop = sway
+#   power-actions = false
