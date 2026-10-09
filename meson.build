@@ -261,6 +261,32 @@ executable('atrium-conf-helpers-test',
   install: false,
 )
 
+executable('atrium-config-test',
+  sources: [
+    'daemon/policy/config.c',
+    'lib/conf_helpers.c',
+    'lib/log.c',
+    'tools/config-test.c',
+  ],
+  dependencies: [
+    dep_inih,
+  ],
+  install: false,
+)
+
+executable('atrium-greeter-config-test',
+  sources: [
+    'greeter/config.c',
+    'lib/conf_helpers.c',
+    'lib/log.c',
+    'tools/greeter-config-test.c',
+  ],
+  dependencies: [
+    dep_inih,
+  ],
+  install: false,
+)
+
 executable('atrium-fake-greeter',
   sources: [
     'lib/ipc.c',
