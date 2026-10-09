@@ -1,12 +1,51 @@
 #include "conf_helpers.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
 
 #include "log.h"
+
+char *conf_read_file(const char *path) {
+    FILE *f = fopen(path, "re");
+    if (!f)
+        return NULL;
+
+    struct stat st;
+    if (fstat(fileno(f), &st) < 0) {
+        int err = errno;
+        fclose(f);
+        errno = err;
+        return NULL;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        fclose(f);
+        errno = EINVAL;
+        return NULL;
+    }
+
+    char *buf = malloc((size_t)st.st_size + 1);
+    if (!buf) {
+        fclose(f);
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    size_t len = fread(buf, 1, (size_t)st.st_size, f);
+    int    err = ferror(f) ? EIO : 0;
+    fclose(f);
+    if (err) {
+        free(buf);
+        errno = err;
+        return NULL;
+    }
+    buf[len] = '\0';
+    return buf;
+}
 
 bool conf_is_seat_section(const char *section, const char *seat) {
     return seat && *seat && strcmp(section, seat) == 0;

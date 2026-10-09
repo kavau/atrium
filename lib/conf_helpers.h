@@ -13,6 +13,10 @@ is empty. Handles both "key value" and "key=value".
 The caller must free the result. */
 char *conf_file_lookup(const char *path, const char *key);
 
+/* Read a file into a NUL-terminated buffer. Returns NULL on failure with errno
+set. The caller must free the result. */
+char *conf_read_file(const char *path);
+
 /* Returns true if the section header names the given seat. seat can be NULL or
 empty, in which case no section matches. */
 bool conf_is_seat_section(const char *section, const char *seat);
