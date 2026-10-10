@@ -75,6 +75,8 @@ See [doc/architecture.md](doc/architecture.md) for a **detailed design overview*
 - **Live config reload** - `sudo systemctl reload atrium` reloads the daemon
   configuration and restarts all idle seats (greeters will also pick up their
   new config).
+- **Per-seat config overrides** - many config keys can now carry seat-specific
+  values, see [doc/configuration.md](doc/configuration.md) for details.
 
 #### What's new since v0.3
 

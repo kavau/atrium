@@ -55,6 +55,35 @@ keep the rules you actually change.
 
 ---
 
+### Per-seat overrides
+
+On a multiseat machine many config entries can carry values that differ between seats.
+Here is an example for `atrium-greeter.conf`:
+
+```ini
+theme = /usr/local/share/atrium/themes/solarized-dark.css
+
+[seat1]
+theme = /usr/local/share/atrium/themes/high-contrast.css
+```
+
+The config file starts with a general section that applies to all seats. This
+can be followed by one or more seat-specific sections that override the general
+values (the one exception is `hide-user`, where seat-specific values are added
+to the general list).
+
+Section names must match the seat name, as reported by `loginctl list-seats`, exactly.
+Any other sections are ignored. If an override appears to have no effect, check the
+journal.
+
+Every key in `atrium-greeter.conf` can be overridden. In `atrium.conf` only keys
+whose effect is limited to one seat can be overridden: `greeter`, `compositor`,
+`desktop`, `session-wrapper` and `power-actions`. All others are global.
+
+To exclude a seat entirely, use `ignore-seat`.
+
+---
+
 ### Session discovery and compositor override
 
 By default, atrium reads session `.desktop` files from
