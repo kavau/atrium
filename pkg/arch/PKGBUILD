@@ -5,7 +5,8 @@ pkgrel=2
 pkgdesc="Wayland multiseat display manager"
 arch=('x86_64')
 url="https://github.com/kavau/atrium"
-license=('GPL-2.0-or-later')
+# inih (third_party/inih/) is compiled in statically and is BSD-3-Clause.
+license=('GPL-2.0-or-later' 'BSD-3-Clause')
 
 # Runtime dependencies.
 depends=(
@@ -61,4 +62,9 @@ package() {
         "$pkgdir/etc/atrium.conf"
     install -Dm644 data/atrium-greeter.conf \
         "$pkgdir/etc/atrium-greeter.conf"
+
+    # Arch requires the BSD license text to ship with the package (GPL-2.0 is
+    # provided by the licenses package).
+    install -Dm644 third_party/inih/LICENSE.txt \
+        "$pkgdir/usr/share/licenses/$pkgname/inih-LICENSE.txt"
 }

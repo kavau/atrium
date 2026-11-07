@@ -263,4 +263,8 @@ Bug reports and feature requests are welcome. Please open an issue on
 
 ## License
 
-GPL-2.0 — see [LICENSE](LICENSE).
+GPL-2.0-or-later — see [LICENSE](LICENSE).
+
+The bundled [inih](https://github.com/benhoyt/inih) parser in
+`third_party/inih/` is BSD-3-Clause, see
+[third_party/inih/LICENSE.txt](third_party/inih/LICENSE.txt).
