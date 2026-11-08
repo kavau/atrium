@@ -427,10 +427,16 @@ install_data(
 )
 
 # For source installs, create the atriumdm user and home directory directly.
-meson.add_install_script('systemd-sysusers', '/usr/lib/sysusers.d/atrium.conf',
-  skip_if_destdir: true)
-meson.add_install_script('systemd-tmpfiles', '--create', '/usr/lib/tmpfiles.d/atrium.conf',
-  skip_if_destdir: true)
+systemd_sysusers = find_program('systemd-sysusers', required: false)
+if systemd_sysusers.found()
+  meson.add_install_script(systemd_sysusers, '/usr/lib/sysusers.d/atrium.conf',
+    skip_if_destdir: true)
+endif
+systemd_tmpfiles = find_program('systemd-tmpfiles', required: false)
+if systemd_tmpfiles.found()
+  meson.add_install_script(systemd_tmpfiles, '--create', '/usr/lib/tmpfiles.d/atrium.conf',
+    skip_if_destdir: true)
+endif
 
 # SELinux setup (Fedora only). Must run after the tmpfiles script above so
 # /var/lib/atrium exists when the setup script relabels it.
